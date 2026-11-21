@@ -2128,14 +2128,21 @@ class MainWindow(QMainWindow):
         if self.project_dir:
             self.autosave_timer.start()                # Undo/Redo-Stand ebenfalls speichern
 
-    def _load_state_into_ui(self, state):
-        """Projekt/neues Projekt: Zustand setzen, Undo-Verlauf nach dem Neuzeichnen neu beginnen."""
+    def _load_state_into_ui(self, state, relazy=False):
+        """Projekt/neues Projekt: Zustand setzen, Undo-Verlauf nach dem Neuzeichnen neu beginnen. relazy: andere oder
+        keine Verbindung -> verborgene Tabs als Platzhalter (replace_tab), statt jeden gebauten Tab neu aufzubauen."""
         self._series_kept = None                       # Serien-Einstellungen gehörten den vorigen Messdaten
         self._restoring = True
-        self.set_state(state, partial=True)            # Fenster bleibt, nur Tabs und ε (statt build_ui)
+        self._relazy = relazy
+        try:
+            self.set_state(state, partial=True)        # Fenster bleibt, nur Tabs und ε (statt build_ui)
+        finally:
+            self._relazy = False
         QTimer.singleShot(200, self._after_load)
 
     def _after_load(self):
+        if self.__dict__.get("_demo_building"):       # Bau des Beispielprojekts verarbeitet Ereignisse: Undo und
+            return QTimer.singleShot(200, self._after_load)   # Autosave erst danach, wie ohne Zwischenschritte
         self._restoring = False
         self._init_undo()
 
@@ -2639,8 +2646,15 @@ class MainWindow(QMainWindow):
             self.log_signal.emit(traceback.format_exc())
             return self.error(str(e))
         QApplication.restoreOverrideCursor()
-        self.statusBar().showMessage(T("demo_pub_done", p=str(d)), 10000)
+        if d:
+            self.statusBar().showMessage(T("demo_pub_done", p=str(d)), 10000)
         return d
+
+    def demo_progress(self, pct):
+        """Erster Bau des Beispielprojekts (einmal je Version): Fortschritt zeigen und Ereignisse verarbeiten, damit das
+        Fenster nie „Keine Rückmeldung“ zeigt; Eingaben warten bis zum Ende (wie „Alles exportieren“)."""
+        self.statusBar().showMessage(T("demo_building", p=pct))
+        QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
     def open_demo(self, folder=None):
         """Beispielprojekt mit künstlichen Daten (alle Tabs) anlegen und öffnen."""
@@ -2972,7 +2986,7 @@ class MainWindow(QMainWindow):
         pub = PUB.publication_of(pdir)
         self.publication_dir = str(pub) if pub else None
         self.settings.setValue("last_project_dir", str(pdir.parent))
-        self._load_state_into_ui({"tab": "compound"})  # neue Verbindung: zuerst benennen und zeichnen
+        self._load_state_into_ui({"tab": "compound"}, relazy=True)   # neue Verbindung: zuerst benennen und zeichnen
         self.watch_chemdraw()                          # leere ChemDraw-Dateien für Struktur und Schema
         self.update_title()
         self.add_recent(pdir)
@@ -3196,11 +3210,7 @@ class MainWindow(QMainWindow):
         pub = PUB.publication_of(pdir)
         self.publication_dir = str(pub) if pub else None
         self._views = {}                               # gemerkte Ansichten gehörten der vorigen Verbindung
-        self._relazy = True                            # andere Verbindung: verborgene Tabs als Platzhalter (replace_tab)
-        try:
-            self._load_state_into_ui(state)
-        finally:
-            self._relazy = False
+        self._load_state_into_ui(state, relazy=True)   # andere Verbindung: verborgene Tabs als Platzhalter
         self.watch_chemdraw()
         if recent:
             self.add_recent(pdir)
@@ -3329,7 +3339,7 @@ class MainWindow(QMainWindow):
         if not self.maybe_save():
             return False
         self.project_dir = None
-        self._load_state_into_ui({})
+        self._load_state_into_ui({}, relazy=True)
         self.watch_chemdraw()                          # nichts mehr überwachen
         self.update_title()
 
@@ -5743,7 +5753,7 @@ class MainWindow(QMainWindow):
         self._place_toast()
 
     def closeEvent(self, ev):
-        if not self.maybe_save():
+        if self.__dict__.get("_demo_building") or not self.maybe_save():
             ev.ignore()
             return
         self.settings.setValue("geometry", self.saveGeometry())

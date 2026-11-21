@@ -2,14 +2,17 @@
 
 Keine Messdateien, keine gemessenen Werte: zwei erfundene Verbindungen (`COMPOUNDS`), deren Daten in allen Tabs zum
 selben Molekül gehören und zueinander passen, aus eigenen Generatoren (feste Startwerte). Das Projekt liegt im
-Datenordner des Programms und wird bei jedem Öffnen neu angelegt.
+Datenordner des Programms und wird bei jedem Öffnen ersetzt: Kopie der Vorlage (`TEMPLATE_DIR`), die nur beim ersten
+Öffnen je Version und Einstellungen gebaut wird.
 """
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -993,6 +996,7 @@ def load_data(w, inp, name="S3"):
     w.set_photo(str(photo), name, render=False, sync=True)
     w.current = name
     w.apply_series_widgets()
+    _tick()
     # X-Ray: erfundene Struktur aus der 3D-Geometrie des Moleküls
     m3, P = mol_3d(c["smiles"], c.get("twist"))
     w.xray_tab.load_cif(str(make_cif(inp / "xray" / f"{name}.cif", name, m3, P, c["cell"], c["place"])))
@@ -1014,6 +1018,7 @@ def load_data(w, inp, name="S3"):
         w.xray_tab.set_pxrd_file(str(make_pxrd(inp / "xray" / f"{name}_PXRD.xy", w.xray_tab.structure(e0))))
         w.xray_tab.pxrd(e0)["zero"] = 0.04
         w.xray_state.update(homa_fig=True, homa_si=True)   # HOMA: Werte in der Ringmitte, Tabelle in der SI
+    _tick()
     # NMR: erfundene Spektren (¹H, ¹³C), Mnova-Text, Struktur
     nd = inp / "nmr"
     # ¹H von S3 beschriftet 0…10 ppm (fehlerfrei); S2 nur 1…9 ppm: Warnfall der Bereichsprüfung (S2 ist das Beispiel
@@ -1030,6 +1035,7 @@ def load_data(w, inp, name="S3"):
     if name == "S3":                                     # ¹H-Rohdaten (erfunden) zum Mnova-Spektrum: Quelle bleibt Mnova,
         t_n.import_topspin(str(NMR.demo_raw_1h(nd / name / "10", c["h1"])))   # „Quelle: Bruker“ zeigt die eigene Kette
         demo_nmr_series(t_n, nd / name, c["h1"])
+    _tick()
     # IR (künstliche OPUS-Datei), HRMS (künstlicher Bericht der Massenabteilung), Elementaranalyse (erfundene Werte)
     w.irms_tab.load_ir(str(make_opus(inp / "irms" / f"{name}_IR.0", c["ir"])))
     sh = c.get("ms_shift", 0.0004)
@@ -1063,6 +1069,7 @@ def load_data(w, inp, name="S3"):
         w.irms_state.update(irc_scale=0.965)
         w.irms_state["irc_pairs"] = [[1605, next(k for k, (w_, _) in enumerate(sorted(modes)) if abs(w_ * 0.965 - 1611) < 1)]]
         w.irms_tab.sync_widgets()
+    _tick()
     w.irms_state["ea_found"] = dict(c["ea"])
     w.irms_state["ea_found2"] = dict(c["ea2"])
     w.nmr_state["text"] = c["nmr_text"]
@@ -1072,6 +1079,7 @@ def load_data(w, inp, name="S3"):
     w.syn_tab.set_scheme(str(scheme_cdxml(inp / "syn" / f"{name}_reaction.cdxml", **c["scheme"])))
     w.syn_state["reagents"] = [dict(r) for r in c["reagents"]]
     w.syn_state["proc"] = c["proc"]
+    _tick()
     if name == "S3":
         load_product(w, inp, name, csv, samples, photo, m3, P)
     else:
@@ -1128,6 +1136,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
              own_norm=False, conc=c["concs"][2], unit="uM", mw=c["mw"], d=1.0),
         dict(win, kind="calc", file=str(orca), label="TD-DFT", color="#1764e8", visible=True, own_norm=False,
              fwhm=0.3, shift=0.0)], mode="norm", sticks=True, stick_mode="band", **win)
+    _tick()
     # Fluoreszenz: verdünnteste Probe der Reihe (A < 0.1 bei λex), ε wie im ε-Tab; Foto unter UV-Licht
     em = inp / f"{name}_emission.csv"
     xs = np.arange(390.0, 701.0, 1.0)
@@ -1142,6 +1151,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                       photo_day=str(photo), bg_day="grabcut", bg_uv="none",
                       photo_uv=str(cuvette_photo(inp / f"{name}_cuvette_UV.png", (70, 150, 255), uv=True)),
                       cap_solvent="THF", cap_conc="5 µM", **demo_lifetime(inp, name, c["uv"]))
+    _tick()
     # UV-Vis-Kinetik: Stabilität der Lösung über eine Woche, je Tag eine Datei mit zwei Konzentrationen (Zerfall erster
     # Ordnung, k = 0.04 d⁻¹), Aufnahmezeiten im Cary-Format
     from elucida.tabs import uvkin as UVKIN
@@ -1171,6 +1181,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     entries += [{"uid": f"tit{k}", "file": p, "idx": k, "label": n_, "series": "", "use": True,
                  "eq": UVKIN.eq_from_name(n_)} for k, (n_, *_) in enumerate(cols)]
     w.uvkin_state.update(entries=entries, fit=True, cap_solvent="THF", cap_reagent="NOSbF6")
+    _tick()
     # CV: drei Vorschubgeschwindigkeiten + eigene Ferrocen-Messung als Referenz (1 mM, D = 1·10⁻⁵ cm² s⁻¹). Nur Fc (CV3,
     # OFFEN §26): eine Messung mit beiden Wellen gäbe für S3 einen anderen i_pa als der 200-mV-s⁻¹-Lauf (anderer Start,
     # Fc-Ausläufer unter der Basislinie); sie zählt ohnehin nicht zur Scanraten-Analyse
@@ -1196,11 +1207,13 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                       # Messaufbau (erfunden); die Politur fehlt: die Karte zeigt, was für die Richtlinie fehlt
                       acs_we="glassy carbon (3 mm)", acs_ce="Pt wire", acs_gas="argon",
                       acs_device="Example Instruments P-100 potentiostat")
+    _tick()
     # SEC: dieselbe Oxidation in der Dünnschichtzelle, Potentiale über die Referenz des CV-Tabs
     sec_files, dta = make_sec(inp / "sec", name, E_FC - 0.09, E_OX, neutral=[(lam0, 0.30, 1900), (268, 0.155, 1900)],
                               oxidised=[(505, 0.24, 1100), (760, 0.13, 1500), (334, 0.11, 1800), (262, 0.14, 2000)])
     w.sec_state.update(spec_files=sec_files, dta=str(dta), mode="spectra", bands=f"{lam0}, 505, 760", trace_lams=f"{lam0}, 505, 760", mid="",
                        ref_from_cv=True, cap_solvent="CH2Cl2", cap_start="neutral", cap_end="radical cation")
+    _tick()
     # H-Zelle: symmetrisches Laden/Entladen derselben Oxidation (Konstantstrom, Plateau bei E½ wie im CV, Abbruch
     # ±0.3 V darum), 40 Zyklen mit langsamem Kapazitätsverlust
     rng = np.random.default_rng(7)
@@ -1210,6 +1223,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                           e12=E_OX, cuts=(E_OX + 0.3, E_OX - 0.3))
     w.hcell_state.update(cap_conc="5 mM", cap_solvent="CH2Cl2, 0.1 M n-Bu4NPF6", ref="Ag0/+")   # vor dem Bau des Tabs
     w.hcell_tab.load_files([str(main_)])
+    _tick()
     # EPR: Radikalkation (isotrop, S = ½: 1 × 14N, 6 × 1H der NMe2-Gruppe) mit eigener Simulation und Fit
     Bt = np.linspace(328.0, 343.0, 6001)
     I_ = EPR.iso_spectrum(Bt, 9.40, 2.0031, [(1, 1.0, 0.86), (6, 0.5, 0.93)], 0.14)
@@ -1233,6 +1247,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     t_e.fill_table()
     t_e.table.selectRow(1)
     t_e.fit_current()
+    _tick()
     # Spinzählung (Ansicht „Spinzählung“): drei ausgeblendete Referenzspektren bekannter Konzentration (erfunden,
     # Nitroxid-Triplett, Intensität proportional zur Konzentration); die Messung der Verbindung ist die Probe
     for c_ref in (0.25, 0.5, 1.0):
@@ -1245,6 +1260,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
         w.epr_state["entries"].append(e_r)
     t_e.fill_table()
     w.epr_state.update(cap_species=f"{name}^{{•+}}", cap_solvent="CH2Cl2", cap_conc="1 mM", cap_acq=True)
+    _tick()
     # DFT: ORCA-Ausgabe (Optimierung + Frequenzen) mit der Geometrie des Kristalls, dazu HOMO und LUMO als Cube
     # (Namen wie orca_plot, Nummern ab 0; HOMO zuletzt, damit es gezeigt wird)
     w.dft_tab.load_xyz(str(make_orca(inp / "dft" / f"{name}_opt_freq.out", f"{name}_opt_freq", m3, P, -729.512846)))
@@ -1252,6 +1268,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     n_homo = sum(a.GetAtomicNum() for a in m3.GetAtoms()) // 2 - 1
     for no, coef in ((n_homo + 1, lumo), (n_homo, homo)):
         w.dft_tab.load_cube(str(orbital_cube(inp / "dft" / f"{name}_opt_freq.mo{no}a.cube", m3, P, atoms, coef)))
+        _tick()
     # NTO von S1 (Overlay, Seite „NTO“): Cubes wie orca_plot aus der .nto (Nummern 62/63 wie im NTO-Block der
     # erfundenen Ausgabe -> Gewicht 96 % aus der Ausgabe); Loch/Teilchen = Hückel-HOMO/LUMO, nur fürs Aussehen
     from elucida.tabs.nto import state_key
@@ -1261,6 +1278,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     key = state_key({"file": ov_calc["file"], "variant": ov_calc.get("variant")}, 0)
     w.ov_state["nto"] = dict(items={key: dict(kind="cube", files=cubes, mos=[62, 63], state="S1", weight=None)},
                              sel=key, wmin=10.0, iso=0.0, si=True)
+    _tick()
     # EPR, Rechnung zum Radikalkation (erfunden, aus dem Hückel-HOMO): Spinpopulation = c² am π-Atom mit etwas negativer
     # Dichte an den H, Kopplungen grob nach McConnell (Ring-H −70 MHz·ρ_C), Amin-N und seine Methyl-H nahe den Werten
     # der Simulation (die drei H je Methylgruppe verschieden: das Mittel zeigt „avg.“); Zuordnung zu den zwei Gruppen
@@ -1286,6 +1304,7 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     cp.calc["assign"][cp.sim()["uid"]] = {"0": [amine], "1": sorted(methyl_h)}   # an der S = ½-Simulation (nicht der
     # letzten Zeile: seit der Spinzählung sind das die Referenzen)
     w.epr_state.update(hfc_min=8.0)
+    _tick()
     # Reiter Multireferenz: CASSCF/SC-NEVPT2 auf derselben Geometrie als eigene Rechnung, Ergebnis SC-NEVPT2 gewählt;
     # gezeigt bleibt die Opt/Freq-Rechnung mit ihren Orbitalen (die Seite folgt der gewählten Rechnung)
     opt_uid = w.dft_state["current"]
@@ -1294,18 +1313,22 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
     e_mr["mr_result"] = next(r["id"] for r in w.dft_tab.calc_of(e_mr)["multireference"] if r["method"] == "SC-NEVPT2")
     e_mr.update(mr_singlet=0, mr_triplet=len(MR_STATES[1]))          # ΔE_ST zwischen S0 und T1 (Indizes im Block)
     w.dft_state["current"] = opt_uid
+    _tick()
     w.dft_tab.pages.load_nics([str(make_nics(inp / "dft" / f"{name}_NICS-scan.log", m3, P))])     # Reiter NICS
     w.dft_tab.pages.load_nics([str(make_nics_grid(inp / "dft" / f"{name}_3D_NICS_0001.log", m3, P))])   # 3D-NICS-Gitter
     w.dft_tab.pages.nics["geom"] = "B3LYP-D4/def2-TZVP"
+    _tick()
     w.dft_tab.acid_page.load([str(make_acid_aicd(inp / "dft" / f"{name}_ACID.d", m3, P)[0]),      # Reiter ACID
                               str(make_acid_log(inp / "dft" / f"{name}_ACID_CSGT.log", m3, P))])
     w.dft_state["acid"]["geom"] = "B3LYP-D4/def2-TZVP"
     w.dft_state.update(homa_si=True)                  # HOMA neben NICS(1) desselben Rings (Scan 1 Å über der Ebene)
+    _tick()
     # Reiter NBO: Radikalkation (offenschalig, Spindichte) und Neutralmolekül (gezeigt, mit NRT und CML)
     w.dft_tab.nbo.load([str(make_nbo(inp / "dft" / f"{name}_radical_cation_NBO.out", f"{name}_radical_cation_NBO", m3, P,
                                      mult=2)),
                         str(make_nbo(inp / "dft" / f"{name}_NBO.out", f"{name}_NBO", m3, P))])
     w.dft_state["h_labels"] = False                   # Orbitalbild: nur Schweratome beschriftet (H bleiben anklickbar)
+    _tick()
     # Weitere: Abbildung aus einem anderen Programm (Lippert-Mataga-Auftragung der Emission in fünf Lösungsmitteln)
     w.other_tab.load_files([str(lippert_png(inp / f"{name}_Lippert-Mataga.png"))])
     w.other_state["entries"][-1].update(
@@ -1313,7 +1336,21 @@ def load_product(w, inp, name, csv, samples, photo, m3, P):
                                  "polarizability Δf of the solvent).")
 
 
-DEMO_DIRS = ("Beispielverbindung", "Beispielprojekt", "Beispielpublikation")   # im Datenordner (alte Namen mit)
+TEMPLATE_DIR = "Beispielvorlage"      # fertiges Beispielprojekt je Version und Einstellungen: Öffnen = Kopie
+DEMO_DIRS = ("Beispielverbindung", "Beispielprojekt", "Beispielpublikation", TEMPLATE_DIR)   # im Datenordner (alte Namen mit)
+# Einstellungen, die der Bau nicht liest (Pfade, Listen, Fenster, Ansicht, Cluster): ändern die Vorlage nicht
+_KEY_SKIP = ("geometry", "last_dir", "last_img_dir", "last_project_dir", "recent_projects", "recent_publications",
+             "quick_export_dir", "update_last", "update_skip", "update_auto", "datapack_dir", "ui/compound_geometry")
+_KEY_SKIP_GROUPS = ("cluster/", "datapack/", "fold/", "step/", "welcome/", "ui/section_")
+_progress, _ticks = None, 0           # beim Bau der Vorlage: Ereignisse verarbeiten und Fortschritt zeigen (Hauptfenster)
+BUILD_TICKS = 52                      # _tick()-Aufrufe eines Baus (nur für die Prozentanzeige)
+
+
+def _tick():
+    global _ticks
+    if _progress is not None:
+        _ticks += 1
+        _progress(min(99, round(100 * _ticks / BUILD_TICKS)))
 
 
 def make_opus(path, bands=((3290.0, 35, 10), (2104.0, 20, 6), (1598.0, 40, 8), (1482.0, 45, 6), (1029.0, 30, 8),
@@ -2205,9 +2242,11 @@ def open_demo(w, folder=None, name="S3") -> Path:
     try:
         if not w.create_project(d):
             raise RuntimeError(f"Projekt {d} konnte nicht angelegt werden")
+        _tick()
         load_data(w, inp, name)
         w.syn_tab.sync_widgets()
         w.render()
+        _tick()
         tabs = ("nmr_tab", "irms_tab", "hrms_tab", "xray_tab")
         if name == "S3":                                   # die Vorstufe hat diese Tabs nicht
             tabs += ("ov_tab", "uvkin_tab", "fl_tab", "cv_tab", "sec_tab", "hcell_tab", "epr_tab", "dft_tab", "other_tab")
@@ -2218,7 +2257,9 @@ def open_demo(w, folder=None, name="S3") -> Path:
                 f = getattr(type(t), fn, None)
                 if f is not None and f.__qualname__.split(".")[0] != "QWidget":
                     getattr(t, fn)()
+            _tick()
         w.save_project()
+        _tick()
         # Speichern kopiert die Eingaben ins Projekt, der Zustand zeigte aber weiter in den Temp-Ordner (jedes
         # spätere Speichern schrieb dann tote Pfade): Pfade auf die Kopien übernehmen
         w._load_state_into_ui(PRJ.load(d))
@@ -2231,11 +2272,91 @@ def demo_pub_dir() -> Path:
     return IMG.app_data_dir() / "Beispielprojekt"
 
 
+def template_root() -> Path:
+    return IMG.app_data_dir() / TEMPLATE_DIR
+
+
+def template_key(w) -> str:
+    """Was der Bau liest: Version, Quellstand (nur aus dem Quelltext), Sprache, Einstellungen außer _KEY_SKIP."""
+    import hashlib
+    import json
+    import sys
+    from elucida import APP_VERSION, ROOT
+    from elucida.app.i18n import get_lang
+    s = w.settings
+    fallbacks = s.fallbacksEnabled()
+    s.setFallbacksEnabled(False)                  # macOS: sonst stehen systemweite Schlüssel darin, die sich ständig ändern
+    try:
+        items = sorted((k, str(s.value(k))) for k in s.allKeys()
+                       if k not in _KEY_SKIP and not k.startswith(_KEY_SKIP_GROUPS))
+    finally:
+        s.setFallbacksEnabled(fallbacks)
+    src = 0 if getattr(sys, "frozen", False) else max(p.stat().st_mtime_ns for p in (ROOT / "elucida").rglob("*.py"))
+    return hashlib.sha256(json.dumps([APP_VERSION, src, get_lang(), items]).encode()).hexdigest()[:16]
+
+
+def copy_template(w, d: Path) -> bool:
+    """Vorlage nach d kopieren, Dateizeiten wie gerade gebaut (jüngste = jetzt). False: keine passende/heile Vorlage."""
+    root = template_root()
+    try:
+        if (root / "key.txt").read_text(encoding="utf-8") != template_key(w) or \
+                not (root / "pub" / "S3" / PRJ.PROJECT_FILE).is_file():
+            return False
+        if d.exists():
+            shutil.rmtree(d)
+        shutil.copytree(root / "pub", d)
+        shift = time.time() - (root / "key.txt").stat().st_mtime
+        for p in [d, *d.rglob("*")]:
+            st = p.stat()
+            os.utime(p, (st.st_atime + shift, st.st_mtime + shift))
+    except (OSError, UnicodeDecodeError):
+        return False
+    return True
+
+
+def save_template(w, d: Path):
+    """Gerade gebautes Beispielprojekt als Vorlage ablegen; der Schlüssel zuletzt (fehlt er, wird neu gebaut)."""
+    root = template_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "key.txt").unlink(missing_ok=True)
+        if (root / "pub").exists():
+            shutil.rmtree(root / "pub")
+        shutil.copytree(d, root / "pub")
+        (root / "key.txt").write_text(template_key(w), encoding="utf-8")
+    except OSError as ex:                         # nur Tempo: das Beispiel ist trotzdem offen
+        w.log_signal.emit(str(ex))
+
+
 def open_demo_publication(w, folder=None) -> Path:
     """Beispielpublikation (künstliche Daten): Vorstufe S2 (Synthese, NMR, IR, EA, HRMS, UV-Vis, X-Ray) und ihr
-    Produkt S3 mit allen Tabs, Angaben und SI-Texte ausgefüllt; danach die Seite der Publikation zeigen."""
-    from elucida.app import publication as PUB
+    Produkt S3 mit allen Tabs, Angaben und SI-Texte ausgefüllt; danach die Seite der Publikation zeigen.
+    Ohne folder (Hilfe → Beispielprojekt): Kopie der Vorlage dieser Version, gebaut nur beim ersten Mal (mit Fortschritt,
+    das Fenster verarbeitet zwischen den Schritten Ereignisse). Mit folder (Selbsttest, Bildschirmfotos): immer bauen."""
+    global _progress, _ticks
     d = Path(folder) if folder else demo_pub_dir()
+    if not folder:
+        if w.project_dir and w.close_project() is False:    # nichts mehr in den alten Ordner speichern
+            return None
+        if w.publication_dir and w.close_publication() is False:
+            return None
+        if copy_template(w, d):
+            w.settings.setValue("last_project_dir", str(d))   # wie create_project beim Bau
+            w.open_publication(d)
+            return d
+        _progress, _ticks, w._demo_building = w.demo_progress, 0, True
+        try:
+            _build_publication(w, d)
+        finally:
+            _progress, w._demo_building = None, False
+        save_template(w, d)
+        return d
+    _build_publication(w, d)
+    return d
+
+
+def _build_publication(w, d):
+    from elucida.app import publication as PUB
     if d.exists():
         shutil.rmtree(d)
     d.mkdir(parents=True)
@@ -2276,6 +2397,7 @@ def open_demo_publication(w, folder=None) -> Path:
     from elucida.exchange import datapack as DP        # „FID for Publication“ (HSQC-Experimente der Beispiele)
     fids = [(n, DP.fid_items(PRJ.load(d / n), d / n, n)) for n in ("S2", "S3")]
     rep = DP.write_fid_package(fids, d / PUB.PACK_DIR)
+    _tick()
     if rep.get("files"):
         data = PUB.load(d)
         data["fidpack"] = dict(name=Path(rep["path"]).name, compounds=list(rep["compounds"]),
@@ -2288,5 +2410,5 @@ def open_demo_publication(w, folder=None) -> Path:
         make_path(w, d, inp)
     finally:
         shutil.rmtree(inp, ignore_errors=True)            # Eingaben sind in den Pfad kopiert
+    _tick()
     w.open_publication(d)
-    return d

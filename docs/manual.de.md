@@ -107,7 +107,7 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    **Datensätze schreiben** bzw. **Datenpakete (Zip)** oben: je Verbindung ein Zip, `CompChem.zip`, `README.txt` und Lizenztext in
    `datapack/`, fertig zum Hochladen (z. B. TUDOdata).
 
-Zum Ausprobieren: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit zwei erfundenen Verbindungen an: eine Vorstufe mit der üblichen Charakterisierung und ihr Produkt mit Daten für alle Tabs, die zueinander passen.
+Zum Ausprobieren: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit zwei erfundenen Verbindungen an: eine Vorstufe mit der üblichen Charakterisierung und ihr Produkt mit Daten für alle Tabs, die zueinander passen. Beim ersten Mal je Programmversion wird es angelegt (unten rechts steht der Fortschritt), danach öffnet es sofort; Änderungen am Beispiel ersetzt das nächste Öffnen.
 
 ## Anleitungen
 

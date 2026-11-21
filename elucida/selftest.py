@@ -21990,6 +21990,68 @@ def _g_nmr_own(ctx):
                           "trashes kinetics files, tile/failed export trash nothing, legacy kept), export message "
                           "counts + Open tables, no Tables tiles in the Export tab: OK")
         with section:
+            # lane-tempo1: Hilfe -> Beispielprojekt baut nur beim ersten Mal (Fortschritt, Ereignisse zwischen den
+            # Schritten) und legt eine Vorlage je Version/Einstellungen ab; danach Kopie. Datenordner umgelenkt.
+            from elucida.app import demo as DEMO_tp
+            real_data_tp = DEMO_tp.IMG.app_data_dir
+            data_tp = out / "tempo_data"
+            DEMO_tp.IMG.app_data_dir = lambda: data_tp
+            pcts_tp, real_prog_tp = [], w.demo_progress
+            w.demo_progress = lambda p_: (pcts_tp.append(p_), real_prog_tp(p_))
+            try:
+                t_tp = time.perf_counter()
+                d_tp = w.open_demo_publication()
+                build_tp = time.perf_counter() - t_tp
+                root_tp = DEMO_tp.template_root()
+                assert d_tp == DEMO_tp.demo_pub_dir() and w.publication_dir == str(d_tp) and not w.project_dir
+                assert (root_tp / "key.txt").read_text(encoding="utf-8") == DEMO_tp.template_key(w)
+                assert len(pcts_tp) == DEMO_tp.BUILD_TICKS and pcts_tp == sorted(pcts_tp) and pcts_tp[-1] == 99, pcts_tp
+                assert not w._demo_building
+                tree_tp = _DemoPub._tree(d_tp)
+                assert tree_tp == _DemoPub._tree(root_tp / "pub")
+                # zweites Öffnen: Kopie, kein Bau, gleicher Inhalt, Dateizeiten wie neu
+                t_tp = time.perf_counter()
+                assert w.open_demo_publication() == d_tp
+                copy_tp = time.perf_counter() - t_tp
+                assert len(pcts_tp) == DEMO_tp.BUILD_TICKS and _DemoPub._tree(d_tp) == tree_tp
+                assert copy_tp < build_tp / 4, (copy_tp, build_tp)
+                assert abs(max(p_.stat().st_mtime for p_ in d_tp.rglob("*")) - time.time()) < 120
+                # bearbeitetes Beispiel (Verbindung offen): erneutes Öffnen schließt sie und gibt eine frische Kopie
+                assert w.open_project(d_tp / "S3", ask=False, recent=False)
+                w.nmr_state["text"] = "edited example"
+                w.save_project()
+                assert w.open_demo_publication() == d_tp and not w.project_dir
+                assert _DemoPub._tree(d_tp) == tree_tp and len(pcts_tp) == DEMO_tp.BUILD_TICKS
+                # andere Version/Einstellungen oder beschädigte Vorlage: keine Kopie (-> Bau)
+                spare_tp = out / "tempo_copy"
+                key_tp = (root_tp / "key.txt").read_text(encoding="utf-8")
+                (root_tp / "key.txt").write_text("0" * 16, encoding="utf-8")
+                assert not DEMO_tp.copy_template(w, spare_tp)
+                (root_tp / "key.txt").write_text(key_tp, encoding="utf-8")
+                assert DEMO_tp.copy_template(w, spare_tp)
+                (root_tp / "pub" / "S3" / PRJ.PROJECT_FILE).rename(root_tp / "S3_moved")
+                assert not DEMO_tp.copy_template(w, spare_tp)
+                (root_tp / "S3_moved").rename(root_tp / "pub" / "S3" / PRJ.PROJECT_FILE)
+                # Vorlage und Kopie nie in Übersicht oder Zuletzt-Listen
+                for p_ in (d_tp / "S2", d_tp / "S3", root_tp / "pub" / "S3"):
+                    w.add_recent(p_)
+                for p_ in (d_tp, root_tp / "pub"):
+                    w.add_recent_publication(p_)
+                assert all(DEMO_tp.is_demo(p_) for p_ in (d_tp / "S3", root_tp / "pub" / "S2", root_tp))
+                w.open_start_args([str(d_tp / "S3"), "--tab", "cv"])        # Startargument (Neustart) mit der Kopie
+                assert w.project_dir and Path(w.project_dir).resolve() == (d_tp / "S3").resolve()
+                w.close_project()
+                raw_tp = json.loads(w.settings.value("recent_projects", "[]") or "[]") + \
+                    json.loads(w.settings.value("recent_publications", "[]") or "[]")
+                assert not any(DEMO_tp.is_demo(r_) for r_ in raw_tp), raw_tp
+                assert not any(DEMO_tp.is_demo(i_["path"]) for i_ in w.search_index())
+            finally:
+                DEMO_tp.IMG.app_data_dir = real_data_tp
+                w.demo_progress = real_prog_tp
+            report.append(f"Example project from the template: first open builds with {len(pcts_tp)} progress steps "
+                          f"({build_tp:.1f} s), later opens copy ({copy_tp:.2f} s, same content, edits replaced), wrong "
+                          "key or damaged template = no copy, never in recent lists or the overview: OK")
+        with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
             import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-

@@ -822,6 +822,8 @@ TEXTS = {
     "act_demo_pub_tip": ("Legt ein Projekt mit zwei Verbindungen (künstliche Daten) an – Gesamt-SI und Datenpakete zum "
                          "Ausprobieren",
                          "Creates a project with two compounds (artificial data) – to try the complete SI and data packages"),
+    "demo_building": ("Beispielprojekt wird angelegt (einmal je Version) … {p} %",
+                      "Creating the example project (once per version) … {p} %"),
     "demo_pub_done": ("Beispielprojekt (künstliche Daten) geöffnet: {p}",
                       "Example project (artificial data) opened: {p}"),
     "act_demo_tip": ("Legt eine Verbindung mit künstlichen Daten für alle Tabs an – zum Ausprobieren",

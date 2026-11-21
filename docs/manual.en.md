@@ -102,7 +102,7 @@ project folder.
    datasets** or **Data packages (zip)** at the top: one zip per compound, `CompChem.zip`, `README.txt` and license text in
    `datapack/`, ready for the upload (e.g. TUDOdata).
 
-To try it: **Help → Open example project** creates a project with two invented compounds: a precursor with the usual characterisation and its product with matching data for all tabs.
+To try it: **Help → Open example project** creates a project with two invented compounds: a precursor with the usual characterisation and its product with matching data for all tabs. The first time per program version it is created (progress at the bottom right), afterwards it opens at once; changes to the example are replaced when it is opened again.
 
 ## Guides
 

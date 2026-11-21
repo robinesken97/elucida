@@ -689,6 +689,9 @@ class DrawingEditor(QWidget):
 def release_pages(app):
     """At quit, before the windows go: pages first, then give Chromium a moment. A page and its profile deleted in one
     step while the page was still loading ended the app on Windows (0x80000003, Chromium's fatal check)."""
+    # Tabs mit ausstehendem deleteLater zuerst löschen (Ansicht samt Seite): bei abgeschalteten Signalen (Platzhalter beim
+    # Verbindungswechsel) bemerkte die Ansicht das Löschen ihrer Seite nicht und stürzte beim eigenen Löschen ab
+    app.sendPostedEvents(None, QEvent.DeferredDelete)
     editors = [e for t in app.topLevelWidgets() for e in t.findChildren(DrawingEditor) if e.view is not None]
     for e in editors:
         e.poll.stop()
