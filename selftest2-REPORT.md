@@ -1,6 +1,9 @@
 # Selbsttest Stufe 2 – Bericht (Spur `lane-selftest2`)
 
-**Stand: Hebel 1–5 fertig und gemessen; Hebel 6 (Aufteilen) in Arbeit.**
+**fertig** – Hebel 1–6 umgesetzt und gemessen, letzter Merge `origin/main` = `1ebcaab` (Merge-Commit `acefed6`).
+Ungeprüft (Entscheidung der Hauptsitzung, die langen Läufe macht Robin lokal): Einzelläufe der Gruppen `comparison` und
+`lanes` nach der letzten `GROUP_NEEDS`-Änderung, voller Lauf mit Fehlerprobe, voller sauberer Lauf auf dem gemergten
+Stand (zuletzt grün: `st_split` auf `5eb46de`).
 
 Start-SHA: `35ce4c1` (origin/main zum Zeitpunkt des Probelaufs). Branch `lane-selftest2` aus diesem Stand.
 
@@ -228,8 +231,117 @@ build.yml:
 - macOS Intel (nur gebaute App): bis zum Aufteilen nur der Rauchtest; nach dem Aufteilen zusätzlich die plattformnahen
   Gruppen (siehe Hebel 6).
 
+## Hebel 6: Selbsttest in Gruppen (`8acc5db`, `e80a1df`, CI `5eb46de`)
+Aufbau (Commit oben auf 1–5; 1–5 bleiben ohne ihn nutzbar):
+- `selftest()` ruft nach dem Rauchtest 14 Gruppenfunktionen `_g_<name>(ctx)` in der alten Reihenfolge auf:
+  `start` (Fenster, Projekt, Eingaben) · `uvvis` (ε, Overlay, TD-DFT, Fluoreszenz) · `electrochem` (CV, SEC, H-Cell) ·
+  `epr_kinetics` (EPR, UV-Vis-Kinetik, Titration) · `ui` · `ir_hrms` · `xray` · `dft` · `nmr_synthesis` · `project_si`
+  (SI, Projekt, Datenpaket, Undo, Beispielprojekt) · `publication` (Projektseite, Beispielpublikation, Layout,
+  Selbstprüfung) · `comparison` · `lanes` (spätere Spuren) · `nmr_own` (eigene NMR-Verarbeitung, Tabellen, Quit).
+- Erzeugt aus den Abschnittsgrenzen (Generator im Bericht beschrieben, nicht im Repo): der Code jedes Abschnitts bleibt
+  Zeile für Zeile gleich und gleich eingerückt (Gruppenkörper in `try/finally`, nichts umgerückt – 176 mehrzeilige
+  Strings im Selbsttest). Geändert ist nur: die drei Hilfen `pump`, `free_win_`, `wait_path_` stehen jetzt in `start`
+  (vorher in einem uvvis-Abschnitt), und Module, die eine Gruppe aus dem Import einer früheren nutzte, importiert sie
+  selbst (gleiches Modulobjekt).
+- Namen fließen über ein Wörterbuch `ctx`: jede Gruppe bindet die Namen, die sie vor eigener Zuweisung liest, aus `ctx`
+  (nur wenn vorhanden – fehlt einer, scheitert genau der Abschnitt mit NameError wie früher), am Ende gehen alle ihre
+  lokalen Namen zurück in `ctx`. Statische Prüfung: keine Closure einer Gruppe wird später benutzt, während ein von ihr
+  gelesener Name dort neu gebunden wird; kein `nonlocal`/`global`.
+- `--selftest-group a[,b…]`: gewählte Gruppen laufen mit Titeln; frühere Gruppen, die sie brauchen (`GROUP_NEEDS`),
+  laufen still als **Fixture** (Titel nicht gezählt, eine Zeile `FIXTURE`, bei einem Fehler darin `FAILED` und Exit 1);
+  alle anderen sind `SKIPPED`. Ohne Option: alles wie bisher. Unbekannte Gruppe: Meldung, Exit 2.
+- `GROUP_NEEDS` aus zwei Quellen: Namensanalyse (Dateien/Variablen früherer Gruppen: dft ← xray; project_si ← ir_hrms,
+  dft; publication ← electrochem, dft, project_si) und Einzelläufe (Zustand des Fensters, den Namen nicht zeigen):
+  - electrochem ← uvvis (erster CV-Abschnitt erwartet den Rückgängig-Verlauf, allein `IndexError` auf `w._undo[-2]`)
+  - project_si ← uvvis (Overlay-Einträge)
+  - ui, comparison, lanes ← **alle früheren Gruppen** (konservativ: Klappbereiche/Tab/Daten bzw. Vergleichsseite,
+    verborgene NTO-Seite, Dateien aus xray, Reaktionspfad – mehrere Ursachen, keine eindeutige)
+- Stufe-1-Selbstprüfung: zählt weiter exakt, `SKIPPED`- und `FIXTURE`-Zeilen müssen genau den übersprungenen bzw.
+  still gelaufenen Gruppen entsprechen.
+
+Einzelläufe (Container, `--selftest-isnet`; Zeit = ganzer Prozess):
+| Gruppe | Runde 1 | Runde 2 (nach `GROUP_NEEDS`) | eigene Abschnitte | Fixtures |
+|---|---|---|---|---|
+| smoke | OK, 148 s | | 6 / 144 s | – |
+| start | OK, 7 s | | 1 / 6 s | – |
+| uvvis | OK, 68 s | | 29 / 61 s | start |
+| electrochem | 3 FAILED | **OK, 134 s** | 15 / 65 s | start, uvvis |
+| epr_kinetics | OK, 133 s | | 16 / 126 s | start |
+| ui | 2 FAILED | **OK, 329 s** | 7 / 68 s | start…epr_kinetics |
+| ir_hrms | OK, 26 s | | 13 / 19 s | start |
+| xray | OK, 43 s | | 8 / 36 s | start |
+| dft | OK, 160 s | | 23 / 116 s | start, xray |
+| nmr_synthesis | OK, 18 s | | 6 / 12 s | start |
+| project_si | 5 FAILED | **OK, 937 s** | 18 / 685 s | start, uvvis, ir_hrms, xray, dft |
+| publication | 2 FAILED (nur Fixtures) | **OK, 1383 s** | 26 / 387 s | 7 Gruppen |
+| comparison | 2 FAILED | **nicht gelaufen** (ungeprüft, s. u.) | 17 | alle früheren |
+| lanes | 12 FAILED | **nicht gelaufen** (ungeprüft, s. u.) | 39 | alle früheren |
+| nmr_own | OK, 415 s | | 18 / 408 s | start |
+
+Voller Lauf nach dem Aufteilen (`st_split`, Stand `5eb46de`): **OK, exit 0**, 242 Abschnitte, Titel und Reihenfolge
+gleich `st_45` (0 Abweichungen mit maskierten Zahlen; = `st_m` + 6 Rauchtest-Titel), 90 min (Summe der Abschnitte
+5371 s gegen 5203 s, +3 % – im Rauschen von ~8 %), Spitzen-RSS 11,5 GB, kein Swap. Das Aufteilen spart keine Zeit
+und soll es nicht; es macht die Gruppen einzeln aufrufbar.
+Abbildungen (`compare_figures.py st_m st_split`): 1747 gleich, 2 verschieden, 71 fehlend. Verschieden:
+`a2_pub/S3/.elucida/thumbs/eps.png` (Vorschaubild der Beispielkopie, Art wie unter Hebel 1) und `epr_p6.png` (bekannt).
+Fehlend: Dateien mit zufälliger Kennung (Reaktionspfad-UUID, `*_<hash>_nmr.png`) und zwei Export-Tab-Vorschaubilder in
+`a2x_pub` (`dft_3`, `xray_2`): [Likely] zeitabhängig (Vorschauen nur innerhalb des Zeitbudgets aus Entscheidung 103) –
+schon `st_base` und `st_m` unterscheiden sich dort (`st_base` ohne `dft_3`). Exportierte Abbildungen alle gleich [Certain].
+
+Rauchtest + Intel-Gruppen zusammen (`--selftest-group smoke,uvvis,epr_kinetics,ir_hrms,xray,dft,nmr_synthesis`): **OK, exit 0**, 554 s (ganzer Prozess),
+101 Abschnitte OK, 1 FIXTURE (start), 7 SKIPPED. Auf dem Intel-Runner [Guessing] ×2,7 wie bisher beobachtet ≈ 25 min
+statt ~204 min für den ganzen Selbsttest der gebauten App.
+
+### Was auf macOS Intel nicht mehr läuft
+Intel lief bisher den ganzen Selbsttest der gebauten App (~204 min). Jetzt Rauchtest + uvvis, epr_kinetics, ir_hrms,
+xray, dft, nmr_synthesis (+ start als Fixture). Nicht mehr auf Intel (laufen weiter aus dem Quellcode auf Linux,
+Windows, macOS arm64): electrochem (CV, SEC, H-Cell), ui (Oberfläche, Layout, Erscheinungsbild), project_si (SI-Word,
+Projektordner, Datenpaket, Undo, Beispielprojekt), publication (Projektseite, Gesamt-SI, Papierkorb, Layout-Wrapper,
+Zwischenablage in „processing chain card“), comparison (Vergleiche, Zwischenablage), lanes (spätere Spuren, Export-Tab,
+PPTX, Zwischenablage „Copy Figure“), nmr_own (eigene NMR-Verarbeitung, Tabellen-Dateien). Papierkorb und Zwischenablage
+werden damit auf Intel nur noch über den Rauchtest (Word/PPTX/Export) und gar nicht direkt geprüft – wenn das wichtig
+ist, `publication` dazunehmen (+~25 min im Container ×2,7). **Entscheidung (Robin über die Hauptsitzung):** Intel bleibt
+wie in `5eb46de`, ohne `publication`; keine eigenen CI-Jobs je Gruppe vorerst.
+
+### Fehlerprobe (lokal, nie committet)
+Zwei absichtlich falsche Prüfungen (`assert False`, Skript außerhalb des Repos, nach jedem Lauf zurückgesetzt):
+im Rauchtest nach dem Öffnen des Beispielprojekts (`selftest_smoke.py`, Abschnitt „example project“) und in
+„Entscheidung 130“ (Gruppe `nmr_own`) direkt nach `demo_pub(w, out / "l130_pub")`, also in einem Abschnitt mit gemeinsam
+gebauter Beispielpublikation (Kopie der Vorlage aus Hebel 1).
+
+| Lauf | Ergebnis |
+|---|---|
+| `smoke,nmr_own` auf `5eb46de` | **FAILED, exit 1**; beide Fehler oben in der Zusammenfassung, `failed_20008.png`; Mangel gefunden: der Rauchtest-Fehler hieß `selftest.py:88`, ohne Titel und ohne Bild |
+| `smoke` nach der Korrektur `60fa845` | FAILED, exit 1, `FIRST FAILED: selftest_smoke.py:136 smoke: example project, all tabs`, `failed_selftest_smoke_136.png` (+ 2 Folgefehler, als solche markiert) |
+| `smoke,nmr_own` auf dem gemergten Stand `acefed6` | **FAILED, exit 1**, 4 FAILED (erster = Rauchtest, Folgefehler in Octet/Export markiert, `selftest.py:20036` Entscheidung 130), 1 FIXTURE (start), 12 SKIPPED; `sections.tsv` vollständig, `failed_20036.png` und `failed_selftest_smoke_{136,159,166}.png`; 546 s |
+
+Korrektur `60fa845` (Folge der Probe): Zusammenfassung, „slow section“ und Watchdog nennen die Quelldatei
+(`selftest_smoke.py:<Zeile>`); Bild bei einem Fehler auch aus dem Rauchtest-Fenster (`failed_selftest_smoke_<Zeile>.png`,
+Namen der übrigen Bilder unverändert); die Rauchtest-Abschnitte tragen Titelkommentare, damit ein Abschnitt, der vor
+seiner OK-Zeile scheitert, einen Titel hat. Keine Prüfung gelockert.
+
+### Für später: Gruppen auf parallele CI-Jobs verteilen (nicht in dieser Spur)
+- Je Job: `--selftest-group` mit einer Teilmenge; Fixtures laufen dort still mit (Zeit zählt doppelt: ui, comparison und
+  lanes ziehen heute alle früheren Gruppen nach – vorher echte Fixtures daraus machen).
+- Ergebnis zusammenführen: `sections.tsv` je Job; die Titel aller Jobs zusammen = Titelliste des vollen Laufs.
+- Beispielpublikation: jeder Job baut seine eigene Vorlage (Hebel 1 wirkt nur innerhalb eines Prozesses).
+- Artefakte je Job (`selftest_*/sections.tsv`, `failed_*.png`) und ein Abschlussjob, der alle Berichte liest.
+
+## Letzter Merge `origin/main` (`acefed6`, main = `1ebcaab`)
+- Ein Konflikt in `_Section.__enter__`: main ersetzt den `faulthandler`-Watchdog durch eine Zeile aus eigenem Thread
+  (alle Systeme); übernommen, nur die Quelldatei aus `60fa845` eingesetzt (`section at selftest_smoke.py:<Zeile> still running`).
+- Die zwei Abschnittsänderungen von main (CV-Tabellen bei 1200 px mit ausführlicher Meldung; Spaltenhöhe nach dem
+  Umbau) hat Git ohne Konflikt in die Gruppen `electrochem` bzw. `lanes` übernommen – der Abschnittscode ist ja Zeile für
+  Zeile gleich geblieben. Der neue lokale Import (`QFont`, `QFontInfo`, `QFontMetrics`) in `electrochem` wird in dieser
+  Gruppe nirgends vorher gelesen (kein `UnboundLocalError`), und kein Modul-Import gleichen Namens wird verdeckt.
+- Nach dem Merge gelaufen: nur die Fehlerprobe `smoke,nmr_own` (oben). **Kein** sauberer voller Lauf auf `acefed6`
+  [Certain] – CLAUDE.md verlangt ihn vor jedem Commit; die Hauptsitzung hat ihn an Robins lokalen Lauf und die CI
+  übergeben.
+
 ## Vereinbarungen mit der Hauptsitzung
 - Phase 1–3 gegen `st_base` auf `35ce4c1`; vor Hebel 4 `origin/main` mergen und voll laufen lassen (neue Titelliste);
   das Aufteilen (Hebel 6) als eigene Commits oben drauf; am Ende `origin/main` noch einmal mergen.
 - Watchdog (`faulthandler` in `_Section.__enter__`) übernimmt die Hauptsitzung auf `main` (win32 ausgenommen); in
   dieser Spur nicht angefasst.
+- Abschluss (Robin über die Hauptsitzung, 2026-11-21): Stufe 2 verkürzt; Intel bleibt wie in `5eb46de` (ohne
+  `publication`), keine eigenen CI-Jobs je Gruppe; vollen Selbsttest und CI startet die Hauptsitzung.
