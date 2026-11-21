@@ -1,6 +1,6 @@
 # Selbsttest Stufe 2 – Bericht (Spur `lane-selftest2`)
 
-**Stand: Hebel 1–3 fertig und gemessen (auf `35ce4c1`). Nächster Schritt: `origin/main` mergen, dann Hebel 4–6.**
+**Stand: Hebel 1–5 fertig und gemessen; Hebel 6 (Aufteilen) in Arbeit.**
 
 Start-SHA: `35ce4c1` (origin/main zum Zeitpunkt des Probelaufs). Branch `lane-selftest2` aus diesem Stand.
 
@@ -186,6 +186,47 @@ dem Export prüft, behält seinen Export):
 - Gewinn [Likely]: lokal ~4–5 s, in CI etwas mehr (`pump()` wartet dort 2,5-mal so lange) – unter dem Laufrauschen,
   deshalb kein eigener Messlauf; geprüft im vollen Lauf nach dem Merge (Entscheidung: Nachtzeit für Hebel 4–6).
 - Hinweis [Certain]: `pump()` multipliziert unter `CI` mit 2,5; meine Läufe setzen `CI` nicht (Baseline auch nicht).
+
+## Merge `origin/main` vor Hebel 4 (`f3becf9`, main = `10cc795`)
+- Voller Lauf `st_m` auf dem gemergten Baum: **OK, exit 0**, 80 min, Spitzen-RSS 11,2 GB, kein Swap, 236 Abschnitte.
+- Titel = `st_l1` plus die zwei neuen Abschnitte von main („FitGrid fills 300..800 px …“, „Tables (decision 170) …“),
+  sonst identisch und in gleicher Reihenfolge. **Das ist die neue Basis-Titelliste** für Hebel 4–6 (Datei
+  `st_m/sections.tsv`, Abbildungen `st_m/` als Vergleichsbasis).
+- Die 15 umgestellten Waits aus Hebel 3 laufen darin grün.
+
+## Hebel 4/5: Rauchtest-Gruppe und build.yml (`9cd191f`)
+Ohne das Aufteilen nutzbar: `--selftest-group smoke` (oder `main` = alles andere). Nicht gewählte Gruppen stehen als
+eine Zeile `SKIPPED` in `sections.tsv`, oben als „skipped n group(s): …“ und in der Schlusszeile – nie als OK.
+Die Stufe-1-Selbstprüfung zählt die Zeilen weiter exakt (`len(tsv) == len(rows) + 1`) und prüft zusätzlich an einem
+Wegwerf-Lauf, dass eine übersprungene Gruppe genau eine SKIPPED-Zeile ergibt, oben gezählt und nie unter den
+langsamsten steht (verschärft, nicht gelockert).
+
+Rauchtest (`elucida/selftest_smoke.py`, 6 Abschnitte „smoke: …“), im vollen Lauf als erste Gruppe, mit eigenem Fenster,
+eigener Einstellungsdatei und Unterordner `smoke/` (die übrigen Abschnitte sehen davon nichts):
+1. jedes `--hidden-import`/`--collect-all` aus `tools/build.py` (Liste wird dort gelesen; macOS-Zusätze nur unter
+   darwin) und jedes eigene Modul (`--collect-submodules elucida`, außer `__main__`) importieren. `tools/build.py`
+   legt die Datei dafür jetzt per `--add-data` in die gebaute App.
+2. Repo-Dateien über `elucida.ROOT` (`resource_path` = ROOT): Symbole, Lizenztexte, Octet (`embedded.html`,
+   `bridge.js`, Lizenzen, Skripte), Mnova-Skript, Handbuch-Verweise (Online-Fassung; `docs/` liegt nicht in der App).
+3. Start, UV-Vis-Projekt: rdkit (CDXML → Molmasse), HEIC-Foto mit ISNet/onnxruntime (bzw. GrabCut ohne Download),
+   PDF/SVG/PNG-Export, MuPDF-Rendern, openpyxl.
+4. Beispielprojekt: alle 17 Tabs gebaut, 13 Abbildungen gezeichnet.
+5. Octet-Zeichner (WebEngine) bereit.
+6. ein Export (CV), eine Word-SI, eine PPTX.
+
+| Lauf | Ergebnis | Zeit |
+|---|---|---|
+| Rauchtest allein, aus dem Quellcode (`st_smoke`) | OK, exit 0, „skipped 1 group(s): main“ | 149 s |
+| Rauchtest allein, **gebaute App** (PyInstaller im Container, `dist/Elucida/Elucida`) | OK, exit 0 (109 eigene Module gefunden, build.py mitgeliefert) | 150 s |
+| voller Lauf mit Rauchtest (`st_45`) | **OK, exit 0**; Titel = `st_m` + die 6 Rauchtest-Titel vorn, Spitzen-RSS 11,3 GB | 87 min (Summe +426 s: Rauchtest ~150 s, Rest Rauschen) |
+
+Nicht im Container geprüft: AppImage (kein `appimagetool` hier), Windows- und macOS-Builds – das zeigt erst die CI.
+
+build.yml:
+- Quellcode: voller Selbsttest wie bisher auf Windows, Linux, macOS arm64.
+- Gebaute App (Windows, macOS, Linux) und AppImage: nur `--selftest-group smoke` (Timeouts 30 bzw. 45 min statt 180/320).
+- macOS Intel (nur gebaute App): bis zum Aufteilen nur der Rauchtest; nach dem Aufteilen zusätzlich die plattformnahen
+  Gruppen (siehe Hebel 6).
 
 ## Vereinbarungen mit der Hauptsitzung
 - Phase 1–3 gegen `st_base` auf `35ce4c1`; vor Hebel 4 `origin/main` mergen und voll laufen lassen (neue Titelliste);
