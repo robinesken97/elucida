@@ -20971,20 +20971,23 @@ def _g_nmr_own(ctx):
 
 
 _GROUP_FUNCS = (_g_start, _g_uvvis, _g_electrochem, _g_epr_kinetics, _g_ui, _g_ir_hrms, _g_xray, _g_dft, _g_nmr_synthesis, _g_project_si, _g_publication, _g_comparison, _g_lanes, _g_nmr_own)
+# Frühere Gruppen, die eine Gruppe allein braucht (still als Fixture): aus der Namensanalyse (Dateien, Namen) und aus
+# Einzelläufen (Zustand des Fensters, den die Namen nicht zeigen; Selbsttest Stufe 2, Bericht „Hebel 6“). Unklare
+# Zustandsabhängigkeit = alle früheren Gruppen (konservativ).
 GROUP_NEEDS = {
     'start': (),
     'uvvis': ('start',),
-    'electrochem': ('start',),
+    'electrochem': ('start', 'uvvis'),               # Rückgängig-Verlauf und ε-Daten aus uvvis (allein: w._undo[-2])
     'epr_kinetics': ('start',),
-    'ui': ('start',),
+    'ui': ('start', 'uvvis', 'electrochem', 'epr_kinetics'),   # Klappbereiche, Tab, Daten
     'ir_hrms': ('start',),
     'xray': ('start',),
     'dft': ('start', 'xray'),
     'nmr_synthesis': ('start',),
-    'project_si': ('start', 'ir_hrms', 'xray', 'dft'),
-    'publication': ('start', 'electrochem', 'ir_hrms', 'xray', 'dft', 'project_si'),
-    'comparison': ('start',),
-    'lanes': ('start',),
+    'project_si': ('start', 'uvvis', 'ir_hrms', 'xray', 'dft'),    # Overlay-Einträge aus uvvis
+    'publication': ('start', 'uvvis', 'electrochem', 'ir_hrms', 'xray', 'dft', 'project_si'),
+    'comparison': ('start', 'uvvis', 'electrochem', 'epr_kinetics', 'ui', 'ir_hrms', 'xray', 'dft', 'nmr_synthesis', 'project_si', 'publication'),
+    'lanes': ('start', 'uvvis', 'electrochem', 'epr_kinetics', 'ui', 'ir_hrms', 'xray', 'dft', 'nmr_synthesis', 'project_si', 'publication', 'comparison'),
     'nmr_own': ('start',),
 }
 
