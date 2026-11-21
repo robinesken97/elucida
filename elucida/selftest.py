@@ -144,6 +144,8 @@ class _Section:
     """One part of the selftest: a failure is reported, the next part still runs, so one CI run shows all failures.
     Later parts can fail as a consequence (NameError): read the first FAILED first."""
 
+    WATCH_S = 600                                            # Watchdog: Sekunden bis zur Zeile „still running“
+
     def __init__(self, report, echo=True, out=None):
         # out: Ausgabeordner des echten Laufs -> sections.tsv (je Abschnitt sofort, auch wenn der Lauf hängt) und
         # failed_<Zeile>.png; ohne out (Abschnitte im Abschnitt) weder Datei noch Bild
@@ -154,16 +156,23 @@ class _Section:
     def __enter__(self):
         f = sys._getframe(1)
         self.t0, self.line, self.file, self.n0 = time.perf_counter(), f.f_lineno, f.f_code.co_filename, len(self.report)
-        if self.echo and sys.stderr is not None and sys.platform != "win32":   # hängt ein Abschnitt: alle Stacks ins
-            import faulthandler      # CI-Log alle 10 min; nicht Windows (Stack-Ausgabe beim Zeichnen: access violation)
-            faulthandler.dump_traceback_later(600, repeat=True)
+        self._stop = None
+        if self.echo and sys.stderr is not None:             # hängt ein Abschnitt: alle 10 min eine Zeile ins CI-Log
+            # Nur eine Zeile aus einem eigenen Thread: faulthandler (alle Stacks) stürzte ab, während der Hauptthread
+            # zeichnete (Windows access violation, macOS Intel exit 139); keine Qt-Aufrufe, deshalb ohne _load_note
+            import threading
+            stop, line, t0 = threading.Event(), self.line, self.t0
+            def watch():
+                while not stop.wait(self.WATCH_S):
+                    print(f"section at selftest.py:{line} still running after {time.perf_counter() - t0:.0f} s", flush=True)
+            threading.Thread(target=watch, daemon=True).start()
+            self._stop = stop
         return self
 
     def __exit__(self, kind, ex, tb):
         dt = time.perf_counter() - self.t0
-        if self.echo and sys.stderr is not None and sys.platform != "win32":
-            import faulthandler
-            faulthandler.cancel_dump_traceback_later()
+        if self._stop is not None:
+            self._stop.set()
         if self.echo and dt > 20:                            # CI-Macs brauchten > 3 h: zeigt, welcher Abschnitt Zeit frisst
             print(f"slow section at selftest.py:{self.line}: {dt:.0f} s{_load_note()}", flush=True)
         failed = kind is not None and issubclass(kind, Exception)
@@ -2328,6 +2337,7 @@ def selftest(outdir, with_isnet=False):
             key0_, size0_, lang0_ = w._tab_key, w.size(), get_lang()   # danach wie vorher, auch nach einem Fehler
             try:                                              # (spaetere Abschnitte erwarten Tab, Sprache, leeren CV-Tab)
                 if sys.platform != "win32":                   # Schriftmasse: Windows nur ueber CI-Bilder
+                    from PySide6.QtGui import QFont, QFontInfo, QFontMetrics   # nur fuer die Meldung unten
                     w.resize(1200, 900)
                     w.show()
                     w.show_tab("cv")
@@ -2342,10 +2352,20 @@ def selftest(outdir, with_isnet=False):
                                                  if rt_.widget(k_).isAncestorOf(t_cv.tbl_res)))
                         t_cv.render()
                         pump(0.4)
-                        for tb_ in (t_cv.tbl_res, t_cv.tbl_fit, t_cv.tbl_dk):   # nie quer, nie eine halbe Zeile
+                        for nm_, tb_ in (("tbl_res", t_cv.tbl_res), ("tbl_fit", t_cv.tbl_fit), ("tbl_dk", t_cv.tbl_dk)):
+                            hh_ = tb_.horizontalHeader()       # nie quer, nie eine halbe Zeile
                             assert tb_.isVisible() and tb_.horizontalScrollBar().maximum() == 0 \
                                 and tb_.verticalScrollBar().maximum() == 0, \
-                                (lang_, tb_.horizontalScrollBar().maximum(), tb_.viewport().width())
+                                (lang_, nm_, "hmax", tb_.horizontalScrollBar().maximum(), "vmax",
+                                 tb_.verticalScrollBar().maximum(), "viewport", tb_.viewport().width(), "highlight",
+                                 hh_.highlightSections(), "col: size/head hint/cell hint",
+                                 {c_: (hh_.sectionSize(c_), hh_.sectionSizeHint(c_), tb_.sizeHintForColumn(c_))
+                                  for c_ in range(tb_.columnCount()) if not tb_.isColumnHidden(c_)},
+                                 "font", QFontInfo(hh_.font()).family(), QFontInfo(hh_.font()).pixelSize(), "px",
+                                 "bold", QFontInfo(QFont(hh_.font().family(), hh_.font().pointSize(), QFont.Bold)).family(),
+                                 "'Abschnitt 0123' regular/bold px", hh_.fontMetrics().horizontalAdvance("Abschnitt 0123"),
+                                 QFontMetrics(QFont(hh_.font().family(), hh_.font().pointSize(), QFont.Bold))
+                                 .horizontalAdvance("Abschnitt 0123"))
             finally:
                 if sys.platform != "win32":
                     w.hide()

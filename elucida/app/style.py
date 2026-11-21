@@ -11,7 +11,7 @@ import os
 
 import shiboken6
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QColor, QFontMetrics, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
                                QHeaderView,
@@ -393,18 +393,29 @@ class FitGrid(QTableWidget):
             return hh.setSectionResizeMode(QHeaderView.Interactive)
         need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}   # gilt auch unsichtbar
         width, total = self.viewport().width() - CHECK_COL_W * (len(shown) - len(cols)), sum(need.values())
+        hh.setHighlightSections(True)                    # Qt-Vorgabe; nur die letzte Stufe unten schaltet sie ab
         if max(need.values()) * len(cols) <= width:
             hh.setSectionResizeMode(QHeaderView.Stretch)
         else:
             # Passt es mit voller Luft nicht (auch nicht mit gekürztem Namen), dann mit weniger Luft in den Zellen, bevor
             # die Tabelle quer rollt: unter Linux (DejaVu Sans, breiter) rollten die CV-Ergebnisse bei 1200 px sonst quer.
-            # Kopf und Zellen mit Widget (Farbfeld) werden nie enger; je Seite bleiben 7 px (RichDelegate schneidet bei 6).
-            def tight(i):
+            # Zellen mit Widget (Farbfeld) werden nie enger; je Seite bleiben 7 px (RichDelegate schneidet bei 6).
+            def tight(i, head_w):
                 d = self.itemDelegateForColumn(i) or self.itemDelegate()
                 if not isinstance(d, _CellDelegate) or any(self.cellWidget(r, i) for r in range(self.rowCount())):
-                    return need[i]
-                return max(hh.sectionSizeHint(i), self.sizeHintForColumn(i) - (_CellDelegate.PAD - 2))
-            for nd in (need, {i: tight(i) for i in cols}):
+                    return max(head_w, self.sizeHintForColumn(i))
+                return max(head_w, self.sizeHintForColumn(i) - (_CellDelegate.PAD - 2))
+            # Qt bemisst jeden Kopf in fetter Schrift (der Kopf der Spalte mit gewählter Zelle wird fett), gezeichnet wird
+            # er normal: als letzte Stufe Köpfe in normaler Schrift, dafür ohne fetten Kopf bei Auswahl (sonst „Absch…“).
+            # Unter Linux ist DejaVu Sans Bold ~11 % breiter als normal: „Steigung [µA (V s⁻¹)^-½]“ 174 statt 156 px.
+            bold = hh.font()
+            bold.setBold(True)
+            fb, fr = QFontMetrics(bold), hh.fontMetrics()
+            plain = lambda i: max(hh.minimumSectionSize(), hh.sectionSizeHint(i) - fb.horizontalAdvance(head(i))   # noqa: E731
+                                  + fr.horizontalAdvance(head(i)))
+            steps = (need, {i: tight(i, hh.sectionSizeHint(i)) for i in cols}, {i: tight(i, plain(i)) for i in cols})
+            for k, nd in enumerate(steps):
+                hh.setHighlightSections(k < 2)
                 total = sum(nd.values())
                 if total <= width:
                     hh.setSectionResizeMode(QHeaderView.Fixed)
@@ -421,6 +432,7 @@ class FitGrid(QTableWidget):
                     total = width
                     break
             else:
+                hh.setHighlightSections(True)
                 hh.setSectionResizeMode(QHeaderView.ResizeToContents)
         if len(cols) < len(shown):
             check_columns(self)
