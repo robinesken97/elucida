@@ -50,7 +50,7 @@ jobs:
         run: python tools/build_octet.py
 
       - name: Selbsttest aus dem Quellcode
-        # Intel-Mac: ein voller Selbsttest dauert dort > 3 h; dort läuft nur der Rauchtest der fertigen App
+        # Intel-Mac: ein voller Selbsttest dauert dort > 3 h; dort laufen Rauchtest + plattformnahe Gruppen der fertigen App
         if: matrix.label != 'macos-x64'
         timeout-minutes: 180
         env: { QT_QPA_PLATFORM: offscreen, PYTHONFAULTHANDLER: "1" }
@@ -59,7 +59,7 @@ jobs:
       - name: App bauen
         run: python tools/build.py
 
-      # Gebaute App, AppImage und Intel-Mac: nur der Rauchtest (Gruppe „smoke“: Module aus tools/build.py, Dateien über
+      # Gebaute App und AppImage: nur der Rauchtest (Gruppe „smoke“: Module aus tools/build.py, Dateien über
       # elucida.ROOT, Octet/WebEngine, rdkit, onnxruntime/ISNet, MuPDF, Word/PPTX, Start, Beispiel mit allen Tabs,
       # Export, Word-SI); der volle Selbsttest läuft aus dem Quellcode auf Windows, Linux und macOS arm64
       - name: Rauchtest der fertigen App (Windows)
@@ -72,11 +72,22 @@ jobs:
           Get-Content selftest_app\selftest_report.txt
           exit $p.ExitCode
 
-      - name: Rauchtest der fertigen App (macOS)
+      - name: Rauchtest der fertigen App (macOS arm64)
         timeout-minutes: 45
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && matrix.label != 'macos-x64'
         run: |
           dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-group smoke --selftest-isnet
+          cat selftest_app/selftest_report.txt
+
+      # Intel-Mac (nur fertige App, ältere rdkit/onnxruntime-Wheels): Rauchtest + plattformnahe Gruppen (Leser, Zeichnen,
+      # Word/Excel/PDF-Ausgabe, rdkit, onnxruntime); nicht mehr dort: Projekt/SI, Projektseite, Vergleich, späte Spuren,
+      # Oberfläche, CV/SEC (Liste im Bericht selftest2-REPORT.md)
+      - name: Selbsttest der fertigen App (macOS Intel, Gruppen)
+        timeout-minutes: 120
+        if: matrix.label == 'macos-x64'
+        run: |
+          dist/Elucida.app/Contents/MacOS/Elucida --selftest selftest_app --selftest-isnet \
+            --selftest-group smoke,uvvis,epr_kinetics,ir_hrms,xray,dft,nmr_synthesis
           cat selftest_app/selftest_report.txt
 
       - name: Rauchtest der fertigen App (Linux)
