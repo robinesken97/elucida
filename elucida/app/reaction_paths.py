@@ -82,6 +82,9 @@ class PathHost(QMainWindow):
         from elucida.tabs.dft import DFTTab
         self.tab = DFTTab(self, self.state['dft'])
         self.tab.setParent(self)
+        # Ladungen: Tabelle wie überall (mittig, ohne Gitter); MainWindow macht das per tidy(Tab), hier nur diese Seite
+        # (bewusst eng: die übrigen Pfad-Seiten richtet der Arbeitsbereich selbst ein)
+        STYLE.tidy(self.tab.pop_page.stack)
         self.tab.sync_widgets()
         # erst nach dem Aufbau: Vorgaben, die der Tab ergänzt, sind keine Änderung (Schließen schreibt dann nichts)
         self._saved = deepcopy(self.state)
@@ -207,6 +210,10 @@ class PathWorkspace(QWidget):
         homa_ = getattr(self.host.tab, "homa", None)          # HOMA ebenso (Ringe einer Verbindung)
         if homa_ is not None:
             homa_.card.hide()
+        mr_ = getattr(self.host.tab, "mr_page", None)        # Multireferenz ebenso (Auswertung links je Rechnung)
+        if mr_ is not None:
+            mr_.enabled = False
+            mr_.card.hide()
         for page_ in (self.host.tab.pages.nics_group, self.host.tab.acid_page.group, getattr(self.host.tab, "mr_page", None),
                       homa_.page if homa_ is not None else None, self.host.tab.nbo.page):
             i_ = next((k for k in range(rt_.count()) if page_ is not None

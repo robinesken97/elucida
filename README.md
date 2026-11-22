@@ -52,7 +52,7 @@ Information that has to be consistent. Elucida keeps all of it in one place.
 | Area | Tabs | Highlights |
 |---|---|---|
 | **Compound** | Compound | Name, formula and drawing in one place; built-in structure editor (Octet Draw), ChemDraw files keep working |
-| **Synthesis & analysis** | Synthesis · NMR · IR + EA · HRMS | Scheme, procedure and amount check; Mnova and TopSpin data; OPUS; Bruker `.d` |
+| **Synthesis & analysis** | Synthesis · NMR · IR + EA · HRMS | Scheme, procedure and amount check; MNova and TopSpin data; OPUS; Bruker `.d` |
 | **UV-Vis & photophysics** | UV-Vis (ε) · TD-DFT · Kinetics · Fluorescence | Beer–Lambert fit with confidence interval, measured vs. TD-DFT, spectra over time with first-order fit, ORCA ESD |
 | **Electrochemistry & EPR** | CV · SEC · H-Cell · EPR | E½, Nicholson, Randles–Ševčík, UV/Vis/NIR SEC, H-cell cycling (capacity, Coulombic efficiency), S = ½ fit, thermal decay |
 | **Structure & computation** | X-Ray · DFT · Reaction paths | Mercury-style ORTEP, ORCA and Gaussian, orbitals, multireference, energy diagrams |

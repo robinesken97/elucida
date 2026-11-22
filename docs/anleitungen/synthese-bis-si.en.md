@@ -28,7 +28,7 @@ rounding of the given digits are marked.
 
 In the **NMR** tab add the SVG exports from MestReNova or drag them into the window. Nucleus and order (¹H, ¹³C, …,
 2D) are recognised. The structure comes from the Compound tab and is placed at a free spot; you can drag it in
-the preview. Paste the Mnova multiplet report under **NMR line** (all nuclei in one field); the ¹³C line can also be
+the preview. Paste the MNova multiplet report under **NMR line** (all nuclei in one field); the ¹³C line can also be
 built with **Line from peak labels**.
 
 ## 4. IR and elemental analysis

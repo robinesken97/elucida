@@ -27,6 +27,7 @@ from elucida.app.i18n import T
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.style import HINT_CSS, make_form
+from elucida.core import tables as TBL
 from elucida.core import tddft as X
 from elucida.formats.bwspec import (read_bwspec, is_bwspec, is_merged, merged_quantity,  # noqa: E402,F401
                                     read_spectrum)                                   # (Leser in elucida/formats)
@@ -465,7 +466,7 @@ class SECTab(TABS.FigureTab):
         self.cmb_hm_cmap.blockSignals(True)
         self.cmb_hm_cmap.clear()
         for n_ in names:
-            self.cmb_hm_cmap.addItem(n_.removesuffix("_r"), n_)
+            self.cmb_hm_cmap.addItem(n_[:1].upper() + n_[1:].removesuffix("_r"), n_)   # wie EPR: „Viridis“
         self.cmb_hm_cmap.setCurrentIndex(max(0, self.cmb_hm_cmap.findData(cur)))
         self.cmb_hm_cmap.blockSignals(False)
 
@@ -966,6 +967,7 @@ class SECTab(TABS.FigureTab):
         txt = self.lbl_range.text().strip() if hasattr(self, "lbl_range") else ""
         return [(txt, "")] if txt else []
 
+    @TBL.marks
     def methods_text(self):
         """SI-Text zum scheinbaren Nernst-Fit (nur wenn gefittet). Ausdrücklich „apparent“: Im kontinuierlichen
         Scan hinkt die Dünnschichtzelle nach, E½ und n weichen vom CV ab; CV-Werte haben Vorrang."""
@@ -991,14 +993,14 @@ class SECTab(TABS.FigureTab):
         m = [source or clock,
              steps
              + "Absorbance–potential traces at the indicated wavelengths were fitted with a Nernst-type sigmoid, "
-             "A(E) = A_red + (A_ox − A_red)/[1 + exp(−nF(E − E1/2)/RT)] (T = 298.15 K); E1/2 and n were obtained by a "
-             "grid search (E1/2 in 2 mV steps, n = 0.30–3.00 in steps of 0.05) with A_red and A_ox determined by "
+             "`A`(`E`) = A_red + (A_ox − A_red)/[1 + exp(−`n``F`(`E` − E1/2)/`R``T`)] (`T` = 298.15 K); E1/2 and `n` were obtained by a "
+             "grid search (E1/2 in 2 mV steps, `n` = 0.30–3.00 in steps of 0.05) with A_red and A_ox determined by "
              "linear least squares at each grid point.",
              "As the potential was swept continuously in a thin-layer cell, the electrolysis lags behind the "
-             "applied potential; E1/2 and n are therefore apparent values (E1/2,app, n_app), and the half-wave "
+             "applied potential; E1/2 and `n` are therefore apparent values (E1/2,app, n_app), and the half-wave "
              "potentials from cyclic voltammetry are considered more reliable."]
         res = [f"λ = {lam:g} nm: E1/2,app = {CV._fmt_e(f['e12'], 3)} V vs. {ref}, n_app = {f['n']:.2f}, "
-               f"R² = {TABS.core.r2_text(f['r2'])}" for lam, f in fits]
+               f"`R`² = {TABS.core.r2_text(f['r2'])}" for lam, f in fits]
         return " ".join(m) + "\n\n" + "; ".join(res) + "."
 
     def hover_text(self, x, val, name):

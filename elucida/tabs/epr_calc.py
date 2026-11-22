@@ -18,7 +18,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure as MplFigure
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox,
-                               QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QStackedWidget, QTableWidget,
+                               QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QStackedWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from elucida.app import project as PRJ
@@ -431,6 +431,18 @@ class _Mouse:
             if key.startswith("lbl_") and pos != auto.get(key):
                 lay[key] = pos
         self.p.changed()
+
+
+class _GroupGrid(STYLE.FitGrid):
+    """Hyperfein-Zuordnung: die Atomliste zuerst voll (Köpfe „Experimentell [MHz]“ notfalls zweizeilig, Sichtung fix6);
+    passt sie auch dann nicht, wird sie gekürzt (voller Text im Tooltip der Zelle), nie quer gerollt."""
+
+    def fit(self):
+        self.elide_col = None
+        super().fit()
+        if self.horizontalHeader().sectionResizeMode(0) == QHeaderView.ResizeToContents:
+            self.elide_col = 2
+            super().fit()
 
 
 class SpinPages:
@@ -872,15 +884,14 @@ class SpinPages:
         self.cmb_sim.setToolTip(T("epr_calc_sim_tip"))
         self.cmb_sim.activated.connect(self.changed)
         f.addRow(T("epr_calc_sim"), self.cmb_sim)
-        self.tbl_groups = QTableWidget(0, 4)
+        self.tbl_groups = _GroupGrid(0, 4)
         self.tbl_groups.setHorizontalHeaderLabels([T("epr_calc_group"), T("epr_calc_exp"), T("epr_calc_atoms"), T("epr_calc_mean")])
         self.tbl_groups.verticalHeader().setVisible(False)
         self.tbl_groups.verticalHeader().setDefaultSectionSize(STYLE.CHECK_ROW_H)
         self.tbl_groups.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tbl_groups.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tbl_groups.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.tbl_groups.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)   # Atome nehmen den Rest,
-        self.tbl_groups.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)               # übrige: STYLE.fit_columns
+        self.tbl_groups.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)               # Breiten: _GroupGrid.fit
         self.tbl_groups.itemSelectionChanged.connect(self.row_selected)
         STYLE.empty_note(self.tbl_groups, T("epr_calc_no_groups"))
         f.addRow(self.tbl_groups)
@@ -1089,7 +1100,7 @@ class SpinPages:
         if row is not None and row < len(groups):
             t.selectRow(row)
         t.blockSignals(False)
-        STYLE.fit_columns(t)                               # Nebenspalten nach Inhalt mit Luft, wie alle Listen links
+        t.fit()                                            # Atome voll, Köpfe notfalls zweizeilig (_GroupGrid)
         t.setFixedHeight(t.horizontalHeader().sizeHint().height() + max(1, len(groups)) * STYLE.CHECK_ROW_H + 2)
         self.btn_clear.setEnabled(self.row() is not None)
         self.btn_es.setEnabled(bool(d is not None and d["fermi"]))

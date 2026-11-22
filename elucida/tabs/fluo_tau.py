@@ -25,6 +25,7 @@ from elucida.app.canvas_theme import register as register_canvas
 from elucida.app.i18n import T
 from elucida.app.style import HINT_CSS, WARN_CSS, make_form
 from elucida.core import lifetime as LT
+from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.formats.decay import TIME_UNITS, read_decay
 from elucida.tabs import base as TABS
@@ -443,8 +444,8 @@ class TauPart:
         from elucida.si.lines import chem_html
         st, r = self.st, self.res
         model = "biexponential" if r["n_exp"] == 2 else "monoexponential"
-        cond = [f"λ<sub>exc</sub> = {st['tau_ex']:.0f} nm" if st.get("tau_ex") else "",
-                f"λ<sub>em</sub> = {st['tau_em']:.0f} nm" if st.get("tau_em") else ""]
+        cond = [f"<i>λ</i><sub>ex</sub> = {st['tau_ex']:.0f} nm" if st.get("tau_ex") else "",
+                f"<i>λ</i><sub>em</sub> = {st['tau_em']:.0f} nm" if st.get("tau_em") else ""]
         cond = ", ".join(c for c in cond if c)
         h = f"Fluorescence decay of <b>{html.escape(name)}</b>" + (f" ({cond})" if cond else "")
         if st.get("cap_solvent"):
@@ -512,15 +513,16 @@ class TauPart:
                                    rows))
         return files
 
+    @TBL.marks
     def methods_text(self):
-        """Englisch, nur die benutzten Schritte, dann die Ergebnisse."""
+        """Englisch, nur die benutzten Schritte, dann die Ergebnisse (Größen `x` markiert, si.lines.MARK)."""
         r, st = self.res, self.st
         if r is None:
             return ""
         two = r["n_exp"] == 2
-        model = ("a biexponential model, I(t) = A1·exp(−t/τ1) + A2·exp(−t/τ2) + B," if two
-                 else "a monoexponential model, I(t) = A·exp(−t/τ) + B,")
-        m = [f"The fluorescence decay was fitted with {model} with a constant background B"]
+        model = ("a biexponential model, `I`(`t`) = A_1·exp(−`t`/τ_1) + A_2·exp(−`t`/τ_2) + `B`," if two
+                 else "a monoexponential model, `I`(`t`) = `A`·exp(−`t`/τ) + `B`,")
+        m = [f"The fluorescence decay was fitted with {model} with a constant background `B`"]
         if r["irf"]:
             m[0] += (" by iterative reconvolution with the measured instrument response function (normalized to unit "
                      "area; its temporal shift was fitted) over the whole decay.")
@@ -528,32 +530,32 @@ class TauPart:
             m[0] += (f" to the tail of the decay, starting {r['start']:g} ns after the intensity maximum (without "
                      "deconvolution of the instrument response).")
         if r["weighted"]:
-            m.append("Least squares were weighted with Poisson weights 1/max(N, 1) (N: counts per channel); the "
-                     "quality of the fit is given as reduced χ² with n − p degrees of freedom.")
+            m.append("Least squares were weighted with Poisson weights 1/max(`N`, 1) (`N`: counts per channel); the "
+                     "quality of the fit is given as reduced χ² with `n` − `p` degrees of freedom.")
         else:
             m.append("The data are not photon counts; the fit was unweighted and no χ² is given.")
-        m.append("95% confidence intervals of the lifetimes were obtained from the covariance matrix s²(JᵀWJ)⁻¹ "
-                 "(s² = weighted SSR/(n − p)) and t(0.975; n − p).")
+        m.append("95% confidence intervals of the lifetimes were obtained from the covariance matrix `s`²(`J`ᵀ`W``J`)⁻¹ "
+                 "(`s`² = weighted SSR/(`n` − `p`)) and `t`(0.975; `n` − `p`).")
         if two:
-            m.append("Average lifetimes are given amplitude-weighted, τamp = ΣAiτi/ΣAi, and intensity-weighted, "
-                     "τint = ΣAiτi²/ΣAiτi (no confidence intervals).")
+            m.append("Average lifetimes are given amplitude-weighted, τ_amp = Σ(A_i·τ_i)/ΣA_i, and intensity-weighted, "
+                     "τ_int = Σ(A_i·τ_i²)/Σ(A_i·τ_i) (no confidence intervals).")
         row, _, kind, phi = self.props()
         if row[5]:
-            which = {"single": "the lifetime τ", "amp": "the amplitude-weighted average lifetime τamp",
-                     "int": "the intensity-weighted average lifetime τint"}[kind]
-            m.append(f"Radiative and non-radiative rate constants were calculated as kr = Φ/τ and knr = (1 − Φ)/τ "
+            which = {"single": "the lifetime τ", "amp": "the amplitude-weighted average lifetime τ_amp",
+                     "int": "the intensity-weighted average lifetime τ_int"}[kind]
+            m.append(f"Radiative and non-radiative rate constants were calculated as k_r = Φ/τ and k_nr = (1 − Φ)/τ "
                      f"with the fluorescence quantum yield Φ and {which}.")
         res, us, u = [], self.us(), self.tau_unit()
         for i, (t, ci) in enumerate(zip(r["tau"], r["ci_tau"])):
-            s = f"τ{i + 1 if two else ''} = {fmt_tau(t, us)} {u}"
+            s = f"τ{f'_{i + 1}' if two else ''} = {fmt_tau(t, us)} {u}"
             if ci:
                 s += " (95% interval {} to {} {}".format(*fmt_ci(ci, us), u)
                 s += f"; {core.round_half_up(100 * r['frac'][i]):.0f}% of the intensity)" if two and r["frac"] else ")"
             res.append(s)
         if two and r["tau_amp"]:
-            res.append(f"τamp = {fmt_tau(r['tau_amp'], us)} {u}, τint = {fmt_tau(r['tau_int'], us)} {u}")
+            res.append(f"τ_amp = {fmt_tau(r['tau_amp'], us)} {u}, τ_int = {fmt_tau(r['tau_int'], us)} {u}")
         if r["chi2_red"] is not None:
-            res.append(f"χ²red = {r['chi2_red']:.2f} (n = {r['n']})")
+            res.append(f"χ²_red = {r['chi2_red']:.2f} (`n` = {r['n']})")
         if row[5]:
-            res.append(f"Φ = {row[3]}, kr = {row[5]} s-1, knr = {row[6]} s-1")
+            res.append(f"Φ = {row[3]}, k_r = {row[5]} s-1, k_nr = {row[6]} s-1")
         return " ".join(m) + "\n\n" + "; ".join(res) + "."

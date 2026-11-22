@@ -48,12 +48,12 @@ def display_lines(r, entry):
 class MultireferencePage(QGroupBox):
     def __init__(self, tab):
         super().__init__(tab)
-        self.tab, self.loading = tab, False
-        # Seite wie die übrigen Ergebnisseiten (Sichtung 2026-11-11): keine Karte in der Karte, Felder im Raster der Tabs
-        # (Beschriftung gedämpft, Felder gleich breit), „in SI“ als Chip statt Kästchen
+        self.tab, self.loading, self.enabled = tab, False, True   # enabled: Pfad-Arbeitsbereich schaltet die Karte ab
+        # Auswertung (Ergebnis, Zustände, Vorzeichen) links als Karte `card` im Schritt Auswertung (new-views.md, Robin
+        # 2026-11-22); rechts nur der Text und der Chip „in SI“ (SI-Option, Ausnahme der Regel)
         v = QVBoxLayout(self); v.setContentsMargins(12, 12, 12, 12); v.setSpacing(10)
-        form = STYLE.make_form()
-        form.setVerticalSpacing(STYLE.ROW_GAP); form.setHorizontalSpacing(STYLE.FORM_GAP)
+        self.card = QGroupBox(T("mr_card"))
+        form = STYLE.make_form(self.card)
         self.choice = QComboBox()
         self.si = QCheckBox(T('rp_include_selected_result_in_si'))
         self.si.setProperty("chip", True)
@@ -69,17 +69,19 @@ class MultireferencePage(QGroupBox):
             lb.setProperty("formlabel", True)
             lb.setFixedWidth(STYLE.LABEL_W)
             return lb
-        for text, w in ((T('mr_result'), self.choice), ("", self.si), (T('mr_singlet'), self.singlet),
+        for text, w in ((T('mr_result'), self.choice), (T('mr_singlet'), self.singlet),
                         (T('mr_triplet'), self.triplet), (T('mr_sign'), self.sign)):
-            if isinstance(w, QComboBox):
-                w.setFixedSize(STYLE.VALUE_W, STYLE.CONTROL_H)
+            w.setFixedSize(STYLE.VALUE_W, STYLE.CONTROL_H)
             form.addRow(label(text), w)
-        v.addLayout(form)
         hint = QLabel(T('rp_select_a_method_and_result_block_explicitly_energies_and_weights_retai'))
         hint.setWordWrap(True)
         hint.setStyleSheet(STYLE.HINT_CSS)
-        v.addWidget(hint)
-        STYLE.sci_widgets(self)                              # ΔE_ST in der Auswahlliste wie im Satz
+        form.addRow(hint)
+        STYLE.sci_widgets(self.card)                         # ΔE_ST in der Auswahlliste wie im Satz
+        row = QHBoxLayout()                                  # Chip in natürlicher Breite wie auf der Seite „Ladungen“
+        row.addWidget(self.si)
+        row.addStretch(1)
+        v.addLayout(row)
         self.text = QTextBrowser()
         # ohne gewähltes Ergebnis: Platzhalter groß in der Mitte statt eines leeren Textfelds (wie die anderen Seiten)
         self.none = STYLE.SciLabel("", T('rp_no_multireference_result_selected_supported_orca_6_casscf_sc_nevpt2_an'))
@@ -112,6 +114,7 @@ class MultireferencePage(QGroupBox):
             combo.setCurrentIndex(max(0, combo.findData(e.get(key))))
         self.sign.setCurrentIndex(max(0, self.sign.findData(e.get("mr_gap_sign", "S-T"))))
         self.si.setEnabled(r is not None)
+        self.card.setVisible(self.enabled and self.choice.count() > 1)   # ohne Multireferenz-Ergebnis keine Karte (wie der Reiter)
         self.text.setPlainText("\n\n".join(display_lines(r, e)) if r else "")
         self.stack.setCurrentIndex(1 if r else 0)
         self.loading = False

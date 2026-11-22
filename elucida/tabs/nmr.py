@@ -1338,6 +1338,7 @@ class NMRTab(QWidget):
             b.clicked.connect(fn)
             row.addWidget(b)
         v.addLayout(row)
+        g.setProperty("hug", True)                         # Karte so hoch wie Tabelle und Knöpfe (result_page)
         self.grp_raw = g
 
         g = QGroupBox(T("nmr_selected"))
@@ -1538,6 +1539,9 @@ class NMRTab(QWidget):
         for g, key in ((NMRView.display_card(self._cards), "nmr_raw_display"),
                        (NMRView.style_card(self._cards), "nmr_raw_style")):
             g.setTitle(T(key))
+            if key == "nmr_raw_display":                   # gesperrt (MNova-SVG): der Grund als Satz oben im Schritt
+                self.lbl_view_lock = QLabel(T("nmr_raw_only"), objectName="cardHint", wordWrap=True)
+                self.lv.addWidget(self.lbl_view_lock)
             self.lv.addWidget(g)
             if key == "nmr_raw_display":                   # ein Satz je Schritt, die zweite Karte verschwindet nur
                 self.ed_marks = STYLE.ChemEdit()           # Bedeutung der Marken (*, †) für die Unterschrift
@@ -2401,7 +2405,7 @@ class NMRTab(QWidget):
             except Exception:
                 pass
             rows.append((r["kind"], r["name"], pp, linked.get(r["path"], ""), r["path"]))
-        rows += [("Mnova", Path(m).name, "", "", m) for m in self.st.get("mnova") or []]
+        rows += [("MNova", Path(m).name, "", "", m) for m in self.st.get("mnova") or []]
         return rows
 
     def fill_raw(self):
@@ -2414,6 +2418,7 @@ class NMRTab(QWidget):
                     it.setData(Qt.UserRole, row[4])
                 self.tbl_raw.setItem(i, c, it)
         self.tbl_raw.resizeColumnsToContents()
+        STYLE.fit_check_table(self.tbl_raw, 12)            # so hoch wie die Zeilen (kein leerer Streifen), ab 12 rollen
         mn = self.st.get("mnova") or []
         self.lbl_mnova.setText(", ".join(Path(m).name for m in mn) or T("mnova_none"))
         self.lbl_mnova.setStyleSheet("" if mn else HINT_CSS)
@@ -3026,6 +3031,7 @@ class NMRTab(QWidget):
     def fill_raw_cards(self):
         """Karten Verarbeitung/Referenzierung zum gewählten Spektrum; bei Mnova-Spektren nur der Satz, wofür sie sind."""
         s = self.raw_current()
+        self.lbl_view_lock.setVisible(s is None)
         for g in self.raw_cards:
             g.setEnabled(s is not None)
             if g in self._quiet_cards:                    # Karten ohne eigenen Satz: mit verbergen

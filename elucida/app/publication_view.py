@@ -48,15 +48,15 @@ def open_mnova(parent, paths):
     from PySide6.QtWidgets import QInputDialog
     paths = [Path(p) for p in paths if Path(p).exists()]
     if not paths:
-        return QMessageBox.information(parent, "Mnova", T("mnova_none"))
+        return QMessageBox.information(parent, "MNova", T("mnova_none"))
     p = paths[0]
     if len(paths) > 1:
-        name, ok = QInputDialog.getItem(parent, "Mnova", T("mnova_pick"), [x.name for x in paths], 0, False)
+        name, ok = QInputDialog.getItem(parent, "MNova", T("mnova_pick"), [x.name for x in paths], 0, False)
         if not ok:
             return None
         p = next(x for x in paths if x.name == name)
     if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))):
-        QMessageBox.warning(parent, "Mnova", T("mnova_noapp", name=p.name))
+        QMessageBox.warning(parent, "MNova", T("mnova_noapp", name=p.name))
     return p
 
 
@@ -853,15 +853,24 @@ class PublicationInfoPage(QWidget):
             self.cv_eds[key] = ed
             f2.addRow(T("pub_cv_" + key), ed)
         g3, g4 = self._naming_card(), self._das_card()
-        inner = QWidget()
-        v = QVBoxLayout(inner)
+        # Spalte mit Lesebreite in einer Zeile: eine senkrechte Box fragt die Höhe der Karten für die volle Breite ab
+        # (Hinweise brechen dort seltener um), die Karten bekamen weniger als ihre Mindesthöhe und Felder lagen aneinander
+        col = QWidget()
+        col.setMaximumWidth(2 * STYLE.COLUMN_W)
+        v = QVBoxLayout(col)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(10)                                   # Kartenabstand wie STYLE.tidy für Spalten
         v.addWidget(g)
         v.addWidget(g2)
         v.addWidget(g3)
         v.addWidget(g4)
         v.addStretch(1)
+        inner = QWidget()
+        h = QHBoxLayout(inner)
+        h.addWidget(col, 1)
+        h.addStretch(0)
         STYLE.tidy(inner)
-        v.setContentsMargins(IN, 12, IN, 0)
+        h.setContentsMargins(IN, 12, IN, 0)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(scrolled(inner))

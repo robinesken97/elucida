@@ -1400,7 +1400,7 @@ class IRMSTab(TABS.FigureTab):
             it.setCheckState(Qt.Unchecked if k in off else Qt.Checked)
             it.setData(Qt.UserRole, k)
             self.tbl_ram.setItem(i, 0, it)
-            it = QTableWidgetItem(f"{p['wn']:.1f}")
+            it = QTableWidgetItem(wn_text(p["wn"]))
             it.setFlags(Qt.ItemIsEnabled)
             self.tbl_ram.setItem(i, 1, it)
         self._loading = False
@@ -1965,7 +1965,7 @@ class IRMSTab(TABS.FigureTab):
             it.setCheckState(Qt.Unchecked if k in off else Qt.Checked)
             it.setData(Qt.UserRole, k)
             self.tbl_ir.setItem(i, 0, it)
-            for j, v in ((1, f"{p['wn']:.1f}"), (2, intensity_tag(p) if "rel" in p else "–")):
+            for j, v in ((1, wn_text(p["wn"])), (2, intensity_tag(p) if "rel" in p else "–")):
                 it = QTableWidgetItem(v)
                 it.setFlags(Qt.ItemIsEnabled)
                 self.tbl_ir.setItem(i, j, it)

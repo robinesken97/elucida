@@ -80,18 +80,20 @@ def _tile_pixmap(path, label, structure=False):
     return out
 
 
-def kind_pixmap(kind, key, ratio=1.0):
+def kind_pixmap(kind, key, ratio=1.0, scale=1.0):
     """Platzhalter je Art in der Farbe der Datenart (eine Funktion, hell/dunkel gleich; Formen der Skizze
     export-skizze-2): stick (NMR, IR, MS, PXRD), band (UV-Vis, TD-DFT, SEC, NICS), twopeaks (Fluoreszenz), decay
     (Kinetik, Abklingkurve), loop (CV, H-Cell), derivative (EPR), molecule (Struktur, Packung, Geometrie), lobes
-    (Orbitale, Spindichte, Hyperfein, NTO), table (Tabellen), arrow (Synthese A → B), page (Berichte), curve (sonst)."""
+    (Orbitale, Spindichte, Hyperfein, NTO), table (Tabellen), arrow (Synthese A → B), page (Berichte), curve (sonst).
+    Entwurf 64 × 40, `scale` vergrößert ihn als Ganzes (Tile.symbol_scale)."""
     from PySide6.QtGui import QPainterPath
     w, h = 64, 40
-    pm = QPixmap(round(w * ratio), round(h * ratio))
+    pm = QPixmap(round(w * scale * ratio), round(h * scale * ratio))
     pm.setDevicePixelRatio(ratio)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
+    p.scale(scale, scale)
     col = QColor(STYLE.method_color(key))
     p.setPen(QPen(col, 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
 
@@ -322,7 +324,7 @@ class Tile(QWidget):
         self.sel = Ring(self)                             # Auswahlrahmen nur um die Vorschau, 3 px außen (Entwurf)
         self.pic = QLabel(objectName="tileThumb", alignment=Qt.AlignCenter)
         self.pic.setFixedHeight(STYLE.TILE_THUMB_H)
-        self._pic_css, self._pm = "", None
+        self._pic_css, self._pm, self._sym = "", None, None
         if mark is not None:                             # Vorschaufläche im Ton der Datenart (Entscheidung 99)
             self._pic_css = f"background: {STYLE.method_tint(mark[1])};"
             self.pic.setStyleSheet(self._pic_css)
@@ -353,11 +355,18 @@ class Tile(QWidget):
 
     def set_thumb(self, pixmap, kind=None, key="other"):
         """Vorschau (QPixmap) oder Platzhalter der Art `kind` in der Farbe von `key` (kind_pixmap)."""
+        self._sym = None
         if pixmap is None or pixmap.isNull():
             self.pic.setProperty("placeholder", True)
-            pixmap = kind_pixmap(kind or "curve", key, max(1.0, self.pic.devicePixelRatioF()))
+            self._sym = (kind or "curve", key, self.symbol_scale())
+            pixmap = kind_pixmap(*self._sym[:2], max(1.0, self.pic.devicePixelRatioF()), self._sym[2])
         self._pm = pixmap
         self._show_pm()
+
+    def symbol_scale(self):
+        """Symbol mit der Vorschaufläche: Höhe 70 % ihrer kürzeren Seite, in der Breite höchstens 85 % (Rand)."""
+        w, h = max(self.pic.width(), 1), max(self.pic.height(), 1)
+        return min(0.7 * min(w, h) / 40, 0.85 * w / 64)
 
     def _show_pm(self):
         """Vorschau; gewählt: eingedrückt (Fläche und Bild 92 %, Entscheidung 182 „ganze Karte schrumpft + Ring“)."""
@@ -396,6 +405,8 @@ class Tile(QWidget):
         self.layout().activate()                         # Vorschau an ihrem Platz, bevor der Rahmen ihr folgt
         self.sel.setGeometry(self.pic.geometry().adjusted(-s, -s, s, s))
         self.sel.lower()
+        if self._sym is not None and abs(self.symbol_scale() - self._sym[2]) > 0.01:   # Symbol folgt der Fläche
+            Tile.set_thumb(self, None, *self._sym[:2])        # nicht die überschriebene (ExportCard: Pfad)
         if self.slotbar is not None:                     # am unteren Rand der Vorschau, innerhalb ihres Rahmens
             g = self.pic.geometry()
             self.slotbar.setGeometry(g.x() + 1, g.bottom() - STYLE.TILE_SLOT_H, g.width() - 2, STYLE.TILE_SLOT_H)

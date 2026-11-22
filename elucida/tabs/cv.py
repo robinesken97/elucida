@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 
 from elucida import ROOT
 from elucida.core import images as IMG
+from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.app.i18n import T
@@ -2265,6 +2266,7 @@ class CVTab(TABS.FigureTab):
         kinds = self.pulse_kinds([e for e in self.st["files"] if e["visible"]])
         return setup_text(self.setup_values(), "Cyclic voltammograms" if kinds <= {None} else "Voltammograms")
 
+    @TBL.marks
     def methods_text(self):
         """SI-Text zur Auswertung (englisch, Stil des Abschnitts „Cyclic Voltammetry“ der Gruppen-SI): Gerät,
         Elektroden und Leitsalz stehen im Aufbau-Absatz der SI und fehlen hier bewusst. Danach ein Absatz mit
@@ -2300,7 +2302,7 @@ class CVTab(TABS.FigureTab):
                      f"scan before the onset of the wave (ending at least {st['bl_gap'] * 1000:.0f} mV before the "
                      f"peak potential and before the current exceeded {BL_ONSET * 100:.0f}% of the peak height) and "
                      "extrapolated beneath the peak. For the reverse peak, this baseline was shifted "
-                     "by the change of the capacitive current at the switching potential (current step of 2C·v).")
+                     "by the change of the capacitive current at the switching potential (current step of 2`C`·`v`).")
             n_short = sum(1 for r in self.results if r.get("bl_short"))
             if n_short:
                 m.append(f"For {n_short} of {len(self.results)} peak pairs the scan before the wave was too short for "
@@ -2324,18 +2326,18 @@ class CVTab(TABS.FigureTab):
         fits = self.rate_fits()
         if fits:
             m.append("The scan-rate dependence was analysed by linear least-squares regression of ip vs. v1/2 "
-                     "(Randles–Ševčík) and of log|ip| vs. log v (slope 0.5: diffusion-controlled, 1: surface-"
+                     "(Randles–Ševčík) and of log|ip| vs. log `v` (slope 0.5: diffusion-controlled, 1: surface-"
                      "confined species); uncertainties are given as 95% confidence intervals (t-distribution, "
-                     "n − 2 degrees of freedom).")
+                     "`n` − 2 degrees of freedom).")
             Ds = {k_: self.diffusion(f_) for k_, f_ in fits.items()}
             if any(Ds.values()):
                 m.append("Diffusion coefficients were calculated from the Randles–Ševčík slope of the forward peak for "
-                         "a reversible, freely diffusing couple, ip = 0.4463·n·F·A·c·(n·F·v·D/RT)1/2, with n = "
-                         f"{st['rs_n']}, A = {st['rs_area']:g} cm2, c = {st['rs_conc']:g} mM and T = "
+                         "a reversible, freely diffusing couple, ip = 0.4463·`n`·`F`·`A`·`c`·(`n`·`F`·`v`·`D`/`R``T`)1/2, with `n` = "
+                         f"{st['rs_n']}, `A` = {st['rs_area']:g} cm2, `c` = {st['rs_conc']:g} mM and `T` = "
                          f"{st['rs_temp']:g} °C; their intervals reflect the uncertainty of the slope only.")
-                m.append("D is reported as a result only if ΔEp at every scan rate was at most 10 mV above ΔEp of the "
+                m.append("`D` is reported as a result only if ΔEp at every scan rate was at most 10 mV above ΔEp of the "
                          "internal standard in the same measurement or in a separate measurement at the same scan rate "
-                         "(without one, above 2.22·RT/(nF)); otherwise it is given as an apparent value, because slow "
+                         "(without one, above 2.22·`R``T`/(`n``F`)); otherwise it is given as an apparent value, because slow "
                          "electron transfer or uncompensated resistance lowers the peak current.")
                 # Standard in eigener Messung: ΔE_p nur bei gleicher Scanrate vergleichbar (Entscheidung 171)
                 rr_ = [r for r in self.results if not r["invalid"] and r.get("rate")]
@@ -2346,28 +2348,28 @@ class CVTab(TABS.FigureTab):
                 if miss_:
                     m.append("The internal standard was measured in a separate run"
                              + (f" at {sep_} mV s-1 only" if sep_ else " at a different scan rate")
-                             + f"; at {miss_} mV s-1 the reversible limit 2.22·RT/(nF) + 10 mV was used instead, "
+                             + f"; at {miss_} mV s-1 the reversible limit 2.22·`R``T`/(`n``F`) + 10 mV was used instead, "
                              "because ΔEp of a separate measurement is comparable only at the same scan rate.")
             k0s = {k_: self.k0_info(k_, f_) for k_, f_ in fits.items()}
             used = {how for k_ in k0s.values() if k_ for _, _, how in k_["vals"]}
             if used:
                 srcs = {k_["D_src"] for k_ in k0s.values() if k_ and k_["vals"]}
                 d_src = " and ".join(("the Randles–Ševčík value of the couple" if x == "rs" else
-                                      f"D = {core.sci_text(st['k0_D'])} cm2 s-1") for x in sorted(srcs, reverse=True))
+                                      f"`D` = {core.sci_text(st['k0_D'])} cm2 s-1") for x in sorted(srcs, reverse=True))
                 parts = []
                 if "lav" in used:
-                    parts.append(f"for n·ΔEp of {K0_X_MIN:.0f}–{K0_X_MAX:.0f} mV from Nicholson's kinetic parameter "
-                                 "ψ = k0 (π·D·n·F·v/RT)-1/2, approximated by ψ = (−0.6288 + 0.0021·n·ΔEp)/"
-                                 "(1 − 0.017·n·ΔEp) [R. S. Nicholson, Anal. Chem. 1965, 37, 1351; I. Lavagnini, "
+                    parts.append(f"for `n`·ΔEp of {K0_X_MIN:.0f}–{K0_X_MAX:.0f} mV from Nicholson's kinetic parameter "
+                                 "ψ = k0 (π·`D`·`n`·`F`·`v`/`R``T`)-1/2, approximated by ψ = (−0.6288 + 0.0021·`n`·ΔEp)/"
+                                 "(1 − 0.017·`n`·ΔEp) [R. S. Nicholson, Anal. Chem. 1965, 37, 1351; I. Lavagnini, "
                                  "R. Antiochia, F. Magno, Electroanalysis 2004, 16, 505]")
                 if "kk" in used:
-                    parts.append(f"for n·ΔEp above {K0_X_MAX:.0f} mV according to k0 = 2.18 (D·α·n·F·v/RT)1/2 "
-                                 f"exp(−α2·n·F·ΔEp/RT) with α = {st['k0_alpha']:g} [R. J. Klingler, J. K. Kochi, "
+                    parts.append(f"for `n`·ΔEp above {K0_X_MAX:.0f} mV according to k0 = 2.18 (`D`·α·`n`·`F`·`v`/`R``T`)1/2 "
+                                 f"exp(−α2·`n`·`F`·ΔEp/`R``T`) with α = {st['k0_alpha']:g} [R. J. Klingler, J. K. Kochi, "
                                  "J. Phys. Chem. 1981, 85, 1731]")
                 m.append("Standard heterogeneous electron-transfer rate constants k0 were estimated from ΔEp at each "
-                         f"scan rate with DO = DR = D ({d_src}) and n = {st['rs_n']} (n·ΔEp scaled to 25 °C), "
+                         f"scan rate with DO = DR = `D` ({d_src}) and `n` = {st['rs_n']} (`n`·ΔEp scaled to 25 °C), "
                          + " and ".join(parts) + ". k0 is given as the range over the scan rates; scan rates with "
-                         f"n·ΔEp below {K0_X_MIN:.0f} mV were too close to reversible behaviour to give a value.")
+                         f"`n`·ΔEp below {K0_X_MIN:.0f} mV were too close to reversible behaviour to give a value.")
         res = []
         valid = {}
         for r in self.results:
@@ -2395,14 +2397,14 @@ class CVTab(TABS.FigureTab):
             D = self.diffusion(f)
             if D:
                 bad = self.d_check(self.rate_series(currents=True).get((grp, n)) or [])
-                txt += (f"; {'apparent ' if bad else ''}D = {core.sci_text(D[0])} cm2 s-1 from ip{D[3]} (95% interval "
+                txt += (f"; {'apparent ' if bad else ''}`D` = {core.sci_text(D[0])} cm2 s-1 from ip{D[3]} (95% interval "
                         f"{core.sci_text(D[1]) if D[1] else '0'} to {core.sci_text(D[2])} cm2 s-1"
                         + (f"; couple not reversible at {rates_txt(bad)} mV s-1" if bad else "") + ")")
             k0 = self.k0_info((grp, n), f) if f else None
             if k0 and k0["vals"]:
                 why = {"ir": "recorded without iR compensation",
                        "ref": "ΔEp of the internal standard indicates uncompensated resistance",
-                       "D": "D from a couple that is not reversible"}
+                       "D": "`D` from a couple that is not reversible"}
                 txt += (f"; {'apparent ' if k0['apparent'] else ''}k0 = {sci_range(k0['lo'], k0['hi'])} cm s-1 "
                         f"({len(k0['vals'])} of {len(k0['vals']) + len(k0['skip'])} scan rates"
                         + ("; " + ", ".join(why[w] for w in k0["apparent"]) if k0["apparent"] else "")

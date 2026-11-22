@@ -1015,7 +1015,7 @@ def _g_uvvis(ctx):
                 res_ = t_f.tau.res
                 assert res_ is not None and res_["irf"] and res_["n_exp"] == 2 and t_f.tau.lab_start.isHidden()
                 assert any(c_.get("ls") == "-." for c_ in t_f.F.curves), "excitation curve missing"
-                assert "excitation spectrum (green; λ<sub>em</sub> = 520 nm)" in t_f.si_caption("X")
+                assert "excitation spectrum (green; <i>λ</i><sub>em</sub> = 520 nm)" in t_f.si_caption("X")
                 row_, head_, kind_, phi_ = t_f.tau.props()
                 assert kind_ == "int" and head_ == "τ_int [ns]" and phi_ == 0.5
                 assert row_[5] == core.sci_text(0.5 / (res_["tau_int"] * 1e-9)), row_
@@ -1025,7 +1025,7 @@ def _g_uvvis(ctx):
                 meth_f = t_f.methods_text()
                 assert "reconvolution" in meth_f and "intensity-weighted average lifetime" in meth_f and "Elucida" not in meth_f
                 cap_d = t_f.tau.caption("X")
-                assert cap_d.startswith("Fluorescence decay of <b>X</b> (λ<sub>exc</sub> = 375 nm, λ<sub>em</sub> = 520 nm)")
+                assert cap_d.startswith("Fluorescence decay of <b>X</b> (<i>λ</i><sub>ex</sub> = 375 nm, <i>λ</i><sub>em</sub> = 520 nm)")
                 blocks_f = t_f.si_figure(out / "si_fluo", "X")
                 assert [b_[0] for b_ in blocks_f] == ["image", "figcap", "image", "figcap"], [b_[0] for b_ in blocks_f]
                 assert Path(blocks_f[2][1]).exists() and blocks_f[2][2] <= TABS.SI_MAX_W_CM + 1e-9
@@ -1981,12 +1981,12 @@ def _g_electrochem(ctx):
             mtx_ = [b_[1] for b_ in mb_[1:]]
             assert any(t_.startswith("<b>UV-Vis absorption spectroscopy.</b> ") for t_ in mtx_), mtx_
             assert any(t_.startswith("<b>Cyclic voltammetry.</b> ") and "Nicholson" in t_ for t_ in mtx_), mtx_
-            assert any("E<sub>1/2</sub> = −1.08 V" in t_ for t_ in mtx_) and "mL<sup>-1</sup>" in "".join(mtx_), mtx_
+            assert any("<i>E</i><sub>1/2</sub> = −1.08 V" in t_ for t_ in mtx_) and "mL<sup>-1</sup>" in "".join(mtx_), mtx_
             assert " nm: " not in "".join(mtx_)                 # Word: UV-Vis ohne Bandenliste (Zeile/Bild)
             assert SI.methods_html("A_red, g_lit, E1/2,app, M-1 cm-1") == \
-                "A<sub>red</sub>, g<sub>lit</sub>, E<sub>1/2</sub>,app, M<sup>-1</sup> cm<sup>-1</sup>"
+                "<i>A</i><sub>red</sub>, <i>g</i><sub>lit</sub>, <i>E</i><sub>1/2,app</sub>, M<sup>-1</sup> cm<sup>-1</sup>"
             assert SI.methods_html("k = 3.90 × 10^-2 d-1, t1/2 = 17.8 d, D = 1.00 × 10^-5 cm2 s-1") == \
-                "k = 3.90 × 10<sup>-2</sup> d<sup>-1</sup>, t<sub>1/2</sub> = 17.8 d, D = 1.00 × 10<sup>-5</sup> " \
+                "k = 3.90 × 10<sup>-2</sup> d<sup>-1</sup>, <i>t</i><sub>1/2</sub> = 17.8 d, D = 1.00 × 10<sup>-5</sup> " \
                 "cm<sup>2</sup> s<sup>-1</sup>"                  # Word schrieb „10^-2“ und „t1/2“ wörtlich
             b_m, _ = w.si_blocks(["methods"])
             assert ("heading", "Data processing and fitting") in b_m and not any(b_[0] == "image" for b_ in b_m)
@@ -3988,7 +3988,7 @@ def _g_epr_kinetics(ctx):
             assert not t_e.fit_ok(is_) and T("epr_fit_stale") in t_e.fit_text(is_)
             t_e.figure_spec()
             assert t_e.tbl_fit.rowCount() == 0 and t_e.lbl_info.empty == T("results_none")
-            assert "g = 2.0050" not in t_e.methods_text() and "g = 2.0050" not in t_e.si_caption("X")
+            assert "g = 2.0050" not in t_e.methods_text() and "<i>g</i> = 2.0050" not in t_e.si_caption("X")
             w.epr_state.update(entries=[], bl_order=1, normalize=True)
             t_e.fill_table()
             from elucida.formats import calc as CALC_a_
@@ -4045,7 +4045,7 @@ def _g_epr_kinetics(ctx):
             w.epr_state.update(cap_species="TEST-1^{•+}", cap_solvent="THF", cap_conc="1 mM")   # Unterschrift wie in der SI
             cap_e = t_e.si_caption("TEST-1")
             assert cap_e.startswith("X-Band EPR spectr") and "<b>TEST-1<sup>•+</sup></b> in THF (1 mM)." in cap_e \
-                and "2×<sup>1</sup>H: 12." in cap_e and "g = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
+                and "2×<sup>1</sup>H: 12." in cap_e and "<i>g</i> = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
             w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
             # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
             A_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(1, 1.0, 1.4)], 0.2)
@@ -4690,12 +4690,12 @@ def _g_epr_kinetics(ctx):
             assert "Experimental conditions" not in t_e.si_caption("X")
             w.epr_state["cap_acq"] = True
             cq_ = t_e.si_caption("X")
-            assert "Experimental conditions: ν = 9.4012 GHz, modulation amplitude 0.2 mT, microwave power 0.63 mW, " \
-                "4 scans, T = 120 K." in cq_, cq_
+            assert "Experimental conditions: <i>ν</i> = 9.4012 GHz, modulation amplitude 0.2 mT, microwave power 0.63 mW, " \
+                "4 scans, <i>T</i> = 120 K." in cq_, cq_
             eq_.append(t_e._new("exp", str(eprdir / "acq3.DTA")))          # eine Messung ohne Scanzahl: Angabe entfällt
             w.epr_state["entries"] = eq_
             cq_ = t_e.si_caption("X")
-            assert "scans" not in cq_ and "T = 120 K" in cq_, cq_
+            assert "scans" not in cq_ and "<i>T</i> = 120 K" in cq_, cq_
             assert t_e.hfc_unit_text(0.86, 2.0031) == f"{EPRMOD.hfc_texts(0.86, 2.0031)[1]} MHz"
             w.epr_state["cap_hfc"] = "G"
             assert t_e.hfc_unit_text(0.86, 2.0031) == "8.60 G"
@@ -5248,6 +5248,7 @@ def _g_ir_hrms(ctx):
             w.irms_state["ir_color"] = IRMS.IR_COLOR                    # Knopf folgt dem Zustand (Öffnen/Rückgängig)
             t_ir.sync_widgets()
             assert t_ir.btn_ircolor.property("color") == IRMS.IR_COLOR
+            assert t_ir.btn_ircolor.maximumWidth() == 44, t_ir.btn_ircolor.maximumWidth()   # Farbfeld allein: normale Größe (ui.md)
             t_ir.render()
             t_ir.cmb_mode.setCurrentIndex(t_ir.cmb_mode.findData("A"))
             t_ir.render()
@@ -5694,7 +5695,7 @@ def _g_ir_hrms(ctx):
             tp_fr.res = LT_fr.fit_decay(t_fr, y_fr, 2, irf=(t_fr, irf_fr))
             st_fr["phi"] = "1"
             assert tp_fr.props()[0][6] == "0", tp_fr.props()[0]
-            assert "knr = 0 s-1" in tp_fr.methods_text(), tp_fr.methods_text()
+            assert "k_nr = 0 s-1" in tp_fr.methods_text(), tp_fr.methods_text()
             # B8: Intensitaetsanteil kaufmaennisch gerundet (12.5 -> 13, nicht 12)
             tp_fr.res = dict(tp_fr.res, frac=[0.125, 0.875])
             assert [r_[4] for r_ in tp_fr.fit_rows()[0]] == ["13", "88"], tp_fr.fit_rows()[0]
@@ -6995,7 +6996,7 @@ def _g_xray(ctx):
             # F7: deutsche Platzhalter der CV-Angaben
             from elucida.app import i18n as I18N_r_
             for k_ in ("we", "polish", "ce", "ref", "gas", "ir"):
-                assert I18N_r_.TEXTS[f"pub_cv_ph_{k_}"][0].startswith("z. B."), k_
+                assert I18N_r_.TEXTS[f"pub_cv_ph_{k_}"][0].startswith("Z. B."), k_
             report.append("1.2.0 review fixes: x-ray and SI (site symmetry, one numbering, Ga^-1 o Gb, 1/3, PXRD U, "
                           "references, EA, placeholders): OK")
         with section:
@@ -7967,7 +7968,7 @@ def _g_dft(ctx):
             assert PG.kcal(PG.profile_rows(its_, "E")[0][1]["value"]) == "18.8"           # ΔE = E(SP)
             cap_f4_ = pg_.levels_caption("X")
             assert "DLPNO-CCSD(T)/def2-TZVPP//B3LYP-D4/def2-SVP(CPCM:thf) level of theory." in cap_f4_, cap_f4_
-            assert "T = 298.15 K, p = 1.00 atm" in cap_f4_ and "relative to f4_A" in cap_f4_, cap_f4_
+            assert "<i>T</i> = 298.15 K, <i>p</i> = 1.00 atm" in cap_f4_ and "relative to f4_A" in cap_f4_, cap_f4_
             _, _, n_lv_ = pg_.levels_spec()
             assert any("SMD/CPCM" in n_ for n_ in n_lv_), n_lv_                            # SP ohne Lösungsmittel
             it_lab_ = pg_.tbl_sp.item(1, 1)
@@ -8415,6 +8416,19 @@ def _g_dft(ctx):
             assert pp_.project_tabs.indexOf(ip_) == 3 and pp_.project_tabs.tabText(3) == T("pub_details_tab")
             pp_.edit_info()
             assert pp_.project_tabs.currentWidget() is ip_
+            # breite Seite: Karten mit Lesebreite bekommen ihre volle Höhe (sonst Felder ohne Zeilenabstand); eigene, sichtbare
+            # Seite, weil die Projektseite hier verborgen sein kann und verborgene Layouts nicht anordnen
+            from elucida.app.publication_view import PublicationInfoPage
+            ip2_ = PublicationInfoPage(type("PageStub", (), {"pdir": None})())
+            ip2_.resize(3 * STYLE.COLUMN_W, 600)
+            ip2_.show()
+            QApplication.processEvents()
+            gs_ip_ = [g_ for g_ in ip2_.findChildren(QGroupBox) if g_.isVisible()]
+            short_ip_ = [(g_.title(), g_.height(), g_.heightForWidth(g_.width())) for g_ in gs_ip_
+                         if g_.height() < g_.heightForWidth(g_.width())]
+            ip2_.close()
+            ip2_.deleteLater()
+            assert len(gs_ip_) >= 4 and not short_ip_, (len(gs_ip_), short_ip_)
             ip_.eds["authors"].setText("A. Author, B. Author")
             ip_.eds["authors"].editingFinished.emit()            # Feld verlassen: gespeichert
             assert PUB_d.load(pd_)["authors"] == "A. Author, B. Author" and "A. Author" in pp_.lbl_sub.text()
@@ -10840,8 +10854,14 @@ def _g_project_si(ctx):
             w.dft_tab.mr_page.sync()
             assert w.dft_tab.mr_page.stack.currentWidget() is w.dft_tab.mr_page.text and \
                 "SC-NEVPT2" in w.dft_tab.mr_page.text.toPlainText(), "example multireference page empty"
+            # Auswertung links (Schritt 1 „Auswertung“), rechts nur Text und SI-Chip (new-views.md, Ausnahme SI-Optionen)
+            mp_ = w.dft_tab.mr_page
+            assert not mp_.card.isHidden() and w.dft_tab.steps.pages[1].isAncestorOf(mp_.card), "MR card not in step 2"
+            assert all(mp_.card.isAncestorOf(c_) for c_ in (mp_.choice, mp_.singlet, mp_.triplet, mp_.sign))
+            assert mp_.isAncestorOf(mp_.si) and not mp_.card.isAncestorOf(mp_.si)
             w.dft_state["current"] = e_dft_["uid"]
             w.dft_tab.mr_page.sync()
+            assert mp_.card.isHidden() == (mp_.choice.count() <= 1)              # ohne Ergebnis keine Karte
             calc_x_ = IRMS.ion(formula_x_, "M+H")[2]                     # HRMS: Bericht und Rohdaten
             rep_x_ = IRMS.nearest(w.hrms_tab.ms_report()["mz"], calc_x_)
             lc_x_ = w.hrms_tab.raw_found(calc_x_)
@@ -11428,7 +11448,7 @@ def _g_project_si(ctx):
             dst5_ = out / "f5" / "Paper.mnova"
             dst5_.parent.mkdir(parents=True, exist_ok=True)
             dst5_.write_bytes(b"MNOVA")
-            assert not any("Mnova" in b_.text() for b_ in w.pub_page.findChildren(QPushButton))
+            assert not any("mnova" in b_.text().lower() for b_ in w.pub_page.findChildren(QPushButton))
             opened5_ = []
             real_open5_ = PV5.QDesktopServices                    # Standardprogramm nicht wirklich starten
             PV5.QDesktopServices = type("DS5", (), {"openUrl": staticmethod(lambda u: opened5_.append(u.toLocalFile()) or True)})
@@ -12671,6 +12691,14 @@ def _g_publication(ctx):
             from PySide6.QtWidgets import QComboBox as CB31_, QHeaderView, QLineEdit as LE31_, QTableWidget, QTableWidgetItem
             bad31_ = []
 
+            # Ausnahmen: Größen-/Einheitensymbole, feste Abkürzungen, Dateinamen am Anfang (calc.xyz)
+            CAPS31_ = re.compile(r"(?:[\u03b1-\u03c9\u1e7d]|[a-z](?:$|[\s\[_⁰¹²³½/(\u200b])|qNMR|eq\.|rt$|dd$|\S+\.[A-Za-z0-9]{1,6}(?=\s|$))")
+            # Einträge der Auswahlfelder nur, wenn sie Oberflächentext sind (i18n): Einheiten, Daten und Dateinamen nicht
+            from elucida.app import i18n as I31_
+            li31_ = 1 if I31_._LANG == "en" else 0
+            vals31_ = [v_[li31_] for v_ in I31_.TEXTS.values() if isinstance(v_, tuple) and isinstance(v_[li31_], str)]
+            ui31_ = {v_ for v_ in vals31_ if "{" not in v_}
+            pre31_ = tuple({v_.split("{")[0] for v_ in vals31_ if len(v_.split("{")[0]) >= 3 and "{" in v_})
             def lint31_(root_, where_):
                 # Einzug der Zahlenfelder wie in Text- und Auswahlfeldern; feste Feldhöhe bleibt auch nach dem Umhängen
                 # (das Stylesheet setzt min-height neu: ε-Tab und Vergleich hatten 28–30 statt 32 px); umbrochene
@@ -12690,6 +12718,25 @@ def _g_publication(ctx):
                     if lb_.wordWrap() and lb_.maximumWidth() == STYLE.LABEL_W and lb_.text() and "<" not in lb_.text() and \
                             max(lb_.fontMetrics().horizontalAdvance(t_) for t_ in lb_.text().split()) > STYLE.LABEL_W:
                         bad31_.append((where_, "word", lb_.text()))
+                # Großschreibung (Sichtung 1.3.0): Chips, Platzhalter, Köpfe, Hinweise, Auswahl- und Spezialwerte groß;
+                # klein bleiben nur Größen- und Einheitensymbole und feste Abkürzungen (m/z, qNMR, eq., rt, dd)
+                from PySide6.QtWidgets import (QCheckBox as CK31_, QPlainTextEdit as PT31_, QTableView as TV31_,
+                                               QTreeView as TR31_)
+                texts31_ = [("chip", x_.text().replace("&", "")) for x_ in root_.findChildren(CK31_)]
+                texts31_ += [("placeholder", x_.placeholderText()) for x_ in root_.findChildren(LE31_) + root_.findChildren(PT31_)]
+                texts31_ += [("hint", re.sub(r"<[^>]+>", "", x_.text())) for x_ in root_.findChildren(STYLE.HintLabel)
+                             if not isinstance(x_, STYLE.SiText)]      # SI-Texte sind Inhalt, keine Hinweise
+                for x_ in root_.findChildren(CB31_):
+                    texts31_ += [("combo item", t_) for t_ in map(x_.itemText, range(x_.count()))
+                                 if t_.strip() in ui31_ or t_.startswith(pre31_)]
+                texts31_ += [("special value", x_.specialValueText()) for x_ in root_.findChildren(QAbstractSpinBox)]
+                for v_ in root_.findChildren(TV31_) + root_.findChildren(TR31_):   # Listen der Auswahlfelder haben keine Köpfe
+                    hh31_ = v_.horizontalHeader() if isinstance(v_, TV31_) else v_.header()
+                    texts31_ += [("header", str(v_.model().headerData(c_, Qt.Horizontal) or "")) for c_ in range(hh31_.count())]
+                for kind_, t_ in texts31_:
+                    t_ = t_.strip()
+                    if t_[:1].islower() and not CAPS31_.match(t_):
+                        bad31_.append((where_, "lower case " + kind_, t_))
 
             for i_, k_ in enumerate(w._tab_keys):
                 w.main_tabs.setCurrentIndex(i_)
@@ -12781,6 +12828,8 @@ def _g_publication(ctx):
                             continue
                         hd_ = t_.horizontalHeaderItem(c_)
                         n_ = hh_.fontMetrics().horizontalAdvance(hd_.text()) if hd_ is not None else 0
+                        if hd_ is not None and getattr(hh_, "wrap", False):   # zweizeilige Köpfe (FitGrid, ui.md)
+                            n_ = int(hh_._two_lines(STYLE.sci(hd_.text())).idealWidth())
                         for r_ in range(t_.rowCount()):
                             it_ = t_.item(r_, c_)
                             if it_ is not None and t_.cellWidget(r_, c_) is None:
@@ -18217,6 +18266,79 @@ def _g_lanes(ctx):
             w.show_tab("export")
             pump_y(0.5)
             et_y = w.export_tab
+            # Export-Kacheln: Name zweizeilig, alle Kacheln gleich hoch (Bilder bleiben ausgerichtet); ein erfundener
+            # langer Dateiname ohne Leerzeichen bricht mitten im Wort um, Zeile 2 endet gekürzt, Tooltip voll – auch
+            # mit breiterer Schrift (Windows)
+            from elucida.tabs import export as EXP_y
+            from PySide6.QtGui import QFont as QFont_y
+            assert len({c_.height() for c_ in et_y.cards}) == 1 and all(
+                isinstance(c_.name, EXP_y.TwoLineName) for c_ in et_y.cards), {c_.height() for c_ in et_y.cards}
+            long_y = "Orbitals_example_compound_with_an_invented_very_long_file_name_opt_freq.molden"
+            nm_y = EXP_y.TwoLineName(long_y, objectName="tileName")
+            nm_y.resize(et_y.cards[0].name.width(), nm_y.height())
+            nm_y.show()
+            for wide_y in (100, 130):
+                f_y = QFont_y(nm_y.font())
+                f_y.setLetterSpacing(QFont_y.PercentageSpacing, wide_y)
+                nm_y.setFont(f_y)
+                pump_y(0.1)
+                ls_y = nm_y.text().split("\n")
+                assert len(ls_y) == 2 and ls_y[1].endswith("…") and ls_y[0] and long_y.startswith(ls_y[0]), ls_y
+                assert all(nm_y.fontMetrics().horizontalAdvance(x_) <= nm_y.width() for x_ in ls_y), ls_y
+                assert nm_y.height() == 2 * nm_y.fontMetrics().lineSpacing() and nm_y.toolTip() == long_y
+            nm_y.close()
+            nm_y.deleteLater()
+            # Symbolkarten: Symbol = 70 % der kürzeren Seite der Vorschau und folgt ihr, wenn die Karte wächst;
+            # echte Vorschaubilder bleiben unberührt
+            from elucida.app.tiles import Tile as Tile_y
+            tl_y = Tile_y(("UV", "uvvis"), "x")
+            tl_y.resize(150, tl_y.height())
+            tl_y.set_thumb(None, "band", "uvvis")
+            tl_y.show()
+            pump_y(0.1)
+            sym_y = lambda: tl_y.pic.pixmap().height() / tl_y.pic.pixmap().devicePixelRatio()   # noqa: E731
+            assert abs(sym_y() - 0.7 * min(tl_y.pic.width(), tl_y.pic.height())) <= 1, (sym_y(), tl_y.pic.size())
+            h0_y = sym_y()
+            tl_y.pic.setFixedHeight(2 * tl_y.pic.height())
+            tl_y.setFixedHeight(tl_y.height() + tl_y.pic.height() // 2)
+            tl_y.resize(300, tl_y.height())
+            pump_y(0.1)
+            assert sym_y() > 1.5 * h0_y and abs(sym_y() - 0.7 * min(tl_y.pic.width(), tl_y.pic.height())) <= 1, \
+                (h0_y, sym_y(), tl_y.pic.size())
+            assert tl_y.pic.pixmap().width() / tl_y.pic.pixmap().devicePixelRatio() <= 0.85 * tl_y.pic.width() + 1
+            from PySide6.QtGui import QPixmap as QPixmap_y
+            real_y = QPixmap_y(40, 20)
+            tl_y.set_thumb(real_y)
+            assert tl_y._sym is None and tl_y.pic.pixmap().size() == real_y.size()
+            tl_y.close()
+            tl_y.deleteLater()
+            # dasselbe an einer echten Export-Karte (überschreibt set_thumb mit einem Pfad): Platzhalter, Fenster
+            # breiter, Vorschau höher (resizeEvent zeichnet neu), danach wie vorher
+            ec_y = next(c_ for c_ in et_y.cards if c_.isVisible())
+            pm0_y, sym0_y, ph0_y = ec_y._pm, ec_y._sym, ec_y.pic.property("placeholder")
+            ec_y.set_pixmap(None)
+            pump_y(0.1)
+            esym_y = lambda: ec_y._pm.height() / ec_y._pm.devicePixelRatio()   # noqa: E731  ungedrückt (gewählt: 92 %)
+            near_y = lambda: abs(esym_y() - min(0.7 * min(ec_y.pic.width(), ec_y.pic.height()),     # noqa: E731
+                                                0.85 * ec_y.pic.width() * 40 / 64)) <= 1   # Breite: höchstens 85 %
+            assert ec_y._sym is not None and near_y(), (esym_y(), ec_y.pic.size())
+            ws_y = w.size()
+            w.resize(ws_y.width() + 200, ws_y.height())
+            pump_y(0.2)
+            assert near_y(), (esym_y(), ec_y.pic.size())
+            w.resize(ws_y)
+            pump_y(0.2)
+            hp_y, hc_y, e0_y = ec_y.pic.height(), ec_y.height(), esym_y()
+            ec_y.pic.setFixedHeight(2 * hp_y)
+            ec_y.setFixedHeight(hc_y + hp_y)
+            pump_y(0.1)
+            assert esym_y() > e0_y and near_y(), (e0_y, esym_y(), ec_y.pic.size())
+            ec_y.pic.setFixedHeight(hp_y)
+            ec_y.setFixedHeight(hc_y)
+            if sym0_y is None and pm0_y is not None:
+                ec_y.set_pixmap(pm0_y)
+                ec_y.pic.setProperty("placeholder", ph0_y)
+            pump_y(0.1)
             si_y = lambda k_: next(c_ for c_ in w.export_tab.cards if c_.key == k_)   # noqa: E731  Karte = SI-Auswahl
             assert not si_y("hcell").selected and si_y("cv").selected
             assert all("si" not in c_.feeds for c_ in et_y.cards if c_.key == "syn")   # Bericht: Teile links
@@ -18364,7 +18486,25 @@ def _g_lanes(ctx):
             assert full_z and len(set(full_z)) == 1, rows_z                   # gleiche rechte Kante
             assert all(t_.findChildren(QLabel, "tileCap") for t_ in gr_z.tiles)   # Marke der Datenart auf jeder Kachel
             if sys.platform == "darwin":
-                assert et_z.scroll.verticalScrollBar().maximum() == 0, et_z.scroll.verticalScrollBar().maximum()
+                # einzelne Reiter ohne Bildlauf; „Alle“ darf rollen (Robin, Sichtung 1.3.0: Vorschauen bleiben groß,
+                # Namen zweizeilig), die letzte Reihe muss erreichbar sein
+                seg0_z = et_z.right_tabs.currentIndex()
+                for i_ in range(et_z.right_tabs.count()):
+                    et_z.right_tabs.setCurrentIndex(i_)
+                    pump_z(0.3)
+                    sb_z = et_z.scroll.verticalScrollBar()
+                    if et_z.segments[i_][1] is not None:
+                        assert sb_z.maximum() == 0, (et_z.right_tabs.tabText(i_), sb_z.maximum())
+                        continue
+                    assert et_z.scroll.verticalScrollBarPolicy() != Qt.ScrollBarAlwaysOff
+                    sb_z.setValue(sb_z.maximum())
+                    pump_z(0.2)
+                    last_z = max(et_z.shown(), key=lambda t_: t_.geometry().bottom())
+                    bot_z = last_z.mapTo(et_z.scroll.viewport(), last_z.rect().bottomLeft()).y()
+                    assert 0 < bot_z <= et_z.scroll.viewport().height(), (sb_z.maximum(), bot_z)
+                    sb_z.setValue(0)
+                et_z.right_tabs.setCurrentIndex(seg0_z)
+                pump_z(0.2)
             w.resize(keep_z)
             report.append("Lane A2 item 3c/v4 (project page Export tab: cards instead of dialogs, one tile grid class for "
                           "both pages, group order, badge order, tile opens the compound's Export tab; S3 fits at 1470x920, "
@@ -23589,6 +23729,85 @@ def _g_nmr_own(ctx):
                           "failure -> own drawing or an error with the reason, no crash in the UI; compound opened "
                           "through a symlink imports a file and saves it relative"
                           + (": OK" if link_f5 is not None else " (symlink not permitted here, skipped): OK"))
+        with section:
+            # Lane fix6 1: Methodentexte und Unterschriften des Beispielprojekts im Word-Satz – keine ungesetzten
+            # Exponenten/Indizes („d-1“, „t1/2“, „)1/2“, „τ1“, „kr“, „λex“) außerhalb von <sub>/<sup>
+            from elucida.si import lines as _SI_f6
+            assert _SI_f6.methods_html("(n·F·v·D/RT)1/2, ΔEp = Epa − Epc, (isp)0/ip,f, τ_1, k_nr, χ²_red, A_0") == \
+                ("(n·F·v·D/RT)<sup>1/2</sup>, Δ<i>E</i><sub>p</sub> = <i>E</i><sub>pa</sub> − <i>E</i><sub>pc</sub>, "
+                 "(<i>i</i><sub>sp</sub>)<sub>0</sub>/<i>i</i><sub>p,f</sub>, <i>τ</i><sub>1</sub>, <i>k</i><sub>nr</sub>, "
+                 "<i>χ</i>²<sub>red</sub>, <i>A</i><sub>0</sub>")
+            dp_f6 = demo_pub(w, out / "f6_1_pub")
+            assert w.open_project(dp_f6 / "S3", ask=False, recent=False)
+            bad_f6 = re.compile(r"[A-Za-z]-\d|\b[tE]1/2|\)-?1/2|10\^|(?<![A-Za-z0-9])[A-Za-zτλΦχ]_[A-Za-z0-9]"
+                                r"|λ(?:ex|exc|em|max|abs)\b")
+            tok_f6 = re.compile(r"(?<![A-Za-z0-9])(?:A[0-9]|τ[0-9]|kr|knr|τamp|τint|χ²red|Epa|Epc|ΔEp|ΔBpp|ip|isp|v1/2|µB"
+                                r"|NICSzz|k0|Ea|I0)"
+                                r"(?![A-Za-z0-9])")
+
+            def rest_f6(h_):                                  # Text außerhalb von Hoch-/Tiefstellung, ohne Tags
+                return re.sub(r"<[^>]+>", "", re.sub(r"<(su[bp])>.*?</\1>", "", h_))
+            items_f6 = [(t_, x_) for _, t_, x_ in w.si_methods_items() if x_]
+            assert {"UV-Vis kinetics", "Time-resolved fluorescence", "Cyclic voltammetry", "EPR spectroscopy"} <= \
+                {t_ for t_, _ in items_f6}, [t_ for t_, _ in items_f6]
+            left_f6 = {t_: sorted({m_.group(0) for p_ in (bad_f6, tok_f6)
+                                   for m_ in p_.finditer(rest_f6(_SI_f6.methods_html(x_)))}) for t_, x_ in items_f6}
+            assert not any(left_f6.values()), left_f6
+            caps_f6 = [b_[1] for b_ in w.si_figure_blocks(out / "f6_1_figs", "S3") if b_[0] == "figcap"]
+            assert len(caps_f6) >= 8, len(caps_f6)
+            capl_f6 = sorted({m_.group(0) for c_ in caps_f6 for p_ in (bad_f6, tok_f6)
+                              for m_ in p_.finditer(rest_f6(c_))})
+            assert not capl_f6, capl_f6
+            # 19: Größen kursiv – Quelle markiert einzelne Buchstaben (`k`), methods_html setzt sie und die an der Form
+            # erkennbaren (τ, A_0, E1/2, Epa, ΔBpp); Einheiten, Artikel und Namen bleiben steil; Klartext ohne Markierung
+            from elucida.core import tables as _TBL_f6
+            import zipfile as _zf_f6
+            assert _SI_f6.methods_html("`k` = 1, 17.8 d, A/d, a g standard, S3_EPR, 3.6 C, hν, ε·`c`") == \
+                "<i>k</i> = 1, 17.8 d, A/d, a g standard, S3_EPR, 3.6 C, hν, <i>ε</i>·<i>c</i>"
+            ital_f6 = re.compile(r"<w:r><w:rPr>(?:(?!</w:rPr>).)*<w:i/>(?:(?!</w:rPr>).)*</w:rPr><w:t[^>]*>([^<]*)</w:t>")
+            it_f6 = {}
+            for k_, tab_ in (("kin", w.uvkin_tab), ("fl", w.fl_tab), ("cv", w.cv_tab), ("epr", w.epr_tab),
+                             ("sec", w.sec_tab), ("hcell", w.hcell_tab)):
+                plain_, mk_ = tab_.methods_text(), tab_.methods_text(marked=True)
+                assert "`" not in plain_ and _TBL_f6.unmark(mk_) == plain_, k_
+                if mk_:
+                    d_ = out / f"f6_19_{k_}.docx"
+                    _SI_f6.write_docx(d_, [("char", _SI_f6.methods_html(p_)) for p_ in mk_.split("\n\n")])
+                    x_ = _zf_f6.ZipFile(d_).read("word/document.xml").decode("utf-8")
+                    assert "`" not in x_, k_
+                    it_f6[k_] = set(ital_f6.findall(x_))
+            want_f6 = {"kin": {"A", "k", "t", "n", "s"}, "fl": {"I", "t", "τ", "B", "Φ", "A", "k", "χ", "n", "N"},
+                       "cv": {"E", "i", "n", "F", "A", "c", "v", "D", "T", "R"},
+                       "epr": {"g", "a", "S", "B", "h", "ν", "µ", "R", "I"}, "hcell": {"Q"}}
+            miss_f6 = {k_: sorted(v_ - it_f6.get(k_, set())) for k_, v_ in want_f6.items() if v_ - it_f6.get(k_, set())}
+            assert not miss_f6, miss_f6
+            mb_f6 = "".join(b_[1] for b_ in w.si_methods_blocks()[1:])          # Word-Weg der App: markierte Texte
+            assert "`" not in mb_f6 and all(x_ in mb_f6 for x_ in (
+                "<i>A</i>/<i>d</i> = <i>ε</i>·<i>c</i> + <i>b</i>", "<i>k</i> = ", "<i>g</i> = ", "<i>D</i> = ")), mb_f6
+            capj_f6 = " ".join(caps_f6)
+            assert all(x_ in capj_f6 for x_ in ("<i>λ</i><sub>ex</sub>", "<i>g</i> = ", "Δ<i>B</i><sub>pp</sub>",
+                                                 "<i>ν</i> = ", "<i>T</i> = ", "NICS<sub>zz</sub>")), capj_f6
+            # 2: E$_{1/2}$ in Label-Tabellen ganz tief; 8: Einheit der Kristalldaten nie umbrochen; 9: NMR Schritt 3 nennt
+            # den Grund der Sperre als Satz, genau solange sie gilt
+            assert STYLE.sci(TABS._label_line("E$_{1/2}$ = +0.38 V")).startswith("<i>E</i><sub>1/2</sub> = ")
+            from elucida.tabs import xray as _XR_f6
+            assert "g mol<sup>" in _XR_f6.table_view_html(*w.xray_tab.crystal_table())
+            n_f6 = w.nmr_tab
+            n_f6.fill_selected()
+            assert n_f6.lbl_view_lock.isHidden() == (n_f6.raw_current() is not None), n_f6.raw_current()
+            # 16: IR-Peaktabelle ganzzahlig wie die SI-Zeile (x.5 aufgerundet), Rohwert bleibt, Zelle nur lesbar
+            i_f6 = w.irms_tab
+            pk_f6 = [{"wn": 2858.2}, {"wn": 1700.5}]
+            i_f6.fill_ir_table(pk_f6)
+            assert [i_f6.tbl_ir.item(r_, 1).text() for r_ in (0, 1)] == ["2858", "1701"]
+            assert pk_f6 == [{"wn": 2858.2}, {"wn": 1700.5}]
+            assert not i_f6.tbl_ir.item(0, 1).flags() & Qt.ItemIsEditable
+            i_f6.fill_ir_table(i_f6.peaks())
+            w.close_project()
+            report.append(f"SI texts typeset (lane fix6 1): {len(items_f6)} methods texts and {len(caps_f6)} captions of "
+                          "the example project in Word without unset exponents or indices (d-1, t1/2, )1/2, tau1, kr, "
+                          "lambda_ex, v1/2, muB, NICSzz); quantities italic in Word methods runs and captions, marked "
+                          "source gives the same plain text: OK")
         with section:
             # lane-octetring (Entscheidungen 197/198): Kettendoppelbindungen bleiben seitlich; eine Doppelbindung in einem
             # Ring jeder Größe (auch > 9 Atome) liegt innen; mittige Linien (C=O am Ring) laufen bis zur Achse der

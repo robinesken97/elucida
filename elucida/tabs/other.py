@@ -123,7 +123,7 @@ class OtherTab(TABS.FigureTab):
         self.lst.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.lst.setSelectionMode(QAbstractItemView.SingleSelection)
         self.lst.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.lst.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.lst.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)   # Datei nach Inhalt, Unterschrift den Rest
         self.lst.setMinimumHeight(120)
         self.lst.currentCellChanged.connect(lambda row, *_: self.entry_selected(row))
         v.addWidget(self.lst)
@@ -229,6 +229,8 @@ class OtherTab(TABS.FigureTab):
         for r, x in enumerate(es):
             self.lst.setItem(r, 0, QTableWidgetItem(Path(x["file"]).name))
             self.lst.setItem(r, 1, QTableWidgetItem(x.get("caption", "")))
+            self.lst.item(r, 1).setToolTip(x.get("caption", ""))
+        STYLE.fit_columns(self.lst)
         if e is not None:
             self.lst.selectRow(es.index(e))
         self.det.setEnabled(e is not None)

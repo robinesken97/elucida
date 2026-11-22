@@ -162,17 +162,36 @@ def chem_plain(text):
     return _html.unescape(re.sub(r"<[^>]+>", "", h))
 
 
+from elucida.core.tables import MARK, marks, unmark  # noqa: E402,F401  (Größen-Markierung, gemeinsam)
+
+
 def methods_html(text):
-    """Methodentext (Klartext wie „SI-Text kopieren“) -> HTML für Word: Einheiten „cm-1“/„cm2“ und Zehnerpotenzen
-    „10^-2“ hochgestellt, „E1/2“, „t1/2“ und Indizes mit Unterstrich (A_red, g_lit, n_app) tiefgestellt. Keine
-    Formel-Regel wie chem_html (E1/2 ≠ E₁/2)."""
+    """Methodentext (mit Markierung, sonst Klartext wie „SI-Text kopieren“) -> HTML für Word: Größen kursiv (`k`,
+    Griechisch τ Φ ε ν λ χ, Indexgrößen A_0, E1/2, t1/2, Epa, ip, ΔBpp, v1/2, µB), Einheiten „cm-1“/„cm2“ und
+    Zehnerpotenzen „10^-2“ hochgestellt, Indizes mit Unterstrich (A_red, τ_1, χ²_red) tiefgestellt. Keine Formel-Regel
+    wie chem_html (E1/2 ≠ E₁/2)."""
     h = _html.escape(text or "", quote=False)
     h = re.sub(r"(?<=[A-Za-z])(-\d+)\b", r"<sup>\1</sup>", h)
     h = re.sub(r"10\^(-?\d+)", r"10<sup>\1</sup>", h)   # 3.90 × 10^-2 (core.sci_text)
-    h = re.sub(r"\b([Et])1/2", r"\1<sub>1/2</sub>", h)
+    h = re.sub(r"\b([Et])1/2(,app)?", r"<i>\1</i><sub>1/2\2</sub>", h)   # E1/2,app (SEC) ganz tief
+    h = re.sub(r"\bv1/2\b", "<i>v</i><sup>1/2</sup>", h)   # ip vs. v1/2 (Randles–Ševčík)
+    h = re.sub(r"\)(-?1/2)(?![\d/])", r")<sup>\1</sup>", h)   # (n·F·v·D/RT)1/2, (…)-1/2 (CV)
     h = re.sub(r"\bcm2\b", "cm<sup>2</sup>", h)
     h = h.replace("Fc0/+", "Fc<sup>0/+</sup>")         # wie die CV-Achse und die Unterschrift
-    return re.sub(r"(?<=[A-Za-zνΔ])_([A-Za-z0-9]+)", r"<sub>\1</sub>", h)
+    # CV/EPR-Kürzel wie in der Vorschau (STYLE._SCI): Epa, ΔEp, ip,r, isp, (isp)0, ΔBpp, µB
+    h = re.sub(r"(?<![A-Za-z])E(pa|pc|p)\b", r"<i>E</i><sub>\1</sub>", h)
+    h = re.sub(r"\bi(p,[rfac]|pa|pc|p|sp)\b", r"<i>i</i><sub>\1</sub>", h)
+    h = re.sub(r"\)0(?=[/\s,.;)])", ")<sub>0</sub>", h)
+    h = re.sub(r"ΔBpp\b", "Δ<i>B</i><sub>pp</sub>", h)
+    h = re.sub(r"[µμ]B\b", "<i>µ</i><sub>B</sub>", h)
+    h = re.sub(r"\b([EI])(a|0)\b", r"<i>\1</i><sub>\2</sub>", h)   # Ea (Arrhenius), I0 (EPR-Kinetik)
+    h = re.sub(r"\bk0\b", "<i>k</i><sup>0</sup>", h)              # Standard-Geschwindigkeitskonstante (CV)
+    h = re.sub(r"α2(?=·)", "<i>α</i><sup>2</sup>", h)            # Klingler–Kochi exp(−α2·n·F·ΔEp/RT)
+    h = re.sub(r"\bD([OR])(?= = )", r"<i>D</i><sub>\1</sub>", h)   # DO = DR = D
+    h = re.sub(r"(?<![A-Za-zα-ωΑ-Ω])(?<!<i>)([τλΦεχναψβ])(?![A-Za-zα-ω])", r"<i>\1</i>", h)   # Griechisch: Größe
+    h = re.sub(r"(?<![A-Za-z0-9_])([A-Za-z])(?=_[A-Za-z0-9])", r"<i>\1</i>", h)   # A_0, k_r, Q_theo
+    h = re.sub(r"(?:(?<=[A-Za-zνΔτλΦχ²])|(?<=</i>))_([A-Za-z0-9]+(?:,[A-Za-z0-9]+)*)", r"<sub>\1</sub>", h)
+    return MARK.sub(r"<i>\1</i>", h)
 
 
 def _ea_values(found, els):
@@ -301,6 +320,7 @@ def uvvis_line(results, cfg, solvent: str = ""):
     return plain, html
 
 
+@marks
 def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = True):
     """SI-Text (englisch) zur ε-Bestimmung einer Verdünnungsreihe nach prepare_series: Basislinie, Fit A/d = m·c + b
     (OLS), Cutoff, Unsicherheiten; danach die Ergebnisse je Bande (ε ± SE wie in der Tabelle gerundet, 95-%-KI, n,
@@ -312,12 +332,12 @@ def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = T
     molar = bool(core.conc_factor(cfg))
     unit = {"uM": "µM", "mg/mL": "mg mL-1"}.get(cfg["conc_unit"], cfg["conc_unit"])
     cs = sorted({s_["c"] for s_ in spectra})
-    coef, cunit = ("ε", "cm-1 M-1") if molar else ("a", "L g-1 cm-1")
+    coef, cunit = ("ε", "cm-1 M-1") if molar else ("`a`", "L g-1 cm-1")   # Größen markiert (MARK)
     m = ["Molar absorption coefficients were determined from a dilution series" if molar else
-         "Specific absorption coefficients a (no molar mass given) were determined from a dilution series",
+         "Specific absorption coefficients `a` (no molar mass given) were determined from a dilution series",
          ""]
     m[0] += (f"{' in ' + solvent if solvent else ''} ({len(cs)} concentrations, {cs[0]:g}–{cs[-1]:g} {unit}, "
-             f"path length {cfg['path_length_cm']:g} cm" + (f"; mass concentrations converted with M = "
+             f"path length {cfg['path_length_cm']:g} cm" + (f"; mass concentrations converted with `M` = "
                                                             f"{float(cfg['molar_mass_g_mol']):.2f} g mol-1"
                                                             if molar and cfg["conc_unit"] == "mg/mL" else "") + ").")
     bl = cfg.get("_baseline_info")
@@ -327,7 +347,7 @@ def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = T
                "(the range of lowest absorbance of the most concentrated solution)")
         if cfg.get("baseline_mode") == "series" and len(spectra) >= 3:
             txt += ("; a contribution proportional to the concentration in this range (linear regression of the "
-                    "window absorbance against c, kept if the slope exceeded twice its standard error) was retained")
+                    "window absorbance against `c`, kept if the slope exceeded twice its standard error) was retained")
         m[1] = txt + "."
     sampling = "interpolated at the band wavelength"
     if cfg.get("avg_window_nm"):
@@ -335,19 +355,19 @@ def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = T
     snap = (f", which was set to the local maximum within ±{cfg['snap_window_nm']:g} nm of the most concentrated "
             "unsaturated spectrum" if cfg.get("snap_window_nm") else "")
     cuts = sorted({float(r["cutoff"]) for r in fitted})
-    cut_txt = (f"A ≤ {cuts[0]:g}" if len(cuts) == 1 else
-               f"A ≤ {cfg['max_abs_fit']:g} (band-specific limits: " + ", ".join(
+    cut_txt = (f"`A` ≤ {cuts[0]:g}" if len(cuts) == 1 else
+               f"`A` ≤ {cfg['max_abs_fit']:g} (band-specific limits: " + ", ".join(
                    f"{core.fmt_lam(r['lam'])} nm: {r['cutoff']:g}" for r in fitted if r["cutoff"] != cfg["max_abs_fit"]) + ")")
-    model = "A/d = " + coef + "·c + b" if cfg["fit_intercept"] else "A/d = " + coef + "·c"
-    dof = "n − 2" if cfg["fit_intercept"] else "n − 1"
+    model = "`A`/`d` = " + coef + "·`c` + `b`" if cfg["fit_intercept"] else "`A`/`d` = " + coef + "·`c`"
+    dof = "`n` − 2" if cfg["fit_intercept"] else "`n` − 1"
     m.append(f"At each band, the absorbance ({sampling}{snap}) divided by the path length was fitted against the "
              f"concentration by ordinary least squares ({model}), using only points with {cut_txt} to stay in "
              f"the linear range; {coef} is the slope. Uncertainties are given as standard error (SE) and 95% "
-             f"confidence interval (t(0.975; {dof})·SE); "
+             f"confidence interval (`t`(0.975; {dof})·SE); "
              + (f"{coef} and its uncertainties are given as integers." if molar
                 else f"{coef} was rounded to the precision of the SE."))
     if any(r.get("hidden") for r in fitted):
-        m.append(f"Bands with R² < {cfg['min_r2']:g} or deselected bands are listed but not labelled in the figure.")
+        m.append(f"Bands with `R`² < {cfg['min_r2']:g} or deselected bands are listed but not labelled in the figure.")
     if not with_results:
         return " ".join(x for x in m if x)
     res = []
@@ -358,7 +378,7 @@ def eps_methods(cfg, results, spectra, solvent: str = "", with_results: bool = T
         sh = " (sh)" if r.get("shoulder") and (cfg.get("labels") or {}).get("mark_shoulders") else ""
         txt = f"{core.fmt_lam(r['lam'])} nm{sh}: {coef} = {v}" + (f" ± {e}" if e else "") + f" {cunit}"
         txt += f" (SE; 95% CI ± {ci_s}" if ci_s else " ("
-        txt += f"{'; ' if ci_s else ''}n = {r['fit']['n']}, R² = {core.r2_text(r['fit']['r2'])})"
+        txt += f"{'; ' if ci_s else ''}`n` = {r['fit']['n']}, `R`² = {core.r2_text(r['fit']['r2'])})"
         if r.get("hidden"):
             txt += " [not in figure]"
         res.append(txt)

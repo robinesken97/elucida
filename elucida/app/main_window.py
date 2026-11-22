@@ -970,6 +970,7 @@ class MainWindow(QMainWindow):
         # Kästchen (Bande im Bild) in eigener Spalte 0 ohne Text; λ steht in Spalte 7, die gleich dahinter angezeigt wird
         # (n, ε, b, R², Cutoff, Hinweise behalten ihre Nummern 1–6)
         self.table = STYLE.FitGrid(0, 8)              # über die ganze Seite wie alle Ergebnistabellen
+        self.table.setProperty("hug", True)           # so hoch wie die Zeilen, kein leerer Streifen darunter
         self.table.setHorizontalHeaderLabels(["", T("col_n"), T("col_coeff"), T("col_intercept") + " [cm⁻¹]", T("col_r2"),
                                               T("col_cut"), T("col_warn"), T("col_lam")])
         hh_ = self.table.horizontalHeader()
@@ -997,11 +998,11 @@ class MainWindow(QMainWindow):
         si_w = QWidget()
         si_l = QVBoxLayout(si_w)
 
-        def si_card(title, copy, tip=""):
+        def si_card(title, copy, tip="", methods=False):
             g_, body_ = STYLE.card(title)                    # Karten des ε-Tabs sind QFrame#card (keine QGroupBox)
             gv_ = QVBoxLayout(body_)
             gv_.setContentsMargins(0, 0, 0, 0)
-            lb_ = STYLE.SiText()                          # Blocksatz, Formelzeichen wie im Satz
+            lb_ = STYLE.SiText(methods=methods)           # Blocksatz, Formelzeichen wie im Satz
             b_ = STYLE.copy_button(tip)
             b_.clicked.connect(copy)
             gv_.addWidget(lb_)
@@ -1010,7 +1011,7 @@ class MainWindow(QMainWindow):
             return lb_
         self.txt_si = si_card(T("si_uv_title"), lambda: IRMS.copy_rich(*self._uv_line), T("si_uv_hint"))
         self.lbl_eps_cap = si_card(T("si_caption_title"), self.copy_eps_caption)
-        self.lbl_eps_methods = si_card(T("si_methods_title"), self.copy_eps_methods, T("si_copy_methods_tip"))
+        self.lbl_eps_methods = si_card(T("si_methods_title"), self.copy_eps_methods, T("si_copy_methods_tip"), methods=True)
         si_l.addStretch(1)
         self._uv_line = ("", "")
         self.lbl_cap_bar = TABS.CaptionLabel()            # Fußleiste rechts wie in den anderen Tabs
@@ -4324,10 +4325,10 @@ class MainWindow(QMainWindow):
         self.lbl_eps_cap.setText(cap)
         self.lbl_cap_bar.set_full(T("caption_bar") + " · " + html.unescape(re.sub(r"<[^>]+>", "", cap)))
         try:
-            txt = self.eps_methods_text()
+            txt = self.eps_methods_text(marked=True)        # Anzeige wie Word (Größen kursiv), kopiert wird Klartext
         except Exception:                                    # der Text ist Zugabe: nie das Zeichnen stören
             txt = ""
-        self.lbl_eps_methods.setText(html.escape(txt) or T("si_methods_none"))
+        self.lbl_eps_methods.setText(txt or T("si_methods_none"))
 
     def eps_caption(self, g, path_cm, name):
         """Bildunterschrift der Serie für die SI (HTML): Lösungsmittel aus der Serie, Schichtdicke aus dem Bild."""
@@ -4365,8 +4366,8 @@ class MainWindow(QMainWindow):
                 out.append((g, line))
         return out
 
-    def eps_methods_text(self, groups=None, with_results=True):
-        """SI-Text zur ε-Bestimmung je Serie (englisch, si.lines.eps_methods)."""
+    def eps_methods_text(self, groups=None, with_results=True, marked=False):
+        """SI-Text zur ε-Bestimmung je Serie (englisch, si.lines.eps_methods; marked: Größen `x` für Word)."""
         out = []
         for g in (groups or list(self.groups)):
             try:
@@ -4376,7 +4377,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(T("si_series_failed", name=g, error=ex), 12000)
                 continue
             txt = SI.eps_methods(cfg2, results, spectra, (self.series.get(g) or {}).get("solvent", ""),
-                                 with_results)
+                                 with_results, marked=marked)
             if txt:
                 out.append((f"Series {'sample' if g == core.DEFAULT_SERIES else g}: "   # englischer Text: nie „probe“
                             if len(self.groups) > 1 and g else "") + txt)
@@ -4670,10 +4671,11 @@ class MainWindow(QMainWindow):
         return self.si_xray_blocks(es) if es else []
 
     def si_methods_items(self):
-        """Methodentexte der Tabs, die fitten -> [(Kapitel der Gesamt-SI, Titel, Text)] (Text leer ohne Fit)."""
+        """Methodentexte der Tabs, die fitten -> [(Kapitel der Gesamt-SI, Titel, Text mit Größen-Markierung `x`, nur
+        für methods_html)] (Text leer ohne Fit)."""
         self.collect_globals()
         items = [("uvvis", "UV-Vis absorption spectroscopy",          # Word: ohne Bandenliste (steht in Zeile/Bild)
-                  self.eps_methods_text(with_results=False) if self.groups else "")]
+                  self.eps_methods_text(with_results=False, marked=True) if self.groups else "")]
         for key, title, t in (("uvvis", "UV-Vis kinetics", self.uvkin_tab),
                               ("uvvis", "Time-resolved fluorescence", self.fl_tab), ("cv", "Cyclic voltammetry", self.cv_tab),
                               ("sec", "UV-Vis spectroelectrochemistry", self.sec_tab),
@@ -4683,7 +4685,7 @@ class MainWindow(QMainWindow):
                 drawn = t.figure_spec() is not None                    # Ergebnisse/Fits aktuell
                 # Lebensdauer auch ohne Spektren; EPR-Rechnung ohne Messung: gleiche Bedingung wie ihre Abbildungen
                 calc = t is self.epr_tab and bool(t.calc_pages.figures())
-                txt = t.methods_text() if drawn or calc or t is self.fl_tab else ""
+                txt = t.methods_text(marked=True) if drawn or calc or t is self.fl_tab else ""   # Word: Größen kursiv
             except Exception as ex:
                 self.skip_part(ex, part=title)
                 txt = ""

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QSpinBox,
                                QTableWidget, QTableWidgetItem, QVBoxLayout)
 
+from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.tabs import epr_calc as CALC
@@ -1592,7 +1593,7 @@ class EPRTab(TABS.FigureTab):
         dB, calib_t = self.calibration_shift()
         isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e) and not (dB and e.get("fit_to") == calib_t)]
         for e in isos:
-            parts = [f"g = {g_text(e['g'])}", f"ΔB<sub>pp</sub> = {e['lw']:.3f} mT"]
+            parts = [f"<i>g</i> = {g_text(e['g'])}", f"Δ<i>B</i><sub>pp</sub> = {e['lw']:.3f} mT"]
             hfc = [f"{n}×{nucleus_html(nm)}: {self.hfc_unit_text(a, e['g'])}"
                    for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", "")))]
             if hfc:
@@ -1600,11 +1601,11 @@ class EPRTab(TABS.FigureTab):
             h += " Fitting parameters" + (f" ({html.escape(e['label'])})" if len(isos) > 1 else "") + ": " + \
                 "; ".join(parts) + "."
         if dB:
-            h += f" The magnetic field was referenced to a standard (g = {g_text(st['calib_g'])})."
+            h += f" The magnetic field was referenced to a standard (<i>g</i> = {g_text(st['calib_g'])})."
         return h
 
-    ACQ_ITEMS = (("mw_GHz", "ν = {:.4f} GHz"), ("mod_mT", "modulation amplitude {:.3g} mT"),
-                 ("power_mW", "microwave power {:.3g} mW"), ("n_scans", "{:d} scans"), ("T_K", "T = {:.0f} K"))
+    ACQ_ITEMS = (("mw_GHz", "<i>ν</i> = {:.4f} GHz"), ("mod_mT", "modulation amplitude {:.3g} mT"),
+                 ("power_mW", "microwave power {:.3g} mW"), ("n_scans", "{:d} scans"), ("T_K", "<i>T</i> = {:.0f} K"))
 
     def acq_text(self, exps):
         """Aufnahmeparameter aus den Messdateien (nur, was in allen gezeigten Messungen steht und gleich ist, wie
@@ -2506,6 +2507,7 @@ class EPRTab(TABS.FigureTab):
         n = sum(1 for e in es if e.get("kind") == "exp")
         return [(T("kpi_spectra"), n)] + ([(T("kpi_sims"), len(es) - n)] if len(es) > n else [])
 
+    @TBL.marks
     def methods_text(self):
         """SI-Text (englisch) zu Verarbeitung und Fits der sichtbaren Einträge, nur die benutzten Schritte, in der
         Reihenfolge der Verarbeitung; danach die Ergebnisse (S = ½-Fits, Kalibrierung, Kinetik)."""
@@ -2523,18 +2525,18 @@ class EPRTab(TABS.FigureTab):
         m, res = [], []
         if st.get("ref_freq"):
             m.append(f"Field axes were scaled to a common microwave frequency of {st['ref_freq']:g} GHz "
-                     "(B·ν_ref/ν).")
+                     "(`B`·ν_ref/ν).")
         dB, calib_t = self.calibration_shift()
         if dB:
             ref = next(x for x in st["entries"] if x["uid"] == st["calib_uid"])
             m.append(f"The magnetic field was calibrated with a reference spectrum (g_lit = {g_text(st['calib_g'])}): its "
-                     "simulation was fitted (see below), and the field offset ΔB = B_res(g_fit) − B_res(g_lit) at the "
+                     "simulation was fitted (see below), and the field offset Δ`B` = B_res(g_fit) − B_res(g_lit) at the "
                      "microwave frequency of the reference was subtracted from the field axes of all other spectra.")
-            res.append(f"Field calibration: g_fit = {g_text(ref['g'])}, ΔB = {dB:+.3f} mT".replace("-", "−"))
+            res.append(f"Field calibration: g_fit = {g_text(ref['g'])}, Δ`B` = {dB:+.3f} mT".replace("-", "−"))
         steps = []
         darks = sorted({round(e.get("dark_k", 1.0), 3) for e in exps if e.get("dark")})
         if darks:
-            steps.append("a dark spectrum was subtracted (I_light − k·I_dark, k = " + ", ".join(f"{k:g}" for k in darks)
+            steps.append("a dark spectrum was subtracted (I_light − `k`·I_dark, `k` = " + ", ".join(f"{k:g}" for k in darks)
                          + "; interpolated onto the field axis of the measurement)")
         bm, regs = bl_method(st), ranges(st["bl_regions"])
         if bm == "poly":
@@ -2575,34 +2577,34 @@ class EPRTab(TABS.FigureTab):
         isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e)]
         if isos:
             lor = any(e.get("fit_lorentz") for e in isos)
-            m.append("Isotropic S = 1/2 spectra were simulated to first order (lines of groups of equivalent nuclei "
+            m.append("Isotropic `S` = 1/2 spectra were simulated to first order (lines of groups of equivalent nuclei "
                      "with binomial/multinomial intensities, first-derivative pseudo-Voigt line shape with "
-                     "peak-to-peak width ΔBpp). g, the hyperfine coupling constants a and ΔBpp"
+                     "peak-to-peak width ΔBpp). `g`, the hyperfine coupling constants `a` and ΔBpp"
                      + (" and the Lorentzian fraction" if lor else "") + " were optimized by Levenberg–Marquardt "
                      "least squares"
                      + (" after a coarse grid search over the field position and a common scaling factor of the "
                         "coupling constants" if any(not e["fit"].get("joint") for e in isos) else "")
                      + "; the amplitude was determined linearly."
-                     + (" Where several S = 1/2 species were assigned to one spectrum, the parameters of all species "
+                     + (" Where several `S` = 1/2 species were assigned to one spectrum, the parameters of all species "
                         "were optimized simultaneously, starting from the parameters of the individual simulations, "
                         "with one linear amplitude per species." if any(e["fit"].get("joint") for e in isos) else "")
                      + " Parameter uncertainties were not derived from the fit (residuals of a digitized spectrum "
                      "are correlated).")
             if not dB:
-                m.append("g-factors were calculated from the microwave frequency and the field axis as recorded "
-                         "(hν = g·µB·B); no field calibration against a g standard was applied.")
+                m.append("`g`-factors were calculated from the microwave frequency and the field axis as recorded "
+                         "(`h`ν = `g`·µB·`B`); no field calibration against a `g` standard was applied.")
             for e in isos:
-                parts = [f"g = {g_text(e['g'])}"]
+                parts = [f"`g` = {g_text(e['g'])}"]
                 for n, I_, a in self.iso_groups(e):
                     mt, mhz = hfc_texts(a, e["g"])
                     if st.get("cap_hfc") == "G":                  # Einheit wie in der Unterschrift gewählt
                         mt = self.hfc_unit_text(a, e["g"]).replace(" G", "")
-                    parts.append(f"a({n} × I = {I_:g}) = {mt} {'G' if st.get('cap_hfc') == 'G' else 'mT'} "
+                    parts.append(f"`a`({n} × `I` = {I_:g}) = {mt} {'G' if st.get('cap_hfc') == 'G' else 'mT'} "
                                  f"({mhz} MHz)")
                 parts.append(f"ΔBpp = {e['lw']:.3f} mT")
                 if e.get("fit_lorentz"):
                     parts.append(f"Lorentzian fraction {e.get('lorentz', 0.0):.2f}")
-                parts.append(f"R² = {core.r2_text(e['fit']['r2'])}")
+                parts.append(f"`R`² = {core.r2_text(e['fit']['r2'])}")
                 res.append(f"{e['label']}: " + ", ".join(parts))
         if st["mode"] == "intensity":
             win = (ranges(st["int_window"]) or [None])[0]
@@ -2616,14 +2618,14 @@ class EPRTab(TABS.FigureTab):
                 m.append(f"EPR intensities were taken as peak-to-peak amplitudes{wtxt}.")
             else:
                 m.append(f"EPR intensities were obtained by fitting a Gaussian on a linear baseline{wtxt}, "
-                         "y = p1·exp[−(B − p2)²/p3] + p4·B + p5, by Levenberg–Marquardt least squares (centre p2 "
+                         "`y` = p1·exp[−(`B` − p2)²/p3] + p4·`B` + p5, by Levenberg–Marquardt least squares (centre p2 "
                          "constrained to the window and at least 3% of its width from the edges, p3 = 3–50 mT²); "
                          "|p1| was used as intensity.")
             sr = getattr(self, "spin_result", None) if st["int_x"] == "conc" else None
             if sr:
                 c_ = sr["cal"]
                 m.append("Spin concentrations were determined from the double integrals with a calibration against "
-                         f"reference samples of known concentration (n = {c_['n']}; "
+                         f"reference samples of known concentration (`n` = {c_['n']}; "
                          + ("straight line through the origin" if c_["origin"] else
                             "unweighted linear least-squares fit with intercept") + ")"
                          + (", all spectra processed identically" if sr["same"] else "")
@@ -2633,9 +2635,9 @@ class EPRTab(TABS.FigureTab):
                 for lab, _, c in sr["samples"]:
                     note = (" (extrapolated beyond the calibration range)" if lab in sr["extra"] else
                             " (negative: below the intercept of the calibration)" if lab in sr["neg"] else "")
-                    res.append(f"{lab}: c(spin) = {c:.3g} {sr['unit']}".replace("-", "−") + note)
+                    res.append(f"{lab}: `c`(spin) = {c:.3g} {sr['unit']}".replace("-", "−") + note)
             if st["int_curie"]:
-                m.append("Intensities were multiplied by the temperature (I·T)"
+                m.append("Intensities were multiplied by the temperature (`I`·`T`)"
                          + (" before fitting." if meth == "gauss" else "."))
             if st.get("T_offset"):
                 m.append(f"Temperatures were corrected by {st['T_offset']:+g} K.".replace("-", "−"))
@@ -2643,60 +2645,60 @@ class EPRTab(TABS.FigureTab):
             if iso:
                 loss = st["kin_loss"]
                 m.append(("Isothermal decays" if all(q["fit"]["k"] > 0 for q in iso) else "Isothermal intensity changes")
-                         + " were analysed as first-order processes, I(t) = I0·exp(−k·t), by least squares "
+                         + " were analysed as first-order processes, `I`(`t`) = I0·exp(−`k`·`t`), by least squares "
                          "on the measured intensities (I0 determined linearly), separately for each temperature "
                          f"(spectra whose recorded temperature agrees after rounding to {ISO_T_STEP:g} K)"
                          + (f"; only the data up to an intensity loss of {loss:g}% relative to the first spectrum of "
                             "a series were fitted" if loss < 100 else "")
-                         + ". 95% confidence intervals of k were obtained from s²(JᵀJ)⁻¹ with s² = SSR/(n − 2) and "
-                         "t(0.975; n − 2).")
+                         + ". 95% confidence intervals of `k` were obtained from `s`²(`J`ᵀ`J`)⁻¹ with `s`² = SSR/(`n` − 2) and "
+                         "`t`(0.975; `n` − 2).")
                 for q in iso:
                     f = q["fit"]
-                    res.append((f"T = {q['T']:.1f} K: " if q["T"] is not None else "")
-                               + f"k = {sci_signed(f['k'])} s-1"
+                    res.append((f"`T` = {q['T']:.1f} K: " if q["T"] is not None else "")
+                               + f"`k` = {sci_signed(f['k'])} s-1"
                                + (f" (95% interval {sci_signed(f['ci_k'][0])} to {sci_signed(f['ci_k'][1])} s-1)"
-                                  if f["ci_k"] else "") + f", n = {f['n']}"
+                                  if f["ci_k"] else "") + f", `n` = {f['n']}"
                                + (" (intensity increased; no half-life)" if f["k"] < 0 else ""))
                 a = getattr(self, "arr_result", None)
                 if a:
-                    m.append("Activation parameters were obtained from an unweighted linear least-squares fit of ln k "
-                             "against 1/T (ln k = ln A − Ea/RT), one point per temperature"
-                             + ("; 95% confidence intervals from the scatter about the line with t(0.975; n − 2)."
+                    m.append("Activation parameters were obtained from an unweighted linear least-squares fit of ln `k` "
+                             "against 1/`T` (ln `k` = ln `A` − Ea/`R``T`), one point per temperature"
+                             + ("; 95% confidence intervals from the scatter about the line with `t`(0.975; `n` − 2)."
                                 if a["ci_Ea"] else "; with two temperatures no confidence interval can be given."))
                     ci = a["ci_Ea"]
                     res.append(f"Ea = {a['Ea'] / 1000:.1f} kJ mol-1 ({a['Ea'] / 4184:.1f} kcal mol-1"
                                + (f"; 95% interval {ci[0] / 1000:.1f} to {ci[1] / 1000:.1f} kJ mol-1" if ci else "")
-                               + f"), ln(A/s-1) = {a['lnA']:.2f}".replace("= -", "= −")   # wie die Unterschrift
-                               + f", n = {a['n']} temperatures, "
-                               f"R² = {core.r2_text(a['r2'])}")
+                               + f"), ln(`A`/s-1) = {a['lnA']:.2f}".replace("= -", "= −")   # wie die Unterschrift
+                               + f", `n` = {a['n']} temperatures, "
+                               f"`R`² = {core.r2_text(a['r2'])}")
             r = getattr(self, "kin_result", None)
             if r:
                 lsq = st.get("kin_norm", "lsq") == "lsq"
                 if lsq:
-                    m.append("The decay was analysed as a first-order process, I(t) = I0·exp[−A∫exp(−Ea/RT(t′))dt′] "
+                    m.append("The decay was analysed as a first-order process, `I`(`t`) = I0·exp[−`A`∫exp(−Ea/`R``T`(`t`′))d`t`′] "
                              "from the first spectrum, with the integral evaluated numerically over the recorded times "
                              "and the temperature interpolated linearly between successive spectra (no constant "
-                             "heating rate assumed). Ea and ln A were "
+                             "heating rate assumed). Ea and ln `A` were "
                              "fitted to the measured intensities by Levenberg–Marquardt least squares, with I0 determined "
-                             "linearly, starting from a grid over Ea with ln A chosen to reproduce the measured "
-                             "half-decay point; 95% confidence intervals were obtained from s²(JᵀJ)⁻¹ with "
-                             "s² = SSR/(n − 3) and t(0.975; n − 3). β is the mean heating rate.")
+                             "linearly, starting from a grid over Ea with ln `A` chosen to reproduce the measured "
+                             "half-decay point; 95% confidence intervals were obtained from `s`²(`J`ᵀ`J`)⁻¹ with "
+                             "`s`² = SSR/(`n` − 3) and `t`(0.975; `n` − 3). β is the mean heating rate.")
                 else:
                     m.append("The decay was analysed as a first-order process at a constant heating rate β (from the "
-                             "first and last temperature and time), I(T) = exp[−(A/β)∫exp(−Ea/RT′)dT′] from the first "
+                             "first and last temperature and time), `I`(`T`) = exp[−(`A`/β)∫exp(−Ea/`R``T`′)d`T`′] from the first "
                              "temperature (trapezoidal integration over the measured temperatures), using min–max "
-                             "normalized intensities. Ea and ln A were fitted by Levenberg–Marquardt, starting from a "
-                             "grid over Ea with ln A chosen to reproduce the measured half-decay temperature. The square "
+                             "normalized intensities. Ea and ln `A` were fitted by Levenberg–Marquardt, starting from a "
+                             "grid over Ea with ln `A` chosen to reproduce the measured half-decay temperature. The square "
                              "roots of the absolute residuals were minimized (L1 norm); the intervals (1.96·SE from "
-                             "(JᵀJ)⁻¹·SSR/n) underestimate the uncertainty.")
+                             "(`J`ᵀ`J`)⁻¹·SSR/`n`) underestimate the uncertainty.")
                 half = (r["ci_Ea"][1] - r["ci_Ea"][0]) / 2
                 a_, e_ = core.fmt_ve(r["Ea"] / 1000, half / 1000, max_decimals=2)      # Auflösung 0,01 kJ/mol
                 mant, ex = f"{r['A']:.2e}".split("e")
                 res.append(f"Ea = {a_}" + (f" ± {e_}" if e_ is not None else "") +
                            f" kJ mol-1 ({r['Ea'] / 4184:.1f} kcal mol-1), "
-                           f"A = {mant} × 10^{int(ex)} s-1, "
-                           f"β = {r['beta'] * 60:.3f} K min-1, n = {len(self.series_values)}, "
-                           f"correlation Ea/ln A = {r['corr']:.4f}")
+                           f"`A` = {mant} × 10^{int(ex)} s-1, "
+                           f"β = {r['beta'] * 60:.3f} K min-1, `n` = {len(self.series_values)}, "
+                           f"correlation Ea/ln `A` = {r['corr']:.4f}")
         if calc:
             m.append(calc)
         if not m and not res:

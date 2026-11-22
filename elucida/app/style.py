@@ -941,14 +941,18 @@ def sci_html(h):
     return "".join(p if p.startswith("<") else sci(p, escape=False) for p in _re.split(r"(<[^>]+>)", str(h)))
 
 
-def si_display(text):
+def si_display(text, methods=False):
     """SI-Text für die Anzeige (Nutzerwunsch 2026-11-11): Blocksatz, Formelzeichen wie im Satz (Größen kursiv, Exponenten
-    hochgestellt). HTML bleibt HTML; kopiert und exportiert wird weiter der gesetzte Text."""
+    hochgestellt). HTML bleibt HTML; kopiert und exportiert wird weiter der gesetzte Text. methods: Methodentext mit
+    Größen-Markierung (`k`) – gesetzt mit denselben Regeln wie Word (si.lines.methods_html), nur Minus statt Bindestrich."""
     import re as _re
     t = str(text or "")
     if not t:
         return ""
-    if "<" in t or "&" in t:
+    if methods:
+        from elucida.si import lines as SI
+        h = SI.methods_html(t).replace("<sup>-", "<sup>−").replace("\n", "<br>")
+    elif "<" in t or "&" in t:
         h = sci_html(t)
     else:
         h = sci(t).replace("\n", "<br>")
@@ -963,9 +967,10 @@ class SiText(HintLabel):
     """SI-Text zum Lesen und Kopieren (Bildunterschrift, Methodentext, SI-Zeile): in der Anzeige Blocksatz und
     Formelzeichen wie im Satz; text() gibt den gesetzten Text zurück."""
 
-    def __init__(self, text="", empty=""):
+    def __init__(self, text="", empty="", methods=False):
         super().__init__()
         self.empty = empty                                   # grauer Platzhalter, solange es keinen Text gibt
+        self.methods = methods                               # Methodentext: Markierung `k` setzen, text() ohne sie
         self.setWordWrap(True)
         self.setTextFormat(Qt.RichText)
         self.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -978,10 +983,11 @@ class SiText(HintLabel):
 
     def setText(self, text):
         import html as _html
-        self._plain = text or ""
+        from elucida.core.tables import unmark
+        self._plain = unmark(text) if getattr(self, "methods", False) else text or ""
         hold = bool(self.empty) and not self._plain             # Platzhalter: grau, etwas größer, mittig in der Karte
         QLabel.setText(self, f"<span style='color:gray; font-size:14px'>{_html.escape(self.empty)}</span>" if hold
-                       else si_display(self._plain))
+                       else si_display(text, getattr(self, "methods", False)))
         if hold != getattr(self, "_hold", None):
             self._hold = hold
             self.setAlignment(Qt.AlignCenter if hold else Qt.AlignLeft | Qt.AlignTop)
@@ -1471,8 +1477,8 @@ def _field_edge(root):
                     _cell(w, max(span_all, W))
                 elif isinstance(w, (QLineEdit, QComboBox, QAbstractSpinBox, QAbstractScrollArea)) and w.maximumWidth() != U:
                     _cell(w, W)
-                elif isinstance(w, QPushButton) and not w.text() and w.icon().isNull():   # Farbfeld allein: volle Breite
-                    w.setFixedWidth(W)
+                elif isinstance(w, QPushButton) and not w.text() and w.icon().isNull():
+                    pass                                      # Farbfeld allein: normale Größe wie neben Feldern (ui.md)
                 elif isinstance(w, QLabel) and (isinstance(w, HintLabel) or HINT_CSS in (w.styleSheet() or "")
                                                 or (w.wordWrap() and w.alignment() & Qt.AlignHCenter)):
                     w.setWordWrap(True)                       # Hinweis zu den Feldern darüber: mittig unter der ganzen Wertespalte
@@ -1867,7 +1873,7 @@ def _flow(widgets, width, apply, gap=6):
 # ein QLabel als Rich-Text zeigt (Rechenweg, Kacheln, Beschriftungen); Tabellenköpfe und Auswahllisten können das nicht.
 _SCI = [(r"χ²_red\b", "<i>χ</i>²<sub>red</sub>"),                 # Fluoreszenz (tabs/fluo_tau.py): τ_1, λ_abs, k_r
         (r"(?<![A-Za-z>])([λτΦ])_([A-Za-z0-9]+)", r"<i>\1</i><sub>\2</sub>"), (r"(?<![A-Za-z>])([τΦ])(?![a-zäöü_<])", r"<i>\1</i>"),
-        (r"Δ?E(?:½|₁/₂)", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<i>E</i><sub>1/2</sub>"),   # E₁/₂: Labels im Bild (CV)
+        (r"(Δ?)E([⁰¹²³⁴⁵⁶⁷⁸⁹]*)(?:½|₁/₂)", r"\1<i>E</i>\2<sub>1/2</sub>"),   # E₁/₂, E²₁/₂ (Paar 2): Labels im Bild (CV)
         (r"NICS\((\d)\)zz", r"NICS(\1)<sub>zz</sub>"),                    # HOMA-Tabelle (DFT)
         (r"ΔE[pP]\b", "Δ<i>E</i><sub>p</sub>"), (r"\bE(pa|pc|p)\b", r"<i>E</i><sub>\1</sub>"),
         (r"\bip,([rfac])\b", r"<i>i</i><sub>p,\1</sub>"),      # Nicholson: i_p,r / i_p,f – Index samt Komma tief

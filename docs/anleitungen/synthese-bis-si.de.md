@@ -29,7 +29,7 @@ der Rundung der angegebenen Stellen werden markiert.
 
 Im Tab **NMR** die SVG-Exporte aus MestReNova hinzufügen oder ins Fenster ziehen. Kern und Reihenfolge (¹H, ¹³C, …,
 2D) erkennt das Programm. Die Struktur kommt aus dem Tab Verbindung und wird an eine freie Stelle gesetzt;
-du kannst sie in der Vorschau verschieben. Unter **NMR-Zeile** den Multiplettbericht aus Mnova einfügen (alle Kerne in
+du kannst sie in der Vorschau verschieben. Unter **NMR-Zeile** den Multiplettbericht aus MNova einfügen (alle Kerne in
 ein Feld); die ¹³C-Zeile entsteht auch mit **Zeile aus Peaklabels**.
 
 ## 4. IR und Elementaranalyse

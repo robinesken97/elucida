@@ -189,6 +189,9 @@ ALL_TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct
 def _label_line(s):
     """Text eines Labels in einer Tabellenzeile/Meldung: Zeilen mit „ · “, ohne Mathtext-Zeichen (nur Anzeige)."""
     s = _plain(str(s)).replace("^-1", "⁻¹").replace("^2", "²").replace("\\tilde\\nu", "ṽ").replace("\\", "")
+    # E$_{1/2}$, E$^{2}$$_{1/2}$ (CV, mehrere Paare): Unicode-Indizes, STYLE.sci setzt „E₁/₂“ ganz tief (sonst nur die 1)
+    s = re.sub(r"\^(\d+)", lambda m: m.group(1).translate(str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")), s)
+    s = re.sub(r"_1/2\b", "₁/₂", s)
     return " · ".join(" ".join(x.split()) for x in s.splitlines() if x.strip())
 
 
@@ -1082,7 +1085,7 @@ STEP_TITLES = {
         "NMR-Zeile (MNova-Multiplettbericht)", "Reagenzien (Mengen berechnen)", "Verbinder", "Größen",
         "Weitere Verbindungen", "Zellen und Anordnung", "Hyperfein-Zuordnung", "Lebensdauer", "TD-DFT-Tabelle",
         "Abstände in der Packung", "Pulverdiffraktogramm (PXRD)", "Aromatizität (HOMA)", "Übergangsorbitale (NTO)",
-        "Fremdpeaks und Reagenzien", "Eigene Fremdpeaks"),
+        "Fremdpeaks und Reagenzien", "Eigene Fremdpeaks", "Multireferenz"),
     2: ("Darstellung", "Weitere Darstellung", "Bildunterschrift (SI-Export)", "Achsen, Größe und Formate", "Achsen und Größe",
         "Größe und Formate", "Stapeln und Achsen", "Hervorheben und Labels", "Beschriftungen im Bild", "Bilder", "Atome und Fragmente",
         "Ausrichten", "Atomfarben", "Spektrum", "Stil des Diagramms", "Größe", "Schrift und Rahmen", "Schrift und Linien",
@@ -1099,7 +1102,7 @@ CARD_PAGES = {
     "pxrd_fig_card": ("pxrd_page",), "xr_calc": ("xr_tables",), "fluo_tau_data": ("fluo_tau_page",),
     "fluo_tau_fit": ("fluo_tau_page", "fluo_tau_props"), "epr_calc_box": ("epr_calc_tab_spin", "epr_calc_tab_hfc"),
     "epr_calc_assign": ("epr_calc_tab_hfc",), "epr_calc_display": ("epr_calc_tab_spin", "epr_calc_tab_hfc"),
-    "nto_card": ("nto_page",),
+    "nto_card": ("nto_page",), "mr_card": ("rp_multireference",),
 }
 BAR_MIN_H = STYLE.BAR_H + 21          # Fußleiste: Knopf + 2 × 10 Rand + Linie, auch wenn links kein Knopf steht
 
@@ -2408,7 +2411,7 @@ class FigureTab(QWidget):
         if type(self).methods_text is not FigureTab.methods_text:
             g = QGroupBox(T("si_methods_title"))
             gv = QVBoxLayout(g)
-            self.lbl_methods = STYLE.SiText(empty=T("si_methods_none"))
+            self.lbl_methods = STYLE.SiText(empty=T("si_methods_none"), methods=True)
             gv.addWidget(self.lbl_methods)
             mb = self.methods_button()                       # Knöpfe auf die Titelzeile: Aufbau-Text, ganz rechts Kopieren
             copy_, setup_ = mb.findChildren(QPushButton)
@@ -2499,7 +2502,7 @@ class FigureTab(QWidget):
         self.kpi_box.show_items(ks)
         if self.lbl_methods is not None and self.right_tabs.currentWidget() is self.si_page:
             try:                                           # ohne Abbildung kein Text (CV schrieb sonst den Absatz zu
-                txt = self.methods_text() if getattr(self, "F", None) is not None else ""   # Messungen, die es nicht gibt)
+                txt = self.methods_text(marked=True) if getattr(self, "F", None) is not None else ""   # Messungen, die es nicht gibt)
             except Exception:
                 txt = ""
             self.lbl_methods.setText(txt)
@@ -4651,7 +4654,7 @@ class FluoTab(FigureTab):
         st = self.st
         n = "<b>" + html.escape(name) + "</b>"
         ab, em = bool(st.get("abs_file")), bool(st.get("em_file"))
-        ex = f"λ<sub>ex</sub> = {st['ex']:g} nm"
+        ex = f"<i>λ</i><sub>ex</sub> = {st['ex']:g} nm"
         if ab and em:
             h = (f"Normalized UV-Vis absorption ({color_name(st['c_abs'])}) and fluorescence emission spectra "
                  f"({color_name(st['c_em'])}; {ex}) of {n}")
@@ -4660,7 +4663,7 @@ class FluoTab(FigureTab):
         else:
             h = f"Normalized UV-Vis absorption spectrum of {n}"
         if st.get("exc_file") and self.sample(st["exc_file"], st.get("exc_sample")) is not None:
-            det = f"; λ<sub>em</sub> = {st['exc_det']:.0f} nm" if st.get("exc_det") else ""
+            det = f"; <i>λ</i><sub>em</sub> = {st['exc_det']:.0f} nm" if st.get("exc_det") else ""
             h = h.replace(f" of {n}", f" and excitation spectrum ({color_name(st['c_exc'])}{det}) of {n}", 1)
         if st.get("cap_solvent"):
             h += " in " + chem_html(st["cap_solvent"])
@@ -4726,8 +4729,8 @@ class FluoTab(FigureTab):
             return self.tau.export_to(Path(base).resolve())
         return super().export_to(base) + self.tau.export_to(Path(base).resolve())
 
-    def methods_text(self):
-        return self.tau.methods_text()
+    def methods_text(self, marked=False):
+        return self.tau.methods_text(marked=marked)
 
     def spectra_spec(self):
         st = self.st

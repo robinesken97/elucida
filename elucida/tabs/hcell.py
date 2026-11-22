@@ -22,6 +22,7 @@ from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.i18n import T
 from elucida.app.style import HINT_CSS, make_form
+from elucida.core import tables as TBL
 from elucida.core import tddft as X
 from elucida.core import uvvis as core
 from elucida.formats.gamry_cycling import STEP_DIR, read_cycling, read_step, step_files, step_key
@@ -726,6 +727,7 @@ class HCellTab(TABS.FigureTab):
                                      ("in " + chem_html(solv)) if solv else "") if x)
         return f"Symmetric charge–discharge H-cell cycling of {b}" + (f" ({inner})" if inner else "") + "."
 
+    @TBL.marks                                       # gleiche Signatur wie die anderen Tabs (marked=True)
     def methods_text(self):
         """Englisch, nur benutzte Schritte, ohne Programmnamen; danach die Ergebnisse."""
         res = self._results

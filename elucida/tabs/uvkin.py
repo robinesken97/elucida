@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout)
 
+from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 from elucida.tabs.epr import fit_first_order, sci_range, sci_signed
@@ -892,11 +893,12 @@ class UVKinTab(TABS.FigureTab):
                 m.append(f"Isosbestic points were taken as wavelengths at which the absorbances of all {len(rows)} "
                          f"spectra agree within {st['iso_tol']:g} (maximum − minimum) and the change between the first "
                          "and the last spectrum reverses its sign.")
-                res = ("Isosbestic points: " + ", ".join(f"{core.fmt_lam(p_['lam'])} nm (A = {p_['A']:.3f})"
+                res = ("Isosbestic points: " + ", ".join(f"{core.fmt_lam(p_['lam'])} nm (`A` = {p_['A']:.3f})"
                                                          for p_ in self.iso) + "." if self.iso
                        else "No isosbestic point was found within this tolerance.")
         return " ".join(m) + ("\n\n" + res if res else "")
 
+    @TBL.marks
     def methods_text(self):
         """Englisch, nur die benutzten Schritte: wo die Absorbanz abgelesen wurde, Bezug, Fit, Ergebnisse je Reihe."""
         st = self.st
@@ -914,19 +916,19 @@ class UVKinTab(TABS.FigureTab):
         if st["y"] == "rel":
             m.append("Relative values are given in percent of the absorbance of the first spectrum of the series.")
         if any(f is not None for f in self.fits.values()):
-            m.append("Each series was fitted with a first-order decay, A(t) = A0·exp(−k·t), by least squares on the "
-                     "measured absorbances (A0 determined linearly); 95% confidence intervals of k were obtained from "
-                     "s²(JᵀJ)⁻¹ with s² = SSR/(n − 2) and t(0.975; n − 2), and half-lives as t1/2 = ln 2/k.")
+            m.append("Each series was fitted with a first-order decay, `A`(`t`) = A_0·exp(−`k`·`t`), by least squares on the "
+                     "measured absorbances (A_0 determined linearly); 95% confidence intervals of `k` were obtained from "
+                     "`s`²(`J`ᵀ`J`)⁻¹ with `s`² = SSR/(`n` − 2) and `t`(0.975; `n` − 2), and half-lives as t1/2 = ln 2/`k`.")
         res = []
         for n in self.rows_data:
             s = self.series_summary(n)
             if s is None:
                 continue
-            r = (f"{n}: A = {s['A0']:.3f} to {s['A1']:.3f} ({fmt_pct(s['rest'])}% remaining after "
-                 f"{fmt_t(s['dur'])} {unit}, n = {s['n']})")
+            r = (f"{n}: `A` = {s['A0']:.3f} to {s['A1']:.3f} ({fmt_pct(s['rest'])}% remaining after "
+                 f"{fmt_t(s['dur'])} {unit}, `n` = {s['n']})")
             f = s["fit"]
             if f is not None:
-                r += f", k = {sci_signed(f['k'])} {unit}-1"
+                r += f", `k` = {sci_signed(f['k'])} {unit}-1"
                 if f["ci"]:
                     r += f" (95% interval {sci_signed(f['ci'][0])} to {sci_signed(f['ci'][1])} {unit}-1)"
                 r += (f", t1/2 = {f['half']:.3g} {unit}" if f["half"] is not None

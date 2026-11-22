@@ -183,7 +183,7 @@ abwählbar, die Auswahl wird je Verbindung gemerkt. **Laborkürzel** wie `AB-1-2
 in Datei- und Ordnernamen durch die Verbindung (`3b`), im Inhalt durch „Compound 3b“ (beides änderbar) –, und **Datum
 und Uhrzeit werden gelöscht**: in allen Textdateien (CSV, Gamry-DTA, EPR, TopSpin-Parameter, -Titel und -Prüfprotokoll),
 im MS-Bericht (Text, Ersteller und Datum der Datei, Beschriftungen der Spektren) und in OPUS-Dateien (auf gleicher
-Länge). Die Messwerte (FID, ser, Spektren) bleiben bytegleich. PDF, Mnova und Bruker-.d lassen sich nicht bearbeiten;
+Länge). Die Messwerte (FID, ser, Spektren) bleiben bytegleich. PDF, MNova und Bruker-.d lassen sich nicht bearbeiten;
 steckt dort noch ein Kürzel, nennt das Protokoll die Datei.
 
 Jeder Export aus den Tabs TD-DFT, UV-Vis-Kinetik, Fluoreszenz, CV, SEC und EPR schreibt zusätzlich `…_data.csv` mit genau den
@@ -258,7 +258,7 @@ veraltetes Diagramm stoppt den Export bis **Diagramme aktualisieren**. Die Gesam
   unter dem Profil mit Text, von–bis in Schritten und Farbe, z. B. für zwei Reaktionswege). Darunter Linienart,
   Strichstärken, Schriftgröße, Rahmen, maßstäblich und Farbe je Pfad. Der Stil gehört zum Diagramm des Pfads.
 - Ein Plateau lässt sich im Bild an seiner Linie greifen und waagerecht ziehen (im Raster von 0.05 Schritten; ist
-  „maßstäblich“ aus, auch in der Höhe – der Energiewert bleibt der echte). Die Enden eines Plateaus verknüpfen.
+  „Maßstäblich“ aus, auch in der Höhe – der Energiewert bleibt der echte). Die Enden eines Plateaus verknüpfen.
 - Energien, Namen und Verbinder-Texte lassen sich im Bild mit der Maus verschieben (wenn zwei Stufen eng liegen);
   **Beschriftungen zurücksetzen** stellt sie zurück. Die Energien selbst ändern sich nie.
 
@@ -515,7 +515,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
   (¹H) und 0…200 ppm (¹³C, Angewandte −10…200); reicht die Beschriftung nicht bis 0 bzw. 10/200 oder liegt ein Signal
   der NMR-Zeile außerhalb der Beschriftung („Signal δ … außerhalb des Bildbereichs“, auch unter der Vorschau), steht ein
   ⚠ (nur ein Hinweis, das Spektrum selbst kommt aus MestReNova).
-- **NMR-Zeile:** den Mnova-Multiplettbericht einfügen („Multiplets → Copy“, Journal-Format) – alle Kerne in das eine
+- **NMR-Zeile:** den MNova-Multiplettbericht einfügen („Multiplets → Copy“, Journal-Format) – alle Kerne in das eine
   Feld, je Kern eine Zeile. **Zeile aus Peaklabels** baut die ¹³C-Zeile (oder andere) aus den beschrifteten Peaks des
   gewählten Spektrums; ein mit Namen beschriftetes Lösungsmittelsignal („77.16 CDCl3“) fällt weg. Zuordnungen je Signal
   in der Tabelle (*kursiv*, _{tief}, ^{hoch}). Darunter steht als kleine Tabelle der Vergleich mit der Summenformel der
@@ -542,20 +542,20 @@ als eigene Word-Datei oder im SI-Abschnitt.
   Experiments (fid, ser, acqus …) oder seinen pdata-Ordner – und übernimmt jedes Experiment vollständig in
   die Verbindung, nach Art sortiert (`data/nmr/1H`, `13C`, `DEPT135`, `HSQC` …). Passt genau ein Experiment zu einem Spektrum,
   wird es automatisch zugeordnet (Parameter, Temperatur).
-- **Eigene Spektren aus Bruker-Rohdaten** (optional; Mnova-SVG bleibt Standard): **Rohdaten …** in der Karte
+- **Eigene Spektren aus Bruker-Rohdaten** (optional; MNova-SVG bleibt Standard): **Rohdaten …** in der Karte
   „Spektren“, **Als Spektrum** im Reiter „Rohdaten“ oder **Quelle** „Bruker-Rohdaten“ bei einem Spektrum mit
   zugeordnetem Experiment. Elucida rechnet das Spektrum aus dem FID (Phase aus procs, Basislinie automatisch) und zeigt
-  es in einer Ansicht mit den Mnova-Tasten (Z, F, H, P, I, K, J, R, C, X, E, Shift+P, Esc; jeder Modus auch als Knopf).
+  es in einer Ansicht mit den MNova-Tasten (Z, F, H, P, I, K, J, R, C, X, E, Shift+P, Esc; jeder Modus auch als Knopf).
   Die Tasten wirken ohne Klick: Die Ansicht bekommt den Fokus beim Öffnen des Tabs und wenn die Maus darüber steht,
   außer in einem Feld wird gerade getippt. **Basislinie** (Karte „Verarbeitung“): Polynom 5. Grades (Standard, wie
-  TopSpin ABSG 5), Bernstein 3. Grades (Mnovas Vorgabe „Advised“; die signalfreien Punkte wählt Elucida selbst) oder aus.
+  TopSpin ABSG 5), Bernstein 3. Grades (MNovas Vorgabe „Advised“; die signalfreien Punkte wählt Elucida selbst) oder aus.
   Die Achse übernimmt nie TopSpins Kalibrierung: **Referenzierung** schlägt das Restsignal des Lösungsmittels vor
   (Fulmer 2010, ¹H und ¹³C); erst „Bestätigen“ oder ein Klick auf die richtige Spitze im Modus R (sie bekommt den
   **Sollwert**) macht die Referenz „bestätigt“. Die **Phase** aus procs ist ebenso „nicht bestätigt“ (TopSpins Phase ist
   bei ¹³C oft schlecht): bestätigen, vorschlagen lassen (ACME, nur ein Vorschlag) oder von Hand ziehen (Shift+P: linke
   Taste 0. Ordnung, rechte 1. Ordnung, Klick = Drehpunkt). Experimente, deren Verarbeitung nicht geprüft ist (z. B.
   anderes Fenster als EM, Linear Prediction), erscheinen als TopSpins 1r mit Meldung. Darstellung (Schritt 3) wie die
-  Mnova-Vorlage, alles schaltbar.
+  MNova-Vorlage, alles schaltbar.
   **Auswertung** (Schritt 2): Integrale im Modus I aufziehen, ein Integral oder Signal wählen und **Normierung** setzen
   (erst dann gibt es Kerne). **Multipletts vorschlagen** oder im Modus J einen Bereich aufziehen; für ein gewähltes Signal
   Klasse und J eintragen und **Muster anpassen** – die gefundenen Linien stehen als Striche über dem Spektrum (orange
@@ -565,20 +565,20 @@ als eigene Word-Datei oder im SI-Abschnitt.
   bei bestätigter Phase wird nur das höchste Maximum in ±1 Hz vorgeschlagen, die Karte nennt, wie viele weitere Maxima
   weggelassen wurden.
   In die SI kommt ein eigenes Spektrum erst mit **Eigene Verarbeitung für die SI** (Chip im ausgewählten Spektrum, je Kern eines) und
-  bestätigter Phase und Referenz (bei ¹⁹F u. a. die nominelle Achse bestätigen); bis dahin bleiben Mnova-Zeile und
+  bestätigter Phase und Referenz (bei ¹⁹F u. a. die nominelle Achse bestätigen); bis dahin bleiben MNova-Zeile und
   -Abbildung, der Satz unter der NMR-Zeile sagt warum. Gedruckt werden nur bestätigte Signale; offene Vorschläge werden
-  gezählt. Die NMR-Zeile dieses Kerns ersetzt dann die aus dem Mnova-Text; der Reiter **SI-Abbildung** zeigt das Spektrum wie in
+  gezählt. Die NMR-Zeile dieses Kerns ersetzt dann die aus dem MNova-Text; der Reiter **SI-Abbildung** zeigt das Spektrum wie in
   Word (Struktur, Ausschnitte, Marken mit Bedeutung im Feld „Marken“). Den Bereich legt nur das Feld **Bereich** fest
-  (Schritt 3); „auto“ = 9…0 ppm bei ¹H und 200…0 ppm bei ¹³C, so weit erweitert, dass jedes Signal der NMR-Zeile mit
+  (Schritt 3); „Auto“ = 9…0 ppm bei ¹H und 200…0 ppm bei ¹³C, so weit erweitert, dass jedes Signal der NMR-Zeile mit
   Rand (¹H 0.5, ¹³C 5 ppm) innen liegt, auf ganze ppm bzw. 10 ppm gerundet (Hydrid bei −8 ppm: 9…−9; Carben bei 250 ppm:
   260…0); freie Peaks, Verunreinigungen und das Lösungsmittel erweitern nie. Ein eigener Bereich bleibt, ein Signal
   außerhalb davon steht als ⚠ in der Spalte „Bereich“ und unter der Ansicht. Zoomen in der Ansicht ändert die Abbildung nie.
-  **Ausschnitte** wie Mnova: E + Ziehen = Ausschnitt; X + Ziehen in einem Ausschnitt schneidet diesen Bereich aus dem
+  **Ausschnitte** wie MNova: E + Ziehen = Ausschnitt; X + Ziehen in einem Ausschnitt schneidet diesen Bereich aus dem
   Ausschnitt (Teile mit „//“-Bruch, jeder Schnitt ein Rückgängig-Schritt); Umschalt+E fügt einen Teil an. Die Labels
   eines Ausschnitts stehen gruppiert über ihrem Teil. Passen Labels auch mit kleinster Schrift nicht in die Breite, gibt
   es nur einen Hinweis („Ausschnitt anlegen oder Peaks ausdünnen“); nichts wird geändert. Peak-Labels sind wie die
-  Mnova-Vorlage 4 pt groß und nur größer stellbar. In der Ansicht sind Multiplett-Labels mindestens 12 px hoch (die
-  SI-Abbildung behält die Größe der Vorlage). Ein abgelegter Bruker-1D-Ordner ohne passendes Mnova-Spektrum wird ein
+  MNova-Vorlage 4 pt groß und nur größer stellbar. In der Ansicht sind Multiplett-Labels mindestens 12 px hoch (die
+  SI-Abbildung behält die Größe der Vorlage). Ein abgelegter Bruker-1D-Ordner ohne passendes MNova-Spektrum wird ein
   eigenes Spektrum (nicht für die SI gewählt); die Exportmeldung nennt zurückgehaltene (nicht freigegebene) eigene
   Abbildungen in einer Zeile mit „Details“.
   **2D aus Rohdaten** (HSQC, HMBC, COSY …): Höhenlinien (positiv blau, negativ rot) mit Projektionen; Rechteck ziehen =
@@ -626,7 +626,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
     verarbeitet wie ein Bruker-Experiment), 2D-Spektren und ungeprüfte MNova-Versionen werden genannt; die Einblendung
     nennt den Grund. Zusammen mit SVG-Dateien abgelegt hängt ein Dokument nur seine FIDs an diese.
   - **In MNova öffnen** öffnet das Dokument in MestReNova.
-- Spektren können auch **EMF** aus Mnova sein: Sie gehen unverändert nach Word (Vektor, ohne eingesetzte Struktur); für
+- Spektren können auch **EMF** aus MNova sein: Sie gehen unverändert nach Word (Vektor, ohne eingesetzte Struktur); für
   Vorschau und Struktur SVG verwenden.
 - **Word:** zwei Spektren je Seite, „Figure Sn: ¹H NMR (500 MHz, CDCl₃, 298 K) of **Name**.“
 
@@ -680,7 +680,7 @@ als eigene Word-Datei oder im SI-Abschnitt.
   gemessene; in %T wird nur das berechnete Spektrum umgerechnet. **Skalierung** multipliziert die berechneten
   Frequenzen (Vorgabe 1.000 = ungeskaliert): der passende Faktor hängt von Methode und Basis ab, deshalb selbst
   eintragen. **Toleranz**: eine Bande wird nur automatisch zugeordnet, wenn genau eine berechnete Mode (ab 5 % der
-  stärksten) innerhalb ± Toleranz liegt und diese Mode bei keiner anderen Bande liegt; „aus“ = nur von Hand.
+  stärksten) innerhalb ± Toleranz liegt und diese Mode bei keiner anderen Bande liegt; „Aus“ = nur von Hand.
   **Bande/Mode + Zuordnen** ordnet von Hand zu (gilt vor der automatischen Wahl), **Lösen** entfernt das. Die Seite
   listet die zugeordneten Banden (Δṽ = gemessen − berechnet) mit der mittleren |Δṽ|; mit „In die SI (Word)“ folgt die
   Tabelle nach den Abbildungen (Gesamt-SI: Kapitel Rechnungen), die Unterschrift nennt Rechenniveau, Skalierung und
@@ -790,10 +790,10 @@ ausgeblendete Labels bleiben anders als abgewählte Banden in Tabelle und SI-Zei
 
 ### Was bei der Auswertung automatisch passiert
 
-- **Basislinie** („automatisch (Reihe)“, Standard): Das Fenster liegt dort, wo die konzentrierteste
+- **Basislinie** („Automatisch (Reihe)“, Standard): Das Fenster liegt dort, wo die konzentrierteste
   Probe am wenigsten absorbiert. Abgezogen wird nur der Teil des Fensterwerts, der *nicht* mit der
   Konzentration skaliert (Geräte- bzw. Küvettenoffset). Ein zu c proportionaler Rest gilt als echte
-  Absorption und bleibt erhalten. „automatisch (einfach)“ zieht den kompletten Fensterwert ab.
+  Absorption und bleibt erhalten. „Automatisch (einfach)“ zieht den kompletten Fensterwert ab.
   Die Basislinie nutzt immer den vollen Datenbereich, unabhängig vom dargestellten λ-Bereich.
 - **Fit-Cutoff:** Punkte oberhalb des Cutoffs (Standard A = 1,0) gehen nicht in den Fit ein.
 - **Banden:** automatisch im dargestellten λ-Bereich gesucht oder als Liste vorgegeben.
@@ -869,7 +869,7 @@ Tab), neu einrichten lässt sich das hier nicht mehr. Stapeln bleibt (Spektren d
   Zustände in beiden Rechnungen lösen eine Warnung aus (sie würden doppelt zählen).
 - **TD-DFT-Normierung:** Kurve und Striche haben immer denselben Skalierungsfaktor (jeder Strich ist
   die Höhe seiner eigenen Gaußbande, die Kurve ist deren Summe). Bezug: „Kurvenmaximum = 1“ oder
-  „stärkster Übergang = 1“; „Kurvenmaximum = 1, rechts zusätzlich f“ zeigt die Oszillatorstärke als zweite Skala
+  „Stärkster Übergang = 1“; „Kurvenmaximum = 1, rechts zusätzlich f“ zeigt die Oszillatorstärke als zweite Skala
   derselben Striche (entfällt mit Hinweis, wenn die Rechnungen verschiedene Maßstäbe haben).
 - Struktur mit einstellbarer Größe; die Legende wird in freie Fläche gesetzt und lässt sich verschieben.
 - **Gestapelt** (wie in Papern üblich): Die Kurven werden in Listenreihenfolge um einen gemeinsamen
@@ -887,7 +887,7 @@ Tab), neu einrichten lässt sich das hier nicht mehr. Stapeln bleibt (Spektren d
   (Orbital → Orbital, Gewicht in %, je eine Zeile). Die Namen relativ zu HOMO/LUMO folgen aus den Besetzungen der
   Ausgabe. Gewichte: ORCA wie unter den angeregten Zuständen gedruckt; Gaussian 2c² aus den gedruckten Koeffizienten c
   (geschlossene Schale) bzw. c² je Spin (offene Schale); Abregungen zählen nicht. Ausgaben ohne Zusammensetzung der
-  Zustände (alte Tabellen, SOC, Spin-Flip) ergeben die Tabelle ohne Anteile. Einstellbar: Schwelle für f („aus“ = alle
+  Zustände (alte Tabellen, SOC, Spin-Flip) ergeben die Tabelle ohne Anteile. Einstellbar: Schwelle für f („Aus“ = alle
   Zustände), Schwelle der Anteile, nur Zustände, deren Strich im gezeigten λ-Bereich liegt, und „In die SI (Word)“
   (Tabelle nach den Abbildungen, in der Gesamt-SI im Kapitel Rechnungen). Die Werte sind die der Rechnung, ohne die
   Verschiebung der Abbildung. Der Export `…_transitions.csv` enthält zusätzlich alle gedruckten Anteile (ohne Schwelle)
@@ -1129,10 +1129,10 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Messreihenfolge von unten nach oben, Farbe = Absorbanz wie gemessen oder Differenz zum ersten gezeigten Spektrum (ΔA,
   divergierende Farbskala mit 0 in der Mitte). Die y-Achse bleibt die Reihenfolge; beschriftet ist sie mit dem Potential
   (auch wenn es hin- und zurückläuft), ohne Potentiale mit der Zeit seit dem ersten Spektrum aus den Dateien, sonst mit
-  der Nummer. Farbskala wählbar (viridis, cividis, magma bzw. RdBu, PuOr, coolwarm), oberes Ende „auto“ oder fest.
+  der Nummer. Farbskala wählbar (viridis, cividis, magma bzw. RdBu, PuOr, coolwarm), oberes Ende „Auto“ oder fest.
   Rohsignal-Serien heißen auch hier „raw signal“. Die Maus zeigt λ, Spektrum und Wert; der CSV-Export enthält die
   Matrix (Zeilen = Spektren, Spalten = λ).
-- Potentialachse wie gemessen, um E(Fc⁺/Fc) verschoben oder mit der Referenzierung des CV-Tabs (Chip „aus CV-Tab“: das
+- Potentialachse wie gemessen, um E(Fc⁺/Fc) verschoben oder mit der Referenzierung des CV-Tabs (Chip „Aus CV-Tab“: das
   Feld heißt nach der Referenz des CV-Tabs und zeigt deren E½, z. B. „E½ Fc (CV)“, bei Verschiebung von Hand „Verschiebung (CV)“; findet der CV-Tab keine Referenz, bleibt die Achse wie gemessen gegen die Elektrode
   dieses Tabs, und die Ergebnisse nennen das).
 
@@ -1363,7 +1363,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   auch für Word).
 - **Packung** (Karte im Schritt Darstellung): „Abbildung: Packung (Elementarzelle)“ zeigt die Elementarzelle mit ihrem
   Inhalt – ganze Moleküle, deren Schwerpunkt in der Zelle liegt, oder alle, die mit mindestens einem Atom in ihr liegen –
-  mit Blick entlang *a*, *b* oder *c*; Drehen mit der Maus schaltet auf „frei gedreht“. Gezeichnet werden die Zellkanten
+  mit Blick entlang *a*, *b* oder *c*; Drehen mit der Maus schaltet auf „Frei gedreht“. Gezeichnet werden die Zellkanten
   und die Achsen *a*, *b*, *c* (die Achse zum Betrachter bleibt unbeschriftet). H-Atome an/aus, Ellipsoidstil, Farben und
   Hintergrund wie im Molekülbild. **Abstände in der Packung** (Schritt Auswertung) schlägt je Molekülpaar den kürzesten
   Kontakt unter der Summe der van-der-Waals-Radien (Bondi 1964; Elemente ohne Bondi-Radius werden nicht vorgeschlagen)
@@ -1438,7 +1438,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Tabelle in der SI; das Datenpaket enthält sie als `DFT/structures.xyz`. Liegt neben einer Ausgabe die Eingabe mit
   gleichem Namen (`.inp`, `.gjf`, `.com`), wird sie mitkopiert und kommt ins Datenpaket; fehlt sie, steht das unter der
   Tabelle.
-- **Isofläche wie IboView:** Schwellentyp „Dichte“ (Anteil von |ψ|², Standard 80 %) oder „absolut“ (±ψ, Standard 0.01),
+- **Isofläche wie IboView:** Schwellentyp „Dichte“ (Anteil von |ψ|², Standard 80 %) oder „Absolut“ (±ψ, Standard 0.01),
   Stellen und Schrittweite wie in IboView.
 - **Energieprofil:** Ein Energieprofil vergleicht mehrere Verbindungen und gehört deshalb in einen Reaktionspfad des
   Projekts (Computerchemie, siehe oben); nur dort lässt es sich bearbeiten, im DFT-Tab einer Verbindung gibt es den Reiter
@@ -1518,8 +1518,8 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   die das Orbitalbild aus einer Molden-Datei berechnet. „Darstellung zurücksetzen“ setzt auch die NBO-Darstellung zurück
   (Dateien, Schwellen der Tabellen und der Spin der Wiberg-Tabelle bleiben).
   **Offenschalig** (Dubletts, z. B. Radikalkationen): die NPA-Tabelle bekommt die Spalte „Spindichte (NPA)“, „Atome“
-  bietet „natürliche Spindichte (NPA)“ (mit Vorzeichen), und das Feld „Spin“ (gesamt/α/β) wählt, was NBO, E(2) und
-  Wiberg zeigen (NBO-Liste und E(2) gibt es nur je Spin; „gesamt“ zeigt α und β untereinander). Nicht gelesen: NRT
+  bietet „Natürliche Spindichte (NPA)“ (mit Vorzeichen), und das Feld „Spin“ (gesamt/α/β) wählt, was NBO, E(2) und
+  Wiberg zeigen (NBO-Liste und E(2) gibt es nur je Spin; „Gesamt“ zeigt α und β untereinander). Nicht gelesen: NRT
   offenschaliger Rechnungen, Multiplizität 3 und höher.
 
 ## Cluster-Anbindung
@@ -1617,7 +1617,7 @@ Das Seitenverhältnis bleibt, zwei Abbildungen je Seite wie alle anderen; nicht 
 ## Erscheinungsbild
 
 Das Programm folgt dem hellen oder dunklen Modus des Systems; unter **Format → Erscheinungsbild** lässt sich dauerhaft
-hell oder dunkel wählen, ebenso mit dem Mond-/Sonnen-Knopf in der Werkzeugleiste (das Symbol zeigt den aktuellen Zustand). Die linke Spalte jedes Tabs ist in Schritte geteilt (meist **Daten · Auswertung · Darstellung**): die Leiste oben wechselt den Schritt, ein Punkt daran zeigt geänderte Werte, **Weiter: …** unten führt zum nächsten. Listen mit mehreren Einträgen (Spektren, Messungen, Strukturen) lassen sich mit den Pfeilknöpfen oder durch Ziehen einer Zeile umsortieren. Im Schritt Auswertung zeigt die Karte **Rechenweg**, welche Schritte der Rechnung gerade benutzt werden. Rechts neben den Reitern stehen die wichtigsten Ergebnisse als Kacheln; der Reiter **SI-Text** enthält die Bildunterschrift mit ihren Feldern und den Methodentext, jeweils zum Kopieren. Größen stehen wie im Satz: Formelzeichen kursiv, Indizes tiefgestellt, Einheiten steil und mit negativem Exponenten (mg mL⁻¹, mV s⁻¹); Namen und Summenformeln mit tiefgestellten Zahlen und kursiven Lokanten. Auswahllisten und Chips können das technisch nicht und bleiben steil. Schalter sind **Chips**: eine Pille anklicken schaltet sie an (blau) oder aus; der Tooltip nennt die Langform. Ein Feld, das **„aus“** zeigt, schaltet seine Funktion mit dem ersten Schritt nach oben ein (mit dem zuletzt benutzten Wert) und am unteren Ende wieder aus. Bereiche, die **„auto“** zeigen, gelten für die ganzen Daten: ein Klick ins Feld setzt eigene Grenzen, ein geleertes Feld stellt wieder auf automatisch. Jedes Feld mit „auto“ oder „aus“ zeigt einen kleinen Rücksetz-Pfeil, solange ein eigener Wert gilt: ein Klick stellt auf „auto“/„aus“ zurück, ebenso ein geleertes Feld beim Verlassen oder mit Enter. Selten gebrauchte Karten der linken Spalte sind eingeklappt (Klick auf den Titel klappt sie
+hell oder dunkel wählen, ebenso mit dem Mond-/Sonnen-Knopf in der Werkzeugleiste (das Symbol zeigt den aktuellen Zustand). Die linke Spalte jedes Tabs ist in Schritte geteilt (meist **Daten · Auswertung · Darstellung**): die Leiste oben wechselt den Schritt, ein Punkt daran zeigt geänderte Werte, **Weiter: …** unten führt zum nächsten. Listen mit mehreren Einträgen (Spektren, Messungen, Strukturen) lassen sich mit den Pfeilknöpfen oder durch Ziehen einer Zeile umsortieren. Im Schritt Auswertung zeigt die Karte **Rechenweg**, welche Schritte der Rechnung gerade benutzt werden. Rechts neben den Reitern stehen die wichtigsten Ergebnisse als Kacheln; der Reiter **SI-Text** enthält die Bildunterschrift mit ihren Feldern und den Methodentext, jeweils zum Kopieren. Größen stehen wie im Satz: Formelzeichen kursiv, Indizes tiefgestellt, Einheiten steil und mit negativem Exponenten (mg mL⁻¹, mV s⁻¹); Namen und Summenformeln mit tiefgestellten Zahlen und kursiven Lokanten. Auswahllisten und Chips können das technisch nicht und bleiben steil. Schalter sind **Chips**: eine Pille anklicken schaltet sie an (blau) oder aus; der Tooltip nennt die Langform. Ein Feld, das **„Aus“** zeigt, schaltet seine Funktion mit dem ersten Schritt nach oben ein (mit dem zuletzt benutzten Wert) und am unteren Ende wieder aus. Bereiche, die **„Auto“** zeigen, gelten für die ganzen Daten: ein Klick ins Feld setzt eigene Grenzen, ein geleertes Feld stellt wieder auf automatisch. Jedes Feld mit „Auto“ oder „Aus“ zeigt einen kleinen Rücksetz-Pfeil, solange ein eigener Wert gilt: ein Klick stellt auf „Auto“/„Aus“ zurück, ebenso ein geleertes Feld beim Verlassen oder mit Enter. Selten gebrauchte Karten der linken Spalte sind eingeklappt (Klick auf den Titel klappt sie
 auf); ein Titel mit **„(geändert)“** bedeutet, dass dort ein Wert vom Standard abweicht. Ergebnisse, Tabellen und
 SI-Texte stehen als Reiter neben der Abbildung. Das Mausrad scrollt die Spalte; ein Feld ändert es erst, wenn es
 angeklickt ist. Hinweise beim Zeichnen (z. B. ausgelassene Kurven) stehen unter der Vorschau, **Hilfe → Protokoll…**
@@ -1667,7 +1667,7 @@ in der Verbindung gespeichert, jede Änderung lässt sich rückgängig machen; d
   (Times New Roman), wie in Origin; abschaltbar.
 - **Bandenlabels:** Schriftgröße (standardmäßig automatisch), fett, kursiv, Farbe.
 - **Linien** (die Karte heißt in Tabs mit Kurven „Schrift und Linien“, mit den Farben unten „Schrift, Linien und Farben“): **Kurvenbreite** als Faktor auf alle
-  Kurven und **Achsenlinien** (Achsen, Rahmen, Striche in pt, „auto“ = wie gezeichnet); wie die Schrift für alle Tabs
+  Kurven und **Achsenlinien** (Achsen, Rahmen, Striche in pt, „Auto“ = wie gezeichnet); wie die Schrift für alle Tabs
   oder mit „Nur dieser Tab“; gilt für Vorschau, Export und Word. Nicht in X-Ray, DFT und Weitere.
 - **Farben** (je Abbildung, nur feste Farben ohne Messungsliste): SEC Start/Ende, H-Cell Laden/Entladen/CE, HRMS
   gemessen/berechnet, EPR Fitkurven. Farben je Messung stehen weiter in den Messungslisten. Ein Farbknopf ohne Wirkung
@@ -1723,7 +1723,7 @@ IR + EA, CV, SEC, H-Cell, EPR, CV-Stapel und Spektren im Vergleich; NMR, X-Ray, 
 |---|---|
 | Verbindung, Strukturen | ChemDraw-**CDXML** (Summenformel und Molmasse), mit gleichnamigem SVG/PDF/PNG-Export für die exakte ChemDraw-Zeichnung; Fotos als HEIC, JPG, PNG |
 | Synthese | Schema als CDXML (+ SVG/PDF), daneben **.cdx** für ein bearbeitbares ChemDraw-Objekt in Word, **.emf** für eine scharfe Vorschau |
-| NMR | MestReNova-Exporte als **SVG** oder **EMF**, Mnova-Bericht (Text), **TopSpin**-Experimente/-Datensätze (Ordner), **.mnova**-Dokumente |
+| NMR | MestReNova-Exporte als **SVG** oder **EMF**, MNova-Bericht (Text), **TopSpin**-Experimente/-Datensätze (Ordner), **.mnova**-Dokumente |
 | IR + EA | Bruker **OPUS** (`.0`, `.1` …) und das OPUS-**PDF** mit Peakbeschriftung; Raman als Textdatei (zwei Spalten) |
 | HRMS | Bericht der Massenabteilung (**.docx** oder **PDF**), Bruker-Rohdaten (**.d** mit analysis.baf) |
 | UV-Vis (ε) | **Cary**-CSV/TXT-Exporte, Cary-WinUV-**.DSW/.BSW** (Leser aus [parseuv](https://pypi.org/project/parseuv/)); mehrere Dateien bilden einen Datensatz |

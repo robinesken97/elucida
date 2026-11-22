@@ -17,11 +17,11 @@ TEXTS = {
     "nbo_empty": ("Keine NBO-Rechnung: im Schritt Daten eine ORCA-6-Ausgabe mit NBO 7 laden (Karte „NBO-Rechnungen“).",
                   "No NBO calculation: load an ORCA 6 output with NBO 7 in the Data step (card “NBO Calculations”)."),
     "nbo_atoms": ("Atome", "Atoms"),
-    "nbo_atoms_charge": ("natürliche Ladung (NPA)", "natural charge (NPA)"),
-    "nbo_atoms_spin": ("natürliche Spindichte (NPA)", "natural spin density (NPA)"),
+    "nbo_atoms_charge": ("Natürliche Ladung (NPA)", "Natural charge (NPA)"),
+    "nbo_atoms_spin": ("Natürliche Spindichte (NPA)", "Natural spin density (NPA)"),
     "nbo_col_spin": ("Spindichte (NPA)", "Spin density (NPA)"),
     "nbo_spin": ("Spin", "Spin"),
-    "nbo_spin_total": ("gesamt", "total"),
+    "nbo_spin_total": ("Gesamt", "Total"),
     "nbo_spin_alpha": ("α-Spin", "α spin"),
     "nbo_spin_beta": ("β-Spin", "β spin"),
     "nbo_spin_tip": ("Offenschalig: NBO-Liste und E(2) gibt es je Spin (gesamt = α und β untereinander), Wiberg gesamt, α "
@@ -32,15 +32,15 @@ TEXTS = {
     "nbo_wb_spin_beta": ("Matrix der β-Spinorbitale.", "Matrix of the β spin orbitals."),
     "nbo_wb_spin_missing": ("Die Matrix dieses Spins war nicht lesbar: gezeigt ist die Gesamtmatrix.",
                             "The matrix of this spin was not readable: the total matrix is shown."),
-    "nbo_atoms_name": ("Atomname", "atom name"),
-    "nbo_atoms_none": ("keine Beschriftung", "no labels"),
+    "nbo_atoms_name": ("Atomname", "Atom name"),
+    "nbo_atoms_none": ("Keine Beschriftung", "No labels"),
     "nbo_atoms_tip": ("Beschriftung der Atome aus der Natural Population Analysis der Ausgabe: natürliche Ladung oder "
                       "(offenschalig) natürliche Spindichte – nicht die Mulliken-Spinpopulation des EPR-Tabs",
                       "Atom labels from the Natural Population Analysis of the output: natural charge or (open-shell) "
                       "natural spin density – not the Mulliken spin population of the EPR tab"),
     "nbo_bonds": ("Bindungen", "Bonds"),
     "nbo_bonds_nrt": ("NRT-Bindungsordnung (gesamt)", "NRT bond order (total)"),
-    "nbo_bonds_none": ("keine Beschriftung", "no labels"),
+    "nbo_bonds_none": ("Keine Beschriftung", "No labels"),
     "nbo_bonds_tip": ("Bindungsbeschriftung aus der Ausgabe: natürliche Bindungsordnung der NRT-Analyse oder Wiberg-Index "
                       "(NBO, NAO-Basis, Schlüsselwort BNDIDX) – beide nicht die IAO-Wiberg-Bindungsordnung, die Elucida "
                       "im Orbitalbild aus einer Molden-Datei berechnet",
@@ -59,7 +59,7 @@ TEXTS = {
                     "Label bond orders from this value (figure, table, SI)"),
     "nbo_dec": ("Nachkommastellen", "Decimals"),
     "nbo_els": ("Elemente", "Elements"),
-    "nbo_els_ph": ("alle (z. B. N, O)", "all (e.g. N, O)"),
+    "nbo_els_ph": ("Alle (z. B. N, O)", "All (e.g. N, O)"),
     "nbo_els_tip": ("Nur diese Elemente beschriften (durch Komma getrennt), leer = alle",
                     "Label only these elements (comma separated), empty = all"),
     "nbo_colors": ("Farben", "Colours"),
@@ -86,11 +86,11 @@ TEXTS = {
     "nbo_col_hyb": ("Hybride (Polarisation)", "Hybrids (polarisation)"),
     "nbo_col_acceptor": ("Akzeptor", "Acceptor"),
     "nbo_col_weight": ("Gewicht", "Weight"),
-    "nbo_col_change": ("hinzu (entfernt) gegenüber RS 1", "added (removed) vs. RS 1"),
+    "nbo_col_change": ("Hinzu (entfernt) gegenüber RS 1", "Added (removed) vs. RS 1"),
     "nbo_col_bond": ("Bindung", "Bond"),
-    "nbo_col_bo_t": ("gesamt", "total"),
-    "nbo_col_bo_c": ("kovalent", "covalent"),
-    "nbo_col_bo_i": ("ionisch", "ionic"),
+    "nbo_col_bo_t": ("Gesamt", "Total"),
+    "nbo_col_bo_c": ("Kovalent", "Covalent"),
+    "nbo_col_bo_i": ("Ionisch", "Ionic"),
     "nbo_lewis_total": ("Lewis gesamt", "Total Lewis"),
     "nbo_lewis_valence": ("Valenz, Nicht-Lewis", "Valence non-Lewis"),
     "nbo_lewis_rydberg": ("Rydberg, Nicht-Lewis", "Rydberg non-Lewis"),
@@ -532,13 +532,13 @@ TEXTS = {
                       "Cary CSV, DSW/BSW, Eclipse CSV or compound folder\nConcentration from the sample name, e.g. "
                       "ABC-1-0p5mgml_THF = 0.5 mg mL⁻¹ (otherwise a table to fill in)"),
     "mw_from_cdxml": ("aus CDXML", "from CDXML"),
-    "mw_hint_none": ("leer = spezifischer Koeffizient a statt ε", "empty = specific coefficient a instead of ε"),
+    "mw_hint_none": ("Leer = spezifischer Koeffizient a statt ε", "Empty = specific coefficient a instead of ε"),
     "bg_method": ("Freistellung", "Background"),
-    "bg_auto": ("automatisch", "automatic"),
+    "bg_auto": ("Automatisch", "Automatic"),
     "bg_isnet": ("KI (ISNet)", "AI (ISNet)"),
     "bg_grabcut": ("GrabCut", "GrabCut"),
     "bg_border": ("Randfarbe", "Border colour"),
-    "bg_off": ("keine", "none"),
+    "bg_off": ("Keine", "None"),
     "grp_eval": ("Auswertung", "Analysis"),
     "path_length": ("Schichtdicke [cm]", "Path length [cm]"),
     "path_length_short": ("Schichtdicke", "Path length"),
@@ -559,7 +559,7 @@ TEXTS = {
     "min_r2_tip": ("Banden mit kleinerem R² stehen in Tabelle, CSV und Excel-Report, aber nicht in der Abbildung. 0 = alle zeigen.",
                    "Bands with a lower R² are listed in the table, CSV and Excel report but not shown in the figure. 0 = show all."),
     "wavelengths": ("Banden [nm]", "Bands [nm]"),
-    "wavelengths_ph": ("z. B. Schultern: 350, 660", "e.g. shoulders: 350, 660"),
+    "wavelengths_ph": ("Z. B. Schultern: 350, 660", "E.g. shoulders: 350, 660"),
     "baseline": ("Basislinie", "Baseline"),
     "baseline_tip": ("Wird vor dem Fit von jedem Spektrum abgezogen, gemessen in einem Fenster, in dem die Probe kaum "
                      "absorbiert.\nautomatisch (Reihe): nur der konzentrationsunabhängige Versatz (Restabsorption der "
@@ -569,16 +569,16 @@ TEXTS = {
                      "absorbs.\nautomatic (series): only the concentration-independent offset (residual absorption of "
                      "the sample stays)\nautomatic (simple): the whole value in the window\nmanual window: choose the "
                      "range below"),
-    "bl_series": ("automatisch (Reihe)", "automatic (series)"),
-    "bl_simple": ("automatisch (einfach)", "automatic (simple)"),
-    "bl_manual": ("manuelles Fenster", "manual window"),
-    "bl_off": ("aus", "off"),
+    "bl_series": ("Automatisch (Reihe)", "Automatic (series)"),
+    "bl_simple": ("Automatisch (einfach)", "Automatic (simple)"),
+    "bl_manual": ("Manuelles Fenster", "Manual window"),
+    "bl_off": ("Aus", "Off"),
     "grp_plot": ("Darstellung", "Plot"),
     "ymax": ("y-Achse max", "y-axis max"),
     "r2_mode": ("R² anzeigen", "Show R²"),
-    "r2_legend": ("in Inset-Legende (wenn keine Tabelle)", "in inset legend (if no table)"),
-    "r2_label": ("im Bandenlabel", "in band label"),
-    "r2_off": ("aus", "off"),
+    "r2_legend": ("In Inset-Legende (wenn keine Tabelle)", "In inset legend (if no table)"),
+    "r2_label": ("Im Bandenlabel", "In band label"),
+    "r2_off": ("Aus", "Off"),
     "show_err": ("ε mit Fehler", "ε with error"),
     "conc_colors": ("Konzentrationen farbig", "Concentrations in colour"),
     "conc_legend": ("Legende", "Legend"),
@@ -591,7 +591,7 @@ TEXTS = {
     "conc_colors_long": ("Konzentrationen in Farben (mit Legende)", "Concentrations in colours (with legend)"),
     "inset_show": ("Regression (Inset)", "Regression (inset)"),
     "inset_show_long": ("Regression (Inset) anzeigen", "Show regression (inset)"),
-    "inset_table": ("Tabelle im Inset", "table in inset"),
+    "inset_table": ("Tabelle im Inset", "Table in inset"),
     "btn_update": ("Aktualisieren", "Update"),
     "btn_reset_layout": ("Layout zurücksetzen", "Reset layout"),
     "btn_reset": ("Zurücksetzen", "Reset"),
@@ -688,7 +688,7 @@ TEXTS = {
                              "Molar mass of series {s} follows the compound: {old} → {new} g mol⁻¹{more}"),
     "compound_mw_more": (" (und {n} weitere)", " (and {n} more)"),
     "compound_labbook": ("Laborbuch-Nr.", "Lab notebook no."),
-    "compound_labbook_ph": ("z. B. AB-1-234", "e.g. AB-1-234"),
+    "compound_labbook_ph": ("Z. B. AB-1-234", "E.g. AB-1-234"),
     "compound_labbook_tip": ("Laborbuchnummer zusätzlich zur Nummer in der SI. Nur intern: steht in der Übersicht und wird von "
                              "der Suche gefunden, nie in SI, Word oder Datenpaket.",
                              "Lab notebook number in addition to the number used in the SI. Internal only: shown in the overview "
@@ -749,9 +749,9 @@ TEXTS = {
                  "Belongs in the manuscript (ACS: under “Associated Content”), not in the SI. It only contains parts "
                  "entered here or in the project; without a link of its own the DOI of the dataset (card above) is used."),
     "das_repo": ("Repository", "Repository"),
-    "das_ph_repo": ("z. B. Zenodo, RADAR4Chem, TUDOdata", "e.g. Zenodo, RADAR4Chem, TUDOdata"),
+    "das_ph_repo": ("Z. B. Zenodo, RADAR4Chem, TUDOdata", "E.g. Zenodo, RADAR4Chem, TUDOdata"),
     "das_link": ("DOI oder Link", "DOI or link"),
-    "das_ph_link": ("z. B. 10.5281/zenodo.1234567", "e.g. 10.5281/zenodo.1234567"),
+    "das_ph_link": ("Z. B. 10.5281/zenodo.1234567", "E.g. 10.5281/zenodo.1234567"),
     "das_auto": ("Einfügen", "Include"),
     "das_cb_ccdc": ("CCDC-Nummern", "CCDC numbers"),
     "das_cb_ccdc_tip": ("Nummern aus den X-Ray-Angaben der Verbindungen (Spalte CCDC oder die CIF), je Nummer einzeln "
@@ -779,8 +779,8 @@ TEXTS = {
     "purity_m_hplc": ("HPLC", "HPLC"),
     "purity_m_gc": ("GC", "GC"),
     "purity_other": ("Weitere", "Other"),
-    "purity_other_ph": ("z. B. powder X-ray diffraction (englisch, wie in der SI)",
-                        "e.g. powder X-ray diffraction (as in the SI)"),
+    "purity_other_ph": ("Z. B. powder X-ray diffraction (englisch, wie in der SI)",
+                        "E.g. powder X-ray diffraction (as in the SI)"),
     "purity_other_tip": ("Freitext, steht so im Satz der SI („Purity was established by …“)",
                          "Free text, used as is in the SI sentence (“Purity was established by …”)"),
     "purity_apply": ("Vorschlag übernehmen", "Use suggestion"),
@@ -791,7 +791,7 @@ TEXTS = {
     "purity_si": ("In der SI: {s}", "In the SI: {s}"),
     "purity_none": ("Ohne Angabe steht in der SI kein Satz zur Reinheit (ACS und Angewandte verlangen einen Nachweis).",
                     "Without an entry the SI has no sentence on purity (ACS and Angewandte ask for evidence)."),
-    "compound_note_ph": ("z. B. Radikalkation von 3b", "e.g. radical cation of 3b"),
+    "compound_note_ph": ("Z. B. Radikalkation von 3b", "E.g. radical cation of 3b"),
     "compound_note_tip": ("Was ist das? Steht auf dem Startbildschirm und in der Titelleiste – "
                           "nicht in SI, Word-Export oder Datenpaket.",
                           "What is it? Shown on the welcome page and in the title bar – "
@@ -974,7 +974,7 @@ TEXTS = {
                       "resize. Over the curves a box at the bottom right shows the values under the pointer."),
     "drag_hint_plain": ("Labels und Bilder lassen sich mit der Maus verschieben, Bilder per Mausrad skalieren.",
                         "Labels and images can be dragged with the mouse; scroll over images to resize."),
-    "auto": ("auto", "auto"),
+    "auto": ("Auto", "Auto"),
     "ov_curves": ("Spektren", "Spectra"),
     "tab_irms": ("IR + EA", "IR + EA"),
     "tab_hrms": ("HRMS", "HRMS"),
@@ -995,8 +995,8 @@ TEXTS = {
                      "Spectrum = mean of the instrument's line spectra in the LC range (no profile curve)."),
     "ms_pick_entry": ("Im Spektrum gewählt: {mz}  ({ppm} ppm)", "Picked in the spectrum: {mz}  ({ppm} ppm)"),
     "ms_iso_col": ("Isotop", "Isotope"),
-    "ms_iso_meas": ("gemessen [%]", "measured [%]"),
-    "ms_iso_calc": ("berechnet [%]", "calculated [%]"),
+    "ms_iso_meas": ("Gemessen [%]", "Measured [%]"),
+    "ms_iso_calc": ("Berechnet [%]", "Calculated [%]"),
     "ms_iso_tip": ("Isotopenpeaks relativ zum monoisotopischen Peak M, gemessen gegen berechnet aus der Formel",
                    "Isotope peaks relative to the monoisotopic peak M, measured against calculated from the formula"),
     "ir_group": ("IR", "IR"),
@@ -1008,7 +1008,7 @@ TEXTS = {
                          "Spektrum und wurde nicht übernommen – PDF einzeln zum Spektrum laden",
                          "several spectra selected: the PDF is not named like the spectrum kept (the last one) "
                          "and was not used – load the PDF on its own with its spectrum"),
-    "ir_full": ("gesamt", "full"),
+    "ir_full": ("Gesamt", "Full"),
     "ir_range": ("Bereich", "Range"),
     "ir_xrange": ("ṽ-Bereich [cm⁻¹]", "ṽ range [cm⁻¹]"),
     "ir_prom": ("Peakschwelle", "Peak threshold"),
@@ -1065,13 +1065,13 @@ TEXTS = {
     "ir_yrange_bad": ("y-Bereich ungültig (min muss kleiner als max sein) – automatisch.",
                       "Invalid y range (min must be below max) – set automatically."),
     "ir_labels_clamped": ("{n} Wellenzahl-Label(s) passen nicht in den festen y-Bereich und liegen am Rand – "
-                          "min verkleinern oder „auto“ wählen.",
+                          "min verkleinern oder „Auto“ wählen.",
                           "{n} wavenumber label(s) do not fit into the fixed y range and sit at the edge – "
-                          "lower min or choose “auto”."),
+                          "lower min or choose “Auto”."),
     "ir_intensity": ("Intensität", "Intensity"),
     "ea_group": ('Elementaranalyse', 'Elemental Analysis'),
     "ea_solvate": ("Solvat", "Solvate"),
-    "ea_solvate_ph": ("z. B. 0.5 CH2Cl2 (optional)", "e.g. 0.5 CH2Cl2 (optional)"),
+    "ea_solvate_ph": ("Z. B. 0.5 CH2Cl2 (optional)", "E.g. 0.5 CH2Cl2 (optional)"),
     "ea_solvate_tip": ("Wird zur Formel addiert (berechnete Werte und Zeile), mehrere mit Komma: 0.5 CH2Cl2, H2O",
                        "Added to the formula (calculated values and line); several separated by commas: 0.5 CH2Cl2, H2O"),
     # EA- und HRMS-Prüfung nach den Richtlinien (ACS: ≤ 0.4 %; Angew.: Doppelbestimmung mit Mittel; HRMS ≤ 5 ppm)
@@ -1081,8 +1081,8 @@ TEXTS = {
                           "Optional: second set of the duplicate analysis (Angewandte asks for both sets and the "
                           "average). The SI line then gives both and the average; the average is checked."),
     "ea_chk_el": ("Element", "Element"),
-    "ea_chk_f1": ("gefunden", "found"),
-    "ea_chk_mean": ("Mittel", "average"),
+    "ea_chk_f1": ("Gefunden", "Found"),
+    "ea_chk_mean": ("Mittel", "Average"),
     "ea_chk_status": ("Status", "Status"),
     "ea_chk_ok": ("≤ 0.4 %", "≤ 0.4 %"),
     "ea_chk_bad": ("> 0.4 %", "> 0.4 %"),
@@ -1092,8 +1092,8 @@ TEXTS = {
                    "require at most 0.4 %."),
     "ea_chk_kpi": ("EA", "EA"),
     "ea_chk_reason": ("Ohne EA, weil", "No EA, because"),
-    "ea_chk_reason_ph": ("z. B. not obtained (air-sensitive); purity by ¹H NMR",
-                         "e.g. not obtained (air-sensitive); purity by ¹H NMR"),
+    "ea_chk_reason_ph": ("Z. B. not obtained (air-sensitive); purity by ¹H NMR",
+                         "E.g. not obtained (air-sensitive); purity by ¹H NMR"),
     "ea_chk_reason_tip": ("Englischer Text für die SI, wenn es keine Elementaranalyse gibt (Angewandte und ACS verlangen "
                           "dann eine Begründung). Gilt nur ohne gefundene Werte.",
                           "Text for the SI when there is no elemental analysis (Angewandte and ACS then ask for a "
@@ -1106,8 +1106,8 @@ TEXTS = {
     "ea_chk_ms_tip": ("found − calc. in ppm; Angewandte nennt 5 ppm als Grenze hoher Auflösung.",
                    "found − calc. in ppm; Angewandte names 5 ppm as the limit of high resolution."),
     "ea_chk_ms_kpi": ("Δ", "Δ"),
-    "ea_calc": ("berechnet", "calculated"),
-    "ea_found": ("gefunden", "found"),
+    "ea_calc": ("Berechnet", "Calculated"),
+    "ea_found": ("Gefunden", "Found"),
     "ea_enter": ("Gefundene Werte eintragen (nur die gemessenen Elemente).",
                  "Enter the found values (only the measured elements)."),
     "ea_ok": ("Alle Abweichungen ≤ 0.4 % (übliche Grenze der Journals).",
@@ -1116,7 +1116,7 @@ TEXTS = {
                "⚠ deviation > 0.4 %: {els} – many journals require ≤ 0.4 %; check for a solvate."),
     "tab_si_line": ("SI-Zeile", "SI line"),
     "si_solvent": ("Lösungsmittel", "Solvent"),
-    "si_solvent_ph": ("optional, z. B. THF → „UV-Vis (THF): …“", "optional, e.g. THF → “UV-Vis (THF): …”"),
+    "si_solvent_ph": ("Optional, z. B. THF → „UV-Vis (THF): …“", "Optional, e.g. THF → “UV-Vis (THF): …”"),
     "si_uv_hint": ("Banden wie im Bild (abgewählte und solche unter der R²-Schwelle fehlen), aufsteigend; ε gerundet "
                    "auf die Genauigkeit des Standardfehlers, ohne ±.",
                    "Bands as in the figure (deselected ones and those below the R² threshold are left out), "
@@ -1139,12 +1139,12 @@ TEXTS = {
     "dp_col_size": ("Größe", "Size"),
     "dp_codes": ("Laborkürzel ersetzen", "Replace lab codes"),
     "dp_code": ("Kürzel", "Code"),
-    "dp_code_name": ("in Datei-/Ordnernamen", "in file/folder names"),
-    "dp_code_text": ("im Inhalt", "in the contents"),
+    "dp_code_name": ("In Datei-/Ordnernamen", "In file/folder names"),
+    "dp_code_text": ("Im Inhalt", "In the contents"),
     "dp_code_add": ("Kürzel hinzufügen", "Add code"),
-    "dp_text": ("auch im Inhalt: Kürzel → „Compound …“, Datum und Uhrzeit löschen (Textdateien, TopSpin-Parameter, "
+    "dp_text": ("Auch im Inhalt: Kürzel → „Compound …“, Datum und Uhrzeit löschen (Textdateien, TopSpin-Parameter, "
                 "MS-Bericht, OPUS)",
-                "also in the contents: codes → “Compound …”, delete date and time (text files, TopSpin parameters, "
+                "Also in the contents: codes → “Compound …”, delete date and time (text files, TopSpin parameters, "
                 "MS report, OPUS)"),
     "dp_text_tip": ("Messwerte (FID, ser, Spektren) bleiben bytegleich. Im MS-Bericht auch Ersteller und Datum der "
                     "Datei. PDF, MNova und Bruker-.d lassen sich nicht bearbeiten; ein Kürzel darin steht danach im "
@@ -1185,11 +1185,11 @@ TEXTS = {
                    "Caption as in the group's SI. Scan rate, iR compensation (from the Gamry file), reference and "
                    "arrows come from the visible measurements, the rest from these fields."),
     "cap_conc": ("Konzentration", "Concentration"),
-    "cap_conc_ph": ("z. B. 1.7±0.1 mg mL-1", "e.g. 1.7±0.1 mg mL-1"),
+    "cap_conc_ph": ("Z. B. 1.7±0.1 mg mL-1", "E.g. 1.7±0.1 mg mL-1"),
     "cap_solvent": ("Lösungsmittel", "Solvent"),
-    "cv_cap_solvent_ph": ("leer = Gruppe der Messungen (mehrere: „different solvents“)",
-                          "empty = group of the measurements (several: “different solvents”)"),
-    "cap_solvent_ph": ("z. B. THF", "e.g. THF"),
+    "cv_cap_solvent_ph": ("Leer = Gruppe der Messungen (mehrere: „different solvents“)",
+                          "Empty = group of the measurements (several: “different solvents”)"),
+    "cap_solvent_ph": ("Z. B. THF", "E.g. THF"),
     "sec_cap_tip": ("Unterschrift wie in der SI der Gruppe. Start-/Endpotential kommen aus dem Scan (erstes/letztes "
                     "gezeigtes Spektrum, Referenz wie die Achse); die Farbcodierung (blau/rot, mit eigener Farbe ohne Farbwort) nur "
                     "mit hervorgehobenem ersten/letzten Spektrum; Zwischenspektren (grün …) nur, wenn sie im Bild hervorgehoben sind.",
@@ -1197,26 +1197,26 @@ TEXTS = {
                     "(first/last spectrum shown, reference as on the axis); colour coding (blue/red, without a colour word for your "
                     "own colour) only with the first/last spectrum highlighted; intermediate spectra (green …) only if highlighted in the figure."),
     "cap_start": ("Spezies am Anfang", "Species at start"),
-    "cap_start_ph": ("z. B. neutral", "e.g. neutral"),
+    "cap_start_ph": ("Z. B. neutral", "E.g. neutral"),
     "cap_mid": ("Zwischenstufe", "Intermediate"),
     "cap_mid_long": ("Spezies Zwischenstufe", "Intermediate species"),
-    "cap_mid_ph": ("z. B. radical cation (mehrere mit „;“)", "e.g. radical cation (several with “;”)"),
+    "cap_mid_ph": ("Z. B. radical cation (mehrere mit „;“)", "E.g. radical cation (several with “;”)"),
     "cap_end": ("Spezies am Ende", "Species at end"),
-    "cap_end_ph": ("z. B. dication", "e.g. dication"),
+    "cap_end_ph": ("Z. B. dication", "E.g. dication"),
     "epr_cap_tip": ("Unterschrift wie in der SI der Gruppe. Band aus der Mikrowellenfrequenz; Parameter (g, ΔB_pp, "
                     "Kopplungen in MHz) nur aus eigenen S = ½-Fits, ohne Fehlerangabe. EasySpin-Simulationen bitte "
                     "selbst ergänzen.", "Caption as in the group's SI. Band from the microwave frequency; parameters "
                     "(g, ΔB_pp, couplings in MHz) only from own S = ½ fits, without uncertainties. Please add "
                     "EasySpin simulations yourself."),
     "cap_species": ("Spezies", "Species"),
-    "cap_species_ph": ("leer = Verbindung; z. B. 3b^{•+} (^{…} hochgestellt)",
-                       "empty = compound; e.g. 3b^{•+} (^{…} superscript)"),
+    "cap_species_ph": ("Leer = Verbindung; z. B. 3b^{•+} (^{…} hochgestellt)",
+                       "Empty = compound; e.g. 3b^{•+} (^{…} superscript)"),
     "cap_el": ("Leitsalz", "Electrolyte"),
-    "cap_el_ph": ("z. B. 0.1 M n-Bu4NPF6 (wird gemerkt)", "e.g. 0.1 M n-Bu4NPF6 (remembered)"),
+    "cap_el_ph": ("Z. B. 0.1 M n-Bu4NPF6 (wird gemerkt)", "E.g. 0.1 M n-Bu4NPF6 (remembered)"),
     "cap_temp": ("Temperatur", "Temperature"),
     "cap_cuvette": ("Küvette", "Cuvette"),
-    "cap_cuvette_ph": ("leer = 1 cm", "empty = 1 cm"),
-    "fluorescence_cap_conc_ph": ("z. B. 10 µM", "e.g. 10 µM"),
+    "cap_cuvette_ph": ("Leer = 1 cm", "Empty = 1 cm"),
+    "fluorescence_cap_conc_ph": ("Z. B. 10 µM", "E.g. 10 µM"),
     "fluorescence_cap_tip": ("Angaben für die Bildunterschrift im SI-Export (Lösungsmittel, Konzentration, Küvette); "
                              "Farben und λex kommen aus dem Bild",
                              "Details for the caption in the SI export (solvent, concentration, cuvette); colours "
@@ -1266,7 +1266,7 @@ TEXTS = {
                             "values would change)"),
     "parts_skipped": ("Nicht lesbar und deshalb ausgelassen:\n{items}", "Unreadable and therefore left out:\n{items}"),
     "compound_mp": ("Schmelzpunkt", "Melting point"),
-    "compound_mp_ph": ("z. B. 67 °C oder 218 °C (decomp.)", "e.g. 67 °C or 218 °C (decomp.)"),
+    "compound_mp_ph": ("Z. B. 67 °C oder 218 °C (decomp.)", "E.g. 67 °C or 218 °C (decomp.)"),
     "ms_group": ("HRMS", "HRMS"),
     "ms_file": ("MS-Bericht", "MS report"),
     "ms_file_tip": ("Bericht der Massenabteilung (.docx) oder PDF: Summenformel, Ion und found. Mit Bericht und Rohdaten "
@@ -1285,8 +1285,8 @@ TEXTS = {
                    "report); whole pages and small logos are never offered"),
     "hrms_no_spectrum": ("Kein Spektrum gewählt – links ein Bild aus dem PDF wählen oder MS-Rohdaten (.d) laden.",
                          "No spectrum selected – choose an image from the PDF on the left or load MS raw data (.d)."),
-    "ms_img_none": ("keins (Spektrum aus den Rohdaten)", "none (spectrum from the raw data)"),
-    "ms_img_none_plain": ("keins", "none"),
+    "ms_img_none": ("Keins (Spektrum aus den Rohdaten)", "None (spectrum from the raw data)"),
+    "ms_img_none_plain": ("Keins", "None"),
     "ms_img_item": ("Bild {k} · Seite {page} · {w} × {h} px", "Image {k} · page {page} · {w} × {h} px"),
     "ms_cand_head": ("Kandidaten aus dem PDF (Klick übernimmt)", "Candidates from the PDF (click to take)"),
     "ms_cand_mz": ("m/z", "m/z"),
@@ -1310,7 +1310,7 @@ TEXTS = {
     "ms_pdf_entry": ("Aus PDF gewählt: {mz}  ({ppm} ppm)", "From PDF: {mz}  ({ppm} ppm)"),
     "ms_manual": ("Manuell (m/z)", "Manual (m/z)"),
     "ms_manual_long": ("found von Hand (m/z)", "found entered manually (m/z)"),
-    "ms_manual_none": ("kein Wert", "no value"),
+    "ms_manual_none": ("Kein Wert", "No value"),
     "ms_manual_tip": ("Gemessenes m/z von Hand eintragen (4 Nachkommastellen); wird als found gewählt und als „manuell“ "
                       "gekennzeichnet. 0 bzw. leeren nimmt den Wert zurück.",
                       "Enter the measured m/z manually (4 decimals); it is chosen as found and marked “manual”. 0 or "
@@ -1318,7 +1318,7 @@ TEXTS = {
     "ms_manual_entry": ("Manuell: {mz}  ({ppm} ppm)", "Manual: {mz}  ({ppm} ppm)"),
     "ms_pdf_kind_smartformula": ("SmartFormula", "SmartFormula"),
     "ms_pdf_kind_text": ("per Klick", "by click"),
-    "ms_found_none": ("nicht gewählt", "not chosen"),
+    "ms_found_none": ("Nicht gewählt", "Not chosen"),
     "ms_sf_ion_differs": ("⚠ Ionenformel im Bericht ({rep}) passt nicht zum gewählten Ion ({own})",
                           "⚠ ion formula in the report ({rep}) does not match the chosen ion ({own})"),
     "ms_sf_calc_differs": ("⚠ calc. im Bericht ({rep}) weicht vom berechneten Wert ({own}) ab – in der Zeile steht {own}",
@@ -1348,7 +1348,7 @@ TEXTS = {
     "ms_raw_bad": ("kein Bruker-Messordner mit analysis.baf und analysis.sqlite",
                    "not a Bruker measurement folder with analysis.baf and analysis.sqlite"),
     "ms_rt": ("LC-Peak (RT)", "LC peak (RT)"),
-    "ms_rt_auto": ("automatisch", "automatic"),
+    "ms_rt_auto": ("Automatisch", "Automatic"),
     "ms_rt_auto_tip": ("Zusammenhängende Spektren um das Maximum des Ionenstroms (± 10 ppm um calc.) mit mindestens "
                        "50 % der Maximalintensität", "Contiguous spectra around the maximum of the ion current "
                        "(± 10 ppm around calc.) with at least 50 % of the maximum intensity"),
@@ -1374,9 +1374,9 @@ TEXTS = {
                     "Modus). Molmasse und Elementaranalyse gelten weiter für das ganze Salz.",
                     "The compound is a salt: what is measured is one charged part (cation in positive, anion in negative "
                     "mode). Molar mass and elemental analysis still refer to the whole salt."),
-    "ms_part_cation": ("Kation {f}", "cation {f}"),
-    "ms_part_anion": ("Anion {f}", "anion {f}"),
-    "ms_part_salt": ("ganzes Salz {f}", "whole salt {f}"),
+    "ms_part_cation": ("Kation {f}", "Cation {f}"),
+    "ms_part_anion": ("Anion {f}", "Anion {f}"),
+    "ms_part_salt": ("Ganzes Salz {f}", "Whole salt {f}"),
     "formula_salt_bad": ("Salz {f} nicht lesbar – Schreibweise z. B. [C10H16N]+ [PF6]- oder [C8H22N2]2+ 2[PF6]-",
                          "Salt {f} not readable – write e.g. [C10H16N]+ [PF6]- or [C8H22N2]2+ 2[PF6]-"),
     "ms_found": ("Gefunden (m/z)", "Found (m/z)"),
@@ -1409,7 +1409,7 @@ TEXTS = {
     "ms_no_match": ("⚠ kein gemessenes m/z innerhalb 20 ppm – Ion/Addukt prüfen", "⚠ no measured m/z within 20 ppm – check the ion/adduct"),
     "ms_polarity": ("⚠ der Bericht ist im Modus {rep}MS gemessen", "⚠ the report was measured in {rep}MS mode"),
     "ms_dev": ("Abweichung found − calc = {ppm} ppm (nur zur Kontrolle, steht nicht in der Zeile)",
-               "deviation found − calc = {ppm} ppm (check only, not part of the line)"),
+               "Deviation found − calc = {ppm} ppm (check only, not part of the line)"),
     "ms_dev_high": ("⚠ Abweichung über 5 ppm", "⚠ deviation above 5 ppm"),
     "compound_tip": ("Diese Verbindung (Name, ChemDraw, Formel, Molmasse): gilt in allen Tabs, z. B. ε, Fluoreszenz, IR "
                      "+ EA, HRMS und die SI",
@@ -1429,7 +1429,7 @@ TEXTS = {
     "compound_title": ("Verbindung",
                        "Compound"),
     "compound_name": ("Name / Probe", "Name / sample"),
-    "compound_name_ph": ("z. B. Probennummer", "e.g. sample number"),
+    "compound_name_ph": ("Z. B. Probennummer", "E.g. sample number"),
     "guide_compound_title": ("Verbindung: Nummer, Struktur und Angaben für die SI",
                              "Compound: number, structure and details for the SI"),
     "guide_compound_files": ("Dateien: ChemDraw (CDXML) oder ein Bild der Struktur (SVG, PDF, PNG); Summenformel und "
@@ -1461,8 +1461,8 @@ TEXTS = {
                             "Plateaus wählen. Den gewählten Verbinder ändern die Felder unter der Tabelle.",
                             "Drag from the end of a plateau onto another one in the figure, or choose two plateaus "
                             "here. The fields below the table change the selected connector."),
-    "dft_prof_edge_from": ("von", "from"),
-    "dft_prof_edge_to": ("nach", "to"),
+    "dft_prof_edge_from": ("Von", "From"),
+    "dft_prof_edge_to": ("Nach", "To"),
     "dft_prof_edge_line": ("Linie", "Line"),
     "dft_prof_edge_arrow": ("Pfeilspitze", "Arrowhead"),
     "dft_prof_edge_text": ("Text", "Text"),
@@ -1470,13 +1470,13 @@ TEXTS = {
     "dft_prof_edge_reset": ("Aus Schritt und Pfad", "From step and path"),
     "dft_prof_edge_reset_tip": ("Eigene Verbinder verwerfen: wieder je Pfadbuchstabe in der Reihenfolge der Schritte",
                                 "Discard own connectors: again per path letter in the order of the steps"),
-    "dft_prof_line_default": ("Standard", "default"),
-    "dft_prof_line_dashed": ("gestrichelt", "dashed"),
-    "dft_prof_line_solid": ("durchgezogen", "solid"),
-    "dft_prof_line_dotted": ("gepunktet", "dotted"),
-    "dft_prof_line_curve": ("geschwungen", "curved"),
-    "dft_prof_line_wavy": ("Wellenlinie", "wavy"),
-    "dft_prof_line_none": ("keine", "none"),
+    "dft_prof_line_default": ("Standard", "Default"),
+    "dft_prof_line_dashed": ("Gestrichelt", "Dashed"),
+    "dft_prof_line_solid": ("Durchgezogen", "Solid"),
+    "dft_prof_line_dotted": ("Gepunktet", "Dotted"),
+    "dft_prof_line_curve": ("Geschwungen", "Curved"),
+    "dft_prof_line_wavy": ("Wellenlinie", "Wavy"),
+    "dft_prof_line_none": ("Keine", "None"),
     "dft_prof_preset_classic": ("Klassisch", "Classic"),
     "dft_prof_preset_curves": ("Kurven", "Curves"),
     "dft_prof_preset_colour": ("Farbig", "Colour"),
@@ -1492,14 +1492,14 @@ TEXTS = {
                                  "Length of the level lines in steps (a level with its own width keeps it)."),
     "dft_prof_card_labels": ("Beschriftung", "Labels"),
     "dft_prof_label_pos": ("Lage", "Position"),
-    "dft_prof_labels_split": ("Wert oben, Name unten", "value above, name below"),
-    "dft_prof_labels_below": ("beide unter dem Plateau", "both below the level"),
-    "dft_prof_labels_above": ("beide über dem Plateau", "both above the level"),
+    "dft_prof_labels_split": ("Wert oben, Name unten", "Value above, name below"),
+    "dft_prof_labels_below": ("Beide unter dem Plateau", "Both below the level"),
+    "dft_prof_labels_above": ("Beide über dem Plateau", "Both above the level"),
     "dft_prof_label_font": ("Schrift", "Font"),
-    "dft_prof_font_normal": ("normal", "regular"),
-    "dft_prof_font_bold": ("fett", "bold"),
-    "dft_prof_font_italic": ("kursiv", "italic"),
-    "dft_prof_font_bold_italic": ("fett kursiv", "bold italic"),
+    "dft_prof_font_normal": ("Normal", "Regular"),
+    "dft_prof_font_bold": ("Fett", "Bold"),
+    "dft_prof_font_italic": ("Kursiv", "Italic"),
+    "dft_prof_font_bold_italic": ("Fett kursiv", "Bold italic"),
     "dft_prof_axis_title": ("Achsentitel", "Axis title"),
     "dft_prof_axis_title_tip": ("Eigener Titel der Energieachse, z. B. „ΔG (298.15 K) | ({unit})“: „ | “ beginnt eine neue\n"
                                 "Zeile, {unit} wird durch die gewählte Einheit ersetzt. Leer = automatisch.",
@@ -1510,19 +1510,19 @@ TEXTS = {
     "dft_prof_card_sections": ("Abschnitte", "Sections"),
     "dft_prof_section_add": ("Abschnitt …", "Section …"),
     "dft_prof_section_text": ("Text", "Text"),
-    "dft_prof_section_from": ("von", "from"),
-    "dft_prof_section_to": ("bis", "to"),
+    "dft_prof_section_from": ("Von", "From"),
+    "dft_prof_section_to": ("Bis", "To"),
     "dft_prof_sections_none": ("Keine Abschnitte.", "No sections."),
     "dft_prof_sections_tip": ("Balken unter dem Profil mit Text, z. B. für zwei Reaktionswege. „von“ und „bis“ sind\n"
                               "Positionen in Schritten wie bei den Plateaus; Doppelklick ändert eine Zelle.",
                               "Bar below the profile with a text, e.g. for two reaction channels. \"from\" and \"to\" are\n"
                               "positions in steps like those of the levels; double-click edits a cell."),
-    "dft_prof_preset_own": ("eigene", "custom"),
+    "dft_prof_preset_own": ("Eigene", "Custom"),
     "dft_prof_preset_tip": ("Stil in einem Zug setzen; Lage der Plateaus und Beschriftungen bleibt.\n"
                             "Artikel: ohne Rahmen, kräftige Plateaus, Name und Wert fett-kursiv unter dem Plateau.",
                             "Sets the style in one go; positions of levels and labels stay.\n"
                             "Article: no frame, heavy levels, name and value in bold italics below the level."),
-    "dft_prof_scaled": ("maßstäblich", "to scale"),
+    "dft_prof_scaled": ("Maßstäblich", "To scale"),
     "dft_prof_scaled_tip": ("Aus: schematisch, Höhen frei wählbar (steht dann im Bild und in der Unterschrift)",
                             "Off: schematic, heights can be chosen freely (stated in the figure and the caption)"),
     "dft_prof_path_colors": ("Farbe je Pfad", "Colour per path"),
@@ -1530,7 +1530,7 @@ TEXTS = {
     "dft_prof_labels_reset_tip": ("Verschobene Energien, Namen und Verbinder-Texte wieder an ihren Platz",
                                   "Put moved energies, names and connector texts back in place"),
     "compound_tab_empty": ("Struktur zeichnen", "Draw structure"),
-    "compound_mw_ph": ("aus der Zeichnung", "from the drawing"),
+    "compound_mw_ph": ("Aus der Zeichnung", "From the drawing"),
     "nav_grp_compound": ("Verbindung", "Compound"),
     "step_details": ("Angaben", "Details"),
     "compound_grp_name": ("Bezeichnung", "Name"),
@@ -1548,9 +1548,9 @@ TEXTS = {
     "cv_group_tip": ("Freies Feld, z. B. Lösungsmittel (THF, MeCN …): Datenreihe in den Auftragungen gegen die Scanrate",
                      "Free field, e.g. solvent (THF, MeCN …): data series in the plots against scan rate"),
     "cv_file_ref": ('Referenz der ausgewählten Messung', 'Reference of the Selected Measurement'),
-    "cv_fref_global": ("wie unter „Referenzierung“ (für alle)", "as under “Referencing” (for all)"),
-    "cv_fref_internal": ("eigener interner Standard", "own internal standard"),
-    "cv_fref_manual": ("eigene feste Verschiebung", "own fixed shift"),
+    "cv_fref_global": ("Wie unter „Referenzierung“ (für alle)", "As under “Referencing” (for all)"),
+    "cv_fref_internal": ("Eigener interner Standard", "Own internal standard"),
+    "cv_fref_manual": ("Eigene feste Verschiebung", "Own fixed shift"),
     "cv_ref_mixed": ("Achtung: Messungen mit unterschiedlicher Referenz (Fc⁺/Fc und Referenzelektrode) in einer Abbildung.",
                      "Note: measurements with different references (Fc⁺/Fc and reference electrode) in one figure."),
     "cv_plot": ("Auftragung", "Plot"),
@@ -1578,7 +1578,7 @@ TEXTS = {
                        "File times jump between {a} and {b}: possibly two measurements. Please check."),
     "sec_map": ("Potentialzuordnung", "Potential Assignment"),
     "sec_map_mode": ("Zuordnung", "Assignment"),
-    "sec_map_none": ("keine (nur nach Nummer)", "none (by number only)"),
+    "sec_map_none": ("Keine (nur nach Nummer)", "None (by number only)"),
     "sec_map_interval": ("Start + Intervall", "Start + interval"),
     "sec_map_time": ("Tabelle: Nr. → Zeit", "Table: no. → time"),
     "sec_map_potential": ("Tabelle: Nr. → Potential", "Table: no. → potential"),
@@ -1650,7 +1650,7 @@ TEXTS = {
                         "230 nm den Cutoff des ε-Tabs nicht überschreitet (gesättigte UV-Banden fallen so weg).",
                         "Which measurement of the ε series is shown. Automatic: highest concentration whose maximum "
                         "from 230 nm does not exceed the cutoff of the ε tab (saturated UV bands are skipped)."),
-    "ov_eps_auto": ("automatisch", "automatic"),
+    "ov_eps_auto": ("Automatisch", "Automatic"),
     "ov_eps_gone": ("{name}: Serie nicht mehr im ε-Tab", "{name}: series no longer in the ε tab"),
     "ov_sec_none": ("Im SEC-Tab sind noch keine Spektren geladen.", "No spectra loaded in the SEC tab yet."),
     "ov_sec_pick": ("Serie: Bereich vom ersten bis zum letzten markierten Spektrum, ohne Markierung die ganze Serie; "
@@ -1683,8 +1683,8 @@ TEXTS = {
     "ov_esd_src_input": ("aus der Eingabe", "from the input"),
     "ov_esd_src_range": ("aus dem Wertebereich – bitte prüfen", "from the value range – please check"),
     "ov_esd_src_user": ("vorgegeben", "set by user"),
-    "ov_esd_norm_only": ("„{name}“: ESD-Intensität ohne gesicherte Einheit – nur im Modus „normiert“ gezeigt",
-                         "“{name}”: ESD intensity has no confirmed unit – shown only in “normalised” mode"),
+    "ov_esd_norm_only": ("„{name}“: ESD-Intensität ohne gesicherte Einheit – nur im Modus „Normiert“ gezeigt",
+                         "“{name}”: ESD intensity has no confirmed unit – shown only in “Normalised” mode"),
     "esd_bad": ("{name}: kein ORCA-ESD-Spektrum (Kopf „Energy TotalSpectrum …“ fehlt).",
                 "{name}: not an ORCA ESD spectrum (header “Energy TotalSpectrum …” missing)."),
     "fl_esd": ("Berechnet (ESD)", "Calculated (ESD)"),
@@ -1709,16 +1709,16 @@ TEXTS = {
                    "im Projekt.",
                    "Older figure: its structure per spectrum stays as it is; new comparisons of different compounds "
                    "in the project."),
-    "ov_own_norm": ("eigener (statt „Normierung“ unten)", "own (instead of “Normalisation” below)"),
+    "ov_own_norm": ("Eigener (statt „Normierung“ unten)", "Own (instead of “Normalisation” below)"),
     "ov_norm_window": ("Normierung [nm]", "Normalisation [nm]"),
     "ov_norm_window_long": ("Normierungsbereich [nm]", "Normalisation range [nm]"),
     "ov_fwhm": ("Breite (FWHM)", "Width (FWHM)"),
     "ov_shift": ("Verschiebung", "Shift"),
     "ov_display": ("Normierung", "Normalisation"),
     "ov_ymode": ("y-Größe", "y quantity"),
-    "ov_y_norm": ("normiert (auf die Bande von Interesse)", "normalised (to the band of interest)"),
+    "ov_y_norm": ("Normiert (auf die Bande von Interesse)", "Normalised (to the band of interest)"),
     "ov_y_eps": ("ε [10³ M⁻¹ cm⁻¹]", "ε [10³ M⁻¹ cm⁻¹]"),
-    "ov_y_abs": ("Absorbanz (wie gemessen)", "absorbance (as measured)"),
+    "ov_y_abs": ("Absorbanz (wie gemessen)", "Absorbance (as measured)"),
     "ov_ymode_tip": ("ε: Messungen brauchen Konzentration und Schichtdicke (SEC entfällt). Absorbanz: Messungen und "
                      "SEC wie gemessen, ohne TD-DFT.",
                      "ε: measurements need concentration and path length (SEC is left out). Absorbance: measurements "
@@ -1761,18 +1761,18 @@ TEXTS = {
     "soc_nosoc": ("ohne SOC", "without SOC"),
     "ov_scale_offset": ("Skalierung / Versatz", "Scale / offset"),
     "ov_line": ("Linie", "Line"),
-    "ls_solid": ("durchgezogen", "solid"),
-    "ls_dashed": ("gestrichelt", "dashed"),
-    "ls_dotted": ("gepunktet", "dotted"),
-    "ls_dashdot": ("Strich-Punkt", "dash-dot"),
+    "ls_solid": ("Durchgezogen", "Solid"),
+    "ls_dashed": ("Gestrichelt", "Dashed"),
+    "ls_dotted": ("Gepunktet", "Dotted"),
+    "ls_dashdot": ("Strich-Punkt", "Dash-dot"),
     "stick_mode": ("TD-DFT-Normierung", "TD-DFT scaling"),
     "stick_mode_long": ("TD-DFT-Normierung", "TD-DFT normalisation"),
-    "stick_max": ("stärkster Übergang = 1", "strongest transition = 1"),
-    "stick_band": ("Kurvenmaximum = 1", "curve maximum = 1"),
-    "stick_faxis": ("Kurvenmaximum = 1, rechts zusätzlich f", "curve maximum = 1, f on the right axis"),
+    "stick_max": ("Stärkster Übergang = 1", "Strongest transition = 1"),
+    "stick_band": ("Kurvenmaximum = 1", "Curve maximum = 1"),
+    "stick_faxis": ("Kurvenmaximum = 1, rechts zusätzlich f", "Curve maximum = 1, f on the right axis"),
     "ov_faxis_stack": ("f-Achse ausgelassen: gestapelt bzw. mit Versatz beginnt die Kurve nicht bei y = 0 "
                        "(Striche wie „Kurvenmaximum = 1“)",
-                       "f axis omitted: stacked or offset curves do not start at y = 0 (sticks as “curve maximum = 1”)"),
+                       "f axis omitted: stacked or offset curves do not start at y = 0 (sticks as “Curve maximum = 1”)"),
     "ov_faxis_mixed": ("f-Achse ausgelassen: die Rechnungen haben verschiedene Maßstäbe (FWHM/Normierung)",
                        "f axis omitted: the calculations use different scales (FWHM/normalisation)"),
     "fl_data": ("Spektren", "Spectra"),
@@ -1793,7 +1793,7 @@ TEXTS = {
     "fl_eps_tip": ("Nur Beschriftung am Absorptionslabel (z. B. aus dem Tab UV-Vis (ε)), wird nicht gerechnet.",
                    "Label text at the absorption label only (e.g. from the UV-Vis (ε) tab), not used in any "
                    "calculation."),
-    "fl_eps_ph": ("optional, z. B. 23604", "optional, e.g. 23604"),
+    "fl_eps_ph": ("Optional, z. B. 23604", "Optional, e.g. 23604"),
     "fl_stokes_label": ("Stokes-Verschiebung",
                         "Stokes shift"),
     "fl_stokes_label_long": ("Stokes-Verschiebung im Bild", "Stokes shift in the figure"),
@@ -1813,7 +1813,7 @@ TEXTS = {
     "fluo_tau_exc_det_tip": ("Emissionswellenlänge, bei der das Anregungsspektrum aufgenommen wurde (nur für die "
                              "Bildunterschrift).", "Emission wavelength at which the excitation spectrum was recorded "
                              "(caption only)."),
-    "fluo_tau_none": ("keine Angabe", "not given"),
+    "fluo_tau_none": ("Keine Angabe", "Not given"),
     "fluo_tau_data": ("Abklingkurve", "Decay"),
     "fluo_tau_decay": ("Abklingkurve", "Decay"),
     "fluo_tau_irf": ("IRF", "IRF"),
@@ -1838,8 +1838,8 @@ TEXTS = {
                            "Entfaltung). Mit IRF entfällt das Feld.", "Without IRF the fit starts this many ns after "
                            "the maximum of the decay (tail fit, no deconvolution). Hidden with an IRF."),
     "fluo_tau_avg": ("τ für k_r, k_nr", "τ for k_r, k_nr"),
-    "fluo_tau_avg_amp": ("amplitudengewichtet", "amplitude-weighted"),
-    "fluo_tau_avg_int": ("intensitätsgewichtet", "intensity-weighted"),
+    "fluo_tau_avg_amp": ("Amplitudengewichtet", "Amplitude-weighted"),
+    "fluo_tau_avg_int": ("Intensitätsgewichtet", "Intensity-weighted"),
     "fluo_tau_avg_tip": ("Bei zwei Exponentialen: welche mittlere Lebensdauer k_r = Φ/τ und k_nr = (1 − Φ)/τ verwenden. "
                          "amplitudengewichtet ΣA_iτ_i/ΣA_i, intensitätsgewichtet ΣA_iτ_i²/ΣA_iτ_i; beide stehen in der "
                          "Tabelle.", "With two exponentials: which average lifetime k_r = Φ/τ and k_nr = (1 − Φ)/τ use. "
@@ -1884,7 +1884,7 @@ TEXTS = {
     "fluo_tau_read_none": ("keine Zahlenspalten gefunden", "no numeric columns found"),
     "fluo_tau_read_short": ("nur {n} Datenzeilen (mindestens {m})", "only {n} data rows (at least {m})"),
     "fluo_tau_read_order": ("Zeit (Spalte 1) steigt nicht streng an", "time (column 1) is not strictly increasing"),
-    "bands_add": ("zusätzlich zu gefundenen", "in addition to found"),
+    "bands_add": ("Zusätzlich zu gefundenen", "In addition to found"),
     "bands_add_long": ("zusätzlich zu den automatisch gefundenen", "in addition to automatically found bands"),
     "find_shoulders": ("Schultern suchen", "Find shoulders"),
     "find_shoulders_long": ("Schultern automatisch suchen", "Find shoulders automatically"),
@@ -1905,7 +1905,7 @@ TEXTS = {
     "size": ("Größe", "Size"),
     "size_std": ("Standard (eng zugeschnitten)", "Standard (tight crop)"),
     "size_half_a4": ("Word: halbe A4-Seite (16 × 11 cm)", "Word: half A4 page (16 × 11 cm)"),
-    "size_custom": ("benutzerdefiniert", "custom"),
+    "size_custom": ("Benutzerdefiniert", "Custom"),
     "size_wh": ("B × H", "W × H"),
     "formats": ("Formate", "Formats"),
     "chips_options": ("Optionen", "Options"),
@@ -1943,7 +1943,7 @@ TEXTS = {
                            "Width of the widest structure. Several structures in one figure always share the same\n"
                            "scale (equal bond length); the mouse wheel on one structure changes all."),
     "xrange": ("λ-Bereich [nm]", "λ range [nm]"),
-    "xrange_auto": ("gesamt", "full"),
+    "xrange_auto": ("Gesamt", "Full"),
     "conc_title": ("Konzentrationen eingeben", "Enter concentrations"),
     "conc_intro": ("Die Probennamen enthalten keine (vollständigen) Konzentrationsangaben. Bitte Konzentrationen "
                    "eintragen – Proben ohne Wert (z. B. Blindprobe) werden ignoriert. Die Angaben werden mit der "
@@ -1991,8 +1991,8 @@ TEXTS = {
                   "Molar mass is not used: concentrations are given in {u}."),
     "dil_factor": ("Faktor", "Factor"),
     "dil_fill": ("Verdünnungsreihe ausfüllen", "Fill dilution series"),
-    "dil_hint": ("füllt die markierten Zeilen (oder alle) von oben nach unten: Start, Start/Faktor, …",
-                 "fills the selected rows (or all) top to bottom: start, start/factor, …"),
+    "dil_hint": ("Füllt die markierten Zeilen (oder alle) von oben nach unten: Start, Start/Faktor, …",
+                 "Fills the selected rows (or all) top to bottom: start, start/factor, …"),
     "conc_none": ("Keine Probe mit Konzentration – nichts auszuwerten.",
                   "No sample with a concentration – nothing to analyse."),
     # ---- Format (Schrift, Rahmen) -----------------------------------------
@@ -2023,9 +2023,9 @@ TEXTS = {
                  "Greek letters (λ, ε) in the symbol font"),
     "tf_grp_labels": ("Labels an den Banden (λ / ε)", "Band labels (λ / ε)"),
     "tf_label_size": ("Schriftgröße", "Font size"),
-    "tf_auto": ("automatisch", "automatic"),
-    "tf_bold": ("fett", "bold"),
-    "tf_italic": ("kursiv", "italic"),
+    "tf_auto": ("Automatisch", "Automatic"),
+    "tf_bold": ("Fett", "Bold"),
+    "tf_italic": ("Kursiv", "Italic"),
     "tf_color": ("Farbe", "Colour"),
     "tf_grp_frames": ("Rahmen", "Frames"),
     "tf_axes_frame": ("Geschlossener Rahmen um den Plot (auch oben und rechts)",
@@ -2042,18 +2042,18 @@ TEXTS = {
     "ov_gap_tip": ("Abstand der Ebenen in y-Einheiten (normiert: 1 = eine Kurvenhöhe; ε-Modus: 10³ M⁻¹ cm⁻¹)",
                    "Spacing of the levels in y units (normalised: 1 = one curve height; ε mode: 10³ M⁻¹ cm⁻¹)"),
     "ov_yaxis": ("y-Achse", "y axis"),
-    "yaxis_auto": ("automatisch (gestapelt: ohne Zahlen)", "automatic (stacked: no numbers)"),
-    "yaxis_numbers": ("mit Zahlen", "with numbers"),
-    "yaxis_no_numbers": ("ohne Zahlen und Teilstriche", "without numbers and ticks"),
-    "yaxis_off": ("ausblenden", "hide"),
+    "yaxis_auto": ("Automatisch (gestapelt: ohne Zahlen)", "Automatic (stacked: no numbers)"),
+    "yaxis_numbers": ("Mit Zahlen", "With numbers"),
+    "yaxis_no_numbers": ("Ohne Zahlen und Teilstriche", "Without numbers and ticks"),
+    "yaxis_off": ("Ausblenden", "Hide"),
     "ov_curve_labels": ("Namen an den Kurven", "Names at the curves"),
     "ov_curve_labels_long": ("Namen an den Kurven statt Legende", "Names at the curves instead of a legend"),
     "ov_zero_lines": ("Nulllinie je Ebene", "Zero line per level"),
     "ov_zero_lines_long": ("Nulllinie je Ebene (gestrichelt)", "Zero line per level (dashed)"),
     "ov_same_level": ("Ebene wie darüber", "Level as above"),
     "ov_same_level_long": ("Gleiche Stapelebene wie die Kurve darüber", "Same stacking level as the curve above"),
-    "ov_same_level_tip": ("z. B. TD-DFT direkt unter der zugehörigen Messung",
-                          "e.g. TD-DFT directly with its measurement"),
+    "ov_same_level_tip": ("Z. B. TD-DFT direkt unter der zugehörigen Messung",
+                          "E.g. TD-DFT directly with its measurement"),
     # ---- Cyclovoltammetrie -------------------------------------------------
     "tab_cv": ("CV", "CV"),
     "cv_files": ("Messungen (Gamry .DTA)", "Measurements (Gamry .DTA)"),
@@ -2064,8 +2064,8 @@ TEXTS = {
     "cv_cycle_tip": ("Welcher Zyklus gezeigt und ausgewertet wird (zu groß = letzter vorhandener).",
                      "Which cycle is shown and analysed (too large = last available)."),
     "cv_couples": ("Redoxpaare", "Redox couples"),
-    "cv_from": ("von [V, Achse]", "from [V, axis]"),
-    "cv_to": ("bis [V, Achse]", "to [V, axis]"),
+    "cv_from": ("Von [V, Achse]", "From [V, axis]"),
+    "cv_to": ("Bis [V, Achse]", "To [V, axis]"),
     "cv_couples_tip": ("Potentialfenster je Redoxpaar in der Achsenskala. Im Fenster: E_pa = Strommaximum im\n"
                        "Hinlauf, E_pc = Minimum im Rücklauf, E½ = Mittelwert, ΔE_p = Differenz.\n"
                        "Rot in den Ergebnissen: Peak am Fensterrand – Fenster anpassen.",
@@ -2076,16 +2076,16 @@ TEXTS = {
     "cv_suggest_tip": ("Redoxpaare automatisch aus der ausgewählten Messung vorschlagen",
                        "Suggest redox couples automatically from the selected measurement"),
     "cv_ref": ("Referenz", "Reference"),
-    "cv_ref_none": ("wie gemessen (Referenzelektrode)", "as measured (reference electrode)"),
-    "cv_ref_internal": ("intern (Fc / Ac₂Fc in einer Messung)", "internal (Fc / Ac₂Fc in one measurement)"),
-    "cv_ref_manual": ("Verschiebung von Hand", "manual shift"),
+    "cv_ref_none": ("Wie gemessen (Referenzelektrode)", "As measured (reference electrode)"),
+    "cv_ref_internal": ("Intern (Fc / Ac₂Fc in einer Messung)", "Internal (Fc / Ac₂Fc in one measurement)"),
+    "cv_ref_manual": ("Verschiebung von Hand", "Manual shift"),
     "cv_ref_file": ("Referenzmessung", "Reference run"),
     "cv_ref_file_long": ("Messung mit Referenz", "Measurement with reference"),
     "cv_ref_window": ("Referenzfenster [V]", "Reference window [V]"),
     "cv_ref_window_long": ("Fenster Referenz [V, gemessen]", "Reference window [V, measured]"),
     "cv_ref_compound": ("E° Ref. vs. Fc⁺/Fc", "E° ref. vs. Fc⁺/Fc"),
     "cv_ref_compound_long": ("Referenz E° vs. Fc⁺/Fc", "Reference E° vs. Fc⁺/Fc"),
-    "cv_ref_custom": ("eigene", "custom"),
+    "cv_ref_custom": ("Eigene", "Custom"),
     "cv_ref_value_tip": ("E½ der Referenzverbindung gegen Fc⁺/Fc. Ac₂Fc (1,1'-Diacetylferrocen): Vorgabe +0,49 V;\n"
                          "lösungsmittelabhängig – mit der verwendeten Literatur abgleichen.",
                          "E½ of the reference compound vs. Fc⁺/Fc. Ac₂Fc (1,1'-diacetylferrocene): default +0.49 V;\n"
@@ -2159,40 +2159,40 @@ TEXTS = {
     "pub_cv_we": ("Arbeitselektrode", "Working electrode"),
     "pub_cv_area": ("Fläche", "Area"),
     "pub_cv_more": ("Weitere Angaben", "Further details"),
-    "pub_cv_ph_more": ("ganze Sätze, z. B. Präparation der Referenzelektrode, Vorbehandlung des Leitsalzes (englisch)",
-                       "full sentences, e.g. preparation of the reference electrode, pretreatment of the electrolyte"),
+    "pub_cv_ph_more": ("Ganze Sätze, z. B. Präparation der Referenzelektrode, Vorbehandlung des Leitsalzes (englisch)",
+                       "Full sentences, e.g. preparation of the reference electrode, pretreatment of the electrolyte"),
     "pub_cv_polish": ("Politur", "Polishing"),
     "pub_cv_ce": ("Gegenelektrode", "Counter electrode"),
     "pub_cv_ref": ("Referenzelektrode", "Reference electrode"),
     "pub_cv_gas": ("Atmosphäre", "Atmosphere"),
     "pub_cv_ir": ("iR-Kompensation", "iR compensation"),
     "pub_cv_conv": ("Konvention", "Convention"),
-    "pub_cv_conv_none": ("nicht angegeben (steht dann in jeder Bildunterschrift)", "not stated (then given in every caption)"),
+    "pub_cv_conv_none": ("Nicht angegeben (steht dann in jeder Bildunterschrift)", "Not stated (then given in every caption)"),
     "pub_cv_conv_iupac": ("IUPAC (anodische Ströme positiv)", "IUPAC (anodic currents positive)"),
-    "pub_cv_conv_polar": ("polarographisch (kathodische Ströme positiv)", "polarographic (cathodic currents positive)"),
+    "pub_cv_conv_polar": ("Polarographisch (kathodische Ströme positiv)", "Polarographic (cathodic currents positive)"),
     "cv_cap_start": ("Start und Richtung", "Start and direction"),
     "cv_cap_start_long": ("Startpotential und Richtung des Scans in die Bildunterschrift schreiben (aus der Messdatei). "
                           "Vorgabe aus: der Pfeil in der Abbildung zeigt die Richtung.",
                           "Write starting potential and direction of the scan into the caption (from the measurement "
                           "file). Off by default: the arrow in the figure shows the direction."),
-    "pub_cv_ph_device": ("Hersteller, Modell", "manufacturer, model"),
-    "pub_cv_ph_we": ("z. B. glassy carbon, 3 mm diameter", "e.g. glassy carbon, 3 mm diameter"),
-    "pub_cv_ph_area": ("z. B. 0.0707 (cm2) oder 7.07 mm2", "e.g. 0.0707 (cm2) or 7.07 mm2"),
-    "pub_cv_ph_polish": ("z. B. 0.05 µm Al2O3", "e.g. 0.05 µm Al2O3"),
-    "pub_cv_ph_ce": ("z. B. Pt wire", "e.g. Pt wire"),
-    "pub_cv_ph_ref": ("z. B. Ag/AgNO3 (0.01 M in MeCN)", "e.g. Ag/AgNO3 (0.01 M in MeCN)"),
-    "pub_cv_ph_gas": ("z. B. argon, glovebox", "e.g. argon, glovebox"),
-    "pub_cv_ph_ir": ("z. B. positive feedback, 85%", "e.g. positive feedback, 85%"),
+    "pub_cv_ph_device": ("Hersteller, Modell", "Manufacturer, model"),
+    "pub_cv_ph_we": ("Z. B. glassy carbon, 3 mm diameter", "E.g. glassy carbon, 3 mm diameter"),
+    "pub_cv_ph_area": ("Z. B. 0.0707 (cm2) oder 7.07 mm2", "E.g. 0.0707 (cm2) or 7.07 mm2"),
+    "pub_cv_ph_polish": ("Z. B. 0.05 µm Al2O3", "E.g. 0.05 µm Al2O3"),
+    "pub_cv_ph_ce": ("Z. B. Pt wire", "E.g. Pt wire"),
+    "pub_cv_ph_ref": ("Z. B. Ag/AgNO3 (0.01 M in MeCN)", "E.g. Ag/AgNO3 (0.01 M in MeCN)"),
+    "pub_cv_ph_gas": ("Z. B. argon, glovebox", "E.g. argon, glovebox"),
+    "pub_cv_ph_ir": ("Z. B. positive feedback, 85%", "E.g. positive feedback, 85%"),
     "cv_acs_we": ("Arbeitselektrode", "Working electrode"),
-    "cv_acs_we_ph": ("z. B. Glaskohlenstoff, Ø 3 mm", "e.g. glassy carbon, 3 mm diameter"),
+    "cv_acs_we_ph": ("Z. B. Glaskohlenstoff, Ø 3 mm", "E.g. glassy carbon, 3 mm diameter"),
     "cv_acs_ce": ("Gegenelektrode", "Counter electrode"),
-    "cv_acs_ce_ph": ("z. B. Pt-Draht", "e.g. Pt wire"),
+    "cv_acs_ce_ph": ("Z. B. Pt-Draht", "E.g. Pt wire"),
     "cv_acs_gas": ("Spülgas", "Purge gas"),
-    "cv_acs_gas_ph": ("z. B. Argon", "e.g. argon"),
+    "cv_acs_gas_ph": ("Z. B. Argon", "E.g. argon"),
     "cv_acs_device": ("Gerät", "Instrument"),
-    "cv_acs_device_ph": ("Hersteller, Modell", "manufacturer, model"),
+    "cv_acs_device_ph": ("Hersteller, Modell", "Manufacturer, model"),
     "cv_acs_polish": ("Politur", "Polishing"),
-    "cv_acs_polish_ph": ("z. B. 0.05 µm Al2O3", "e.g. 0.05 µm Al2O3"),
+    "cv_acs_polish_ph": ("Z. B. 0.05 µm Al2O3", "E.g. 0.05 µm Al2O3"),
     "cv_acs_from_file": ("Aus den Messdateien: {items}.", "From the measurement files: {items}."),
     "cv_acs_start": ("Start bei {E} V vs. {ref}", "start at {E} V vs. {ref}"),
     "cv_acs_dir_pos": ("Scan in positiver Richtung", "scan in the positive direction"),
@@ -2236,7 +2236,7 @@ TEXTS = {
     "cv_fit_slope": ("Steigung [µA (V s⁻¹)^-½]", "Slope [µA (V s⁻¹)^-½]"),
     "cv_fit_icpt": ("Abschnitt [µA]", "Intercept [µA]"),
     "cv_fit_icpt_tip": ("y-Achsenabschnitt der Regression (Strom bei v = 0)", "y intercept of the regression (current at v = 0)"),
-    "cv_fit_ll": ("log-log-Steigung", "Log–log slope"),
+    "cv_fit_ll": ("Log-log-Steigung", "Log–log slope"),
     "cv_fit_D_tip": ("Diffusionskoeffizient aus der Randles–Ševčík-Steigung des Hinpeaks; in Klammern die 95-%-Grenzen "
                      "(nur aus der Unsicherheit der Steigung).",
                      "Diffusion coefficient from the Randles–Ševčík slope of the forward peak; 95% limits in brackets "
@@ -2317,7 +2317,7 @@ TEXTS = {
     "cv_k0_falls": ("⚠ Paar {couple}: k⁰ fällt mit steigender Scanrate um mehr als {pct} % – Zeichen für iR-Abfall.",
                     "⚠ Couple {couple}: k⁰ falls by more than {pct} % with increasing scan rate – a sign of iR drop."),
     "cv_k0_D": ("D für k⁰", "D for k⁰"),
-    "cv_k0_D_rs": ("aus Randles–Ševčík", "from Randles–Ševčík"),
+    "cv_k0_D_rs": ("Aus Randles–Ševčík", "From Randles–Ševčík"),
     "cv_k0_D_tip": ("Diffusionskoeffizient für k⁰ (D_O = D_R), z. B. aus einer reversiblen Messung oder Chronoamperometrie.\n"
                     "Leer: D aus der Randles–Ševčík-Steigung des Paars (bei nicht reversiblem Paar zu klein: k⁰ scheinbar).",
                     "Diffusion coefficient for k⁰ (D_O = D_R), e.g. from a reversible measurement or chronoamperometry.\n"
@@ -2342,7 +2342,7 @@ TEXTS = {
                       "The baseline ends at least this far before the forward peak (default 0.20 V: a reversible wave\n"
                       "still carries about 0.3% of the peak current there) and in any case before the wave rises (2% of the peak height; broad waves, iR drop).\n"
                       "Needs at least 30 mV of peak-free current in the window."),
-    "cv_show_bl": ("im Bild zeigen", "show in figure"),
+    "cv_show_bl": ("Im Bild zeigen", "Show in figure"),
     "cv_bl_short": ("⚠ Bei {n} Messung(en) reicht der Vorlauf im Fenster nur für eine Basislinie bis {gap} V vor dem Peak: "
                     "i_p dort bis etwa 6 % zu klein. Fenster zur Startseite des Hinpeaks erweitern.",
                     "⚠ For {n} measurement(s) the range before the wave only allows a baseline up to {gap} V before the "
@@ -2385,15 +2385,15 @@ TEXTS = {
     "sec_shift": ("E(Fc⁺/Fc) gemessen", "E(Fc⁺/Fc) measured"),
     "sec_shift_tip": ("Lage von Fc⁺/Fc gegen die Referenzelektrode; wird abgezogen (0 = Achse wie gemessen).",
                       "Position of Fc⁺/Fc vs. the reference electrode; subtracted (0 = axis as measured)."),
-    "sec_from_cv": ("aus CV-Tab", "from CV tab"),
+    "sec_from_cv": ("Aus CV-Tab", "From CV tab"),
     "sec_display": ("Darstellung", "Display"),
     "sec_mode": ("Ansicht", "View"),
     "sec_mode_spectra": ("Spektrenserie", "Spectral series"),
     "sec_mode_trace": ("A bei λ gegen E", "A at λ vs. E"),
     "sec_mode_heatmap": ("Heatmap (λ gegen Verlauf)", "Heatmap (λ vs. course)"),
     "sec_hm_value": ("Farbe zeigt", "Colour shows"),
-    "sec_hm_abs": ("Werte wie gemessen", "values as measured"),
-    "sec_hm_diff": ("Differenz zum ersten Spektrum (Δ)", "difference to first spectrum (Δ)"),
+    "sec_hm_abs": ("Werte wie gemessen", "Values as measured"),
+    "sec_hm_diff": ("Differenz zum ersten Spektrum (Δ)", "Difference to first spectrum (Δ)"),
     "sec_hm_cmap": ("Farbskala", "Colour map"),
     "sec_hm_cmap_tip": ("Absorbanz: sequentielle Skala. ΔA (Differenzspektren an): divergierende Skala mit 0 in der "
                         "Mitte.", "Absorbance: sequential map. ΔA (difference spectra on): diverging map centred "
@@ -2404,7 +2404,7 @@ TEXTS = {
                         "is symmetric, −value … +value."),
     "sec_hover_heat": ("λ = {lam:.1f} nm    {y}    {q} = {v}", "λ = {lam:.1f} nm    {y}    {q} = {v}"),
     "sec_range": ("Spektren (Nr.)", "Spectra (no.)"),
-    "sec_last_all": ("bis Ende", "to end"),
+    "sec_last_all": ("Bis Ende", "To end"),
     "sec_range_info_e": ("{n} Spektren, {a} V → {b} V", "{n} spectra, {a} V → {b} V"),
     "sec_range_info": ("{n} Spektren", "{n} spectra"),
     "sec_highlight": ("Erstes/letztes hervorheben", "Highlight first/last"),
@@ -2417,8 +2417,8 @@ TEXTS = {
                               "„Farbverlauf“ ausschalten.", "Colour gradient by scan rate is on: the colour comes from "
                               "the gradient. Switch off “gradient” to use your own colours."),
     "sec_mid": ("Zwischenspektren", "Intermediate spectra"),
-    "sec_mid_ph_e": ("Potential [V], z. B. −0.45", "potential [V], e.g. −0.45"),
-    "sec_mid_ph_n": ("Nr. des Spektrums, z. B. 35", "spectrum no., e.g. 35"),
+    "sec_mid_ph_e": ("Potential [V], z. B. −0.45", "Potential [V], e.g. −0.45"),
+    "sec_mid_ph_n": ("Nr. des Spektrums, z. B. 35", "Spectrum no., e.g. 35"),
     "sec_mid_tip": ("Zusätzlich hervorgehobene Spektren, z. B. für eine Zwischenstufe (Radikalkation): grün, weitere\n"
                     "in Orange, Violett, Türkis. Eingabe als Potential in V in der Skala der Achse (mit Referenz);\n"
                     "genommen wird das gezeigte Spektrum mit dem nächstliegenden Potential (bei Hin- und Rückscan das\n"
@@ -2431,9 +2431,9 @@ TEXTS = {
                     "last only. Only with “highlight”."),
     "sec_mid_info": ("Zwischenspektren: {items}", "Intermediate spectra: {items}"),
     "sec_bands": ("λ-Labels [nm]", "λ labels [nm]"),
-    "sec_bands_ph": ("z. B. 373, 432", "e.g. 373, 432"),
+    "sec_bands_ph": ("Z. B. 373, 432", "E.g. 373, 432"),
     "sec_trace": ("λ für A gegen E [nm]", "λ for A vs. E [nm]"),
-    "sec_trace_ph": ("leer = größte Änderung", "empty = largest change"),
+    "sec_trace_ph": ("Leer = größte Änderung", "Empty = largest change"),
     "sec_fit": ("Scheinbares E½", "Apparent E½"),
     "sec_fit_long": ("Scheinbares E½ (Nernst-Fit)", "Apparent E½ (Nernst fit)"),
     "sec_fit_tip": ("A = A_red + (A_ox − A_red)/(1 + exp(−nF(E − E½)/RT)). Bei kontinuierlichem Scan hinkt die\n"
@@ -2474,8 +2474,8 @@ TEXTS = {
                       "Caption as in the group's SI. Capacity: concentration and electrolyte from the fields; "
                       "potential: cut-off potentials and current from the file."),
     "hcell_cap_solvent": ("Elektrolyt", "Electrolyte"),
-    "hcell_cap_solvent_ph": ("z. B. MeCN, 0.1 M n-Bu4NClO4", "e.g. MeCN, 0.1 M n-Bu4NClO4"),
-    "hcell_cap_conc_ph": ("z. B. 10 mM", "e.g. 10 mM"),
+    "hcell_cap_solvent_ph": ("Z. B. MeCN, 0.1 M n-Bu4NClO4", "E.g. MeCN, 0.1 M n-Bu4NClO4"),
+    "hcell_cap_conc_ph": ("Z. B. 10 mM", "E.g. 10 mM"),
     "hcell_xrange": ("Zyklen (Achse)", "Cycles (axis)"),
     "hcell_data": ("Messungen", "Measurements"),
     "hcell_add": ("Messung …", "Measurement …"),
@@ -2483,22 +2483,22 @@ TEXTS = {
     "hcell_eval": ("Auswertung", "Evaluation"),
     "hcell_view_capacity": ("Kapazität gegen Zyklus", "Capacity vs. cycle"),
     "hcell_view_potential": ("Potential gegen Zeit", "Potential vs. time"),
-    "hcell_from_file": ("aus Datei", "from file"),
+    "hcell_from_file": ("Aus Datei", "From file"),
     "hcell_qtheo": ("Q_theo", "Q_theo"),
     "hcell_qtheo_long": ("Theoretische Kapazität Q_theo", "Theoretical capacity Q_theo"),
-    "hcell_qtheo_tip": ("Theoretische Kapazität der gewählten Messung (100 %). „aus Datei“ = Wert, der im Gerät\n"
+    "hcell_qtheo_tip": ("Theoretische Kapazität der gewählten Messung (100 %). „Aus Datei“ = Wert, der im Gerät\n"
                         "eingestellt war (CAPACITY). Gilt nur für die gewählte Messung.",
-                        "Theoretical capacity of the selected measurement (100 %). “from file” = value set in the\n"
+                        "Theoretical capacity of the selected measurement (100 %). “From file” = value set in the\n"
                         "instrument (CAPACITY). Applies only to the selected measurement."),
     "hcell_unit": ("Kapazität", "Capacity"),
     "hcell_cycles": ("Zyklen", "Cycles"),
-    "hcell_cycles_ph": ("leer = automatisch (1, 2 … letzter)", "empty = automatic (1, 2 … last)"),
+    "hcell_cycles_ph": ("Leer = automatisch (1, 2 … letzter)", "Empty = automatic (1, 2 … last)"),
     "hcell_cycles_tip": ("Gezeigte Zyklen, z. B. 1, 2, 50, 100 oder 1-3. Leer: erster, zweiter und gleichmäßig\n"
                          "verteilt bis zum letzten (höchstens fünf).",
                          "Cycles shown, e.g. 1, 2, 50, 100 or 1-3. Empty: first, second and evenly spaced up to\n"
                          "the last (at most five)."),
     "hcell_ref": ("Referenz", "Reference"),
-    "hcell_ref_ph": ("leer = E [V], z. B. Ag0/+", "empty = E [V], e.g. Ag0/+"),
+    "hcell_ref_ph": ("Leer = E [V], z. B. Ag0/+", "Empty = E [V], e.g. Ag0/+"),
     "hcell_ref_tip": ("Referenz der Potentialachse wie im CV-Tab („Ag0/+“ wird zu Ag⁰/⁺). Leer: E [V].",
                       "Reference of the potential axis as in the CV tab (“Ag0/+” becomes Ag⁰/⁺). Empty: E [V]."),
     "hcell_show_ce": ("Coulomb-Effizienz", "Coulombic efficiency"),
@@ -2527,7 +2527,7 @@ TEXTS = {
     "hcell_col_first": ("Entladen, erster Zyklus [mAh]", "Discharge, first cycle [mAh]"),
     "hcell_col_last": ("Entladen, letzter Zyklus [mAh]", "Discharge, last cycle [mAh]"),
     "hcell_col_ret": ("Erhalt [%]", "Retention [%]"),
-    "hcell_col_ce": ("mittlere CE [%]", "Mean CE [%]"),
+    "hcell_col_ce": ("Mittlere CE [%]", "Mean CE [%]"),
     "hcell_col_n": ("Zyklen", "Cycles"),
     "hcell_col_h": ("Dauer [h]", "Duration [h]"),
     "hcell_kpi_ret": ("Erhalt", "Retention"),
@@ -2541,7 +2541,7 @@ TEXTS = {
                         "{f}: STARTTIMEOFFSET missing – no true time axis."),
     # ---- EPR ---------------------------------------------------------------
     "tab_epr": ("EPR", "EPR"),
-    "off": ("aus", "off"),
+    "off": ("Aus", "Off"),
     "epr_entries": ("Spektren", "Spectra"),
     "epr_add_exp": ("Messung …", "Measurement …"),
     "epr_add_sim": ("Simulation laden …", "Load simulation …"),
@@ -2609,7 +2609,7 @@ TEXTS = {
                            "Signal-free field ranges for the baseline (axis unit mT), e.g. '400-430, 560-600'.\n"
                            "Polynomial, empty: the outer edges of the sweep. Spline: one anchor per range "
                            "(choose short ranges)."),
-    "epr_regions_ph": ("z. B. 330-340, 480-485 (mT)", "e.g. 330-340, 480-485 (mT)"),
+    "epr_regions_ph": ("Z. B. 330-340, 480-485 (mT)", "E.g. 330-340, 480-485 (mT)"),
     "epr_exclude": ("Bereiche ausblenden", "Hide ranges"),
     "epr_exclude_tip": ("Feldbereiche, die nicht gezeichnet werden (mT), z. B. das scharfe Radikalsignal bei g ≈ 2.",
                         "Field ranges that are not drawn (mT), e.g. the sharp radical signal at g ≈ 2."),
@@ -2618,10 +2618,10 @@ TEXTS = {
     "epr_display": ("Darstellung", "Display"),
     "epr_xrange": ("B-Bereich", "B range"),
     "epr_unit": ("Feldeinheit", "Field unit"),
-    "epr_normalize": ("Normieren", "Normalize"),
-    "epr_normalize_long": ("Normieren (max |I| = 1)", "Normalize (max |I| = 1)"),
+    "epr_normalize": ("Normieren", "Normalise"),
+    "epr_normalize_long": ("Normieren (max |I| = 1)", "Normalise (max |I| = 1)"),
     "epr_labels": ("Labels", "Labels"),
-    "epr_labels_ph": ("z. B. Z⁻@122, Y⁺@400, X⁺@450", "e.g. Z⁻@122, Y⁺@400, X⁺@450"),
+    "epr_labels_ph": ("Z. B. Z⁻@122, Y⁺@400, X⁺@450", "E.g. Z⁻@122, Y⁺@400, X⁺@450"),
     "epr_labels_tip": ("Text@Feld (in der Achseneinheit), durch Kommas getrennt – z. B. kanonische Positionen.",
                        "Text@field (in axis units), comma separated – e.g. canonical positions."),
     "epr_show_params": ("D und |E| im Bild", "D and |E| in the figure"),
@@ -2650,16 +2650,16 @@ TEXTS = {
                          "Sets dark spectrum and factor of this entry for all other measurements (e.g. a kinetic series).\n"
                          "The dark spectrum itself is hidden in the figure; its check box in the list shows it again."),
     "epr_int_window": ("Feldfenster", "Field window"),
-    "epr_int_window_ph": ("z. B. 445-500 (mT), leer = ganzer Sweep", "e.g. 445-500 (mT), empty = whole sweep"),
+    "epr_int_window_ph": ("Z. B. 445-500 (mT), leer = ganzer Sweep", "E.g. 445-500 (mT), empty = whole sweep"),
     "epr_int_window_tip": ("Bereich, über den integriert bzw. Peak-zu-Peak bestimmt wird (mT). Ausgeblendete Bereiche zählen mit;\n"
                            "für Tripletts das Radikalsignal also über das Fenster ausschließen.",
                            "Range used for integration or peak-to-peak (mT). Hidden ranges are included;\n"
                            "for triplets exclude the radical signal via the window."),
     "epr_int_method": ("Größe", "Quantity"),
-    "epr_int_double": ("Doppelintegral", "double integral"),
-    "epr_int_pp": ("Peak-zu-Peak", "peak-to-peak"),
-    "epr_x_time": ("Zeit [min]", "time [min]"),
-    "epr_x_T": ("Temperatur [K]", "temperature [K]"),
+    "epr_int_double": ("Doppelintegral", "Double integral"),
+    "epr_int_pp": ("Peak-zu-Peak", "Peak-to-peak"),
+    "epr_x_time": ("Zeit [min]", "Time [min]"),
+    "epr_x_T": ("Temperatur [K]", "Temperature [K]"),
     "epr_view_spectra": ("Spektren", "Spectra"),
     "epr_view_time": ("Intensität gegen Zeit", "Intensity against time"),
     "epr_view_T": ("Intensität gegen Temperatur", "Intensity against temperature"),
@@ -2668,7 +2668,7 @@ TEXTS = {
     "epr_view_conc": ("Spinzählung (gegen Konzentration)", "Spin counting (against concentration)"),
     "epr_conc": ("c (bekannt)", "c (known)"),
     "epr_conc_long": ("Bekannte Konzentration (Referenz der Spinzählung)", "Known concentration (reference for spin counting)"),
-    "epr_conc_ph": ("leer = Probe", "empty = sample"),
+    "epr_conc_ph": ("Leer = Probe", "Empty = sample"),
     "epr_conc_tip": ("Bekannte Konzentration dieser Messung: sie wird Referenzpunkt der Kalibrierung in der Ansicht "
                      "„Spinzählung“. Leer: die Messung ist eine Probe, ihre Konzentration wird abgelesen.",
                      "Known concentration of this measurement: it becomes a reference point of the calibration in the "
@@ -2707,8 +2707,8 @@ TEXTS = {
                       "Intensity times temperature: constant for Curie behaviour as long as the species persists\n"
                       "(like I × T in decay measurements)."),
     "epr_int_none": ("Keine Werte (Zeit- bzw. Temperaturangaben fehlen?).", "No values (time or temperature missing?)."),
-    "epr_int_info": ("{n} Spektren, {method} (Spektren nach Dunkelspektrum und Basislinie).",
-                     "{n} spectra, {method} (spectra after dark spectrum and baseline)."),
+    "epr_int_info": ("{n} Spektren · {method} (Spektren nach Dunkelspektrum und Basislinie).",
+                     "{n} spectra · {method} (spectra after dark spectrum and baseline)."),
     "epr_calc_box": ("Rechnung (DFT)", "Calculation (DFT)"),
     "epr_calc_file": ("Ausgabe", "Output"),
     "epr_calc_file_ph": ("Gaussian- oder ORCA-Ausgabe", "Gaussian or ORCA output"),
@@ -2764,8 +2764,8 @@ TEXTS = {
                          "S = ½ simulation whose couplings serve as experimental values"),
     "epr_calc_group": ("Gruppe", "Group"),
     "epr_calc_atoms": ("Atome", "Atoms"),
-    "epr_calc_mean": ("berechnet", "calculated"),
-    "epr_calc_exp": ("experimentell", "experimental"),
+    "epr_calc_mean": ("Berechnet", "Calculated"),
+    "epr_calc_exp": ("Experimentell", "Experimental"),
     "epr_calc_no_groups": ("Keine S = ½-Simulation mit Kopplungen", "No S = ½ simulation with couplings"),
     "epr_calc_count": ("{group}: {m} statt {n} Kerne zugeordnet", "{group}: {m} instead of {n} nuclei assigned"),
     "epr_calc_clear": ("Zuordnung der Gruppe löschen", "Clear group assignment"),
@@ -2791,7 +2791,7 @@ TEXTS = {
                              "cube file is shown as it is; the choice states what it contains."),
     "epr_calc_surf_spin": ("Spindichte", "Spin density"),
     "epr_calc_surf_somo": ("SOMO", "SOMO"),
-    "epr_calc_surf_none": ("keine", "none"),
+    "epr_calc_surf_none": ("Keine", "None"),
     "epr_calc_iso": ("Isowert", "Isovalue"),
     "epr_calc_alpha": ("Deckkraft", "Opacity"),
     "epr_calc_colors": ("Farben", "Colours"),
@@ -2803,7 +2803,7 @@ TEXTS = {
                             "the sum over all atoms); the table lists all."),
     "epr_calc_unit": ("Einheit", "Unit"),
     "epr_calc_nuclei": ("Kerne", "Nuclei"),
-    "epr_calc_nuclei_ph": ("automatisch (z. B. H, N)", "automatic (e.g. H, N)"),
+    "epr_calc_nuclei_ph": ("Automatisch (z. B. H, N)", "Automatic (e.g. H, N)"),
     "epr_calc_nuclei_tip": ("Elemente, deren nicht zugeordnete Kerne im Bild stehen; leer = die Elemente der "
                             "experimentellen Gruppen, ohne Simulation alle außer C und O (¹³C, ¹⁷O sind selten)", "Elements whose "
                             "unassigned nuclei appear in the figure; empty = the elements of the experimental "
@@ -2838,9 +2838,9 @@ TEXTS = {
     "epr_iso": ('Isotrope S = ½-Simulation (erste Ordnung)', 'Isotropic S = ½ Simulation (First Order)'),
     "epr_lw": ("ΔB_pp", "ΔB_pp"),
     "epr_lorentz": ("Lorentz-Anteil", "Lorentzian fraction"),
-    "epr_fit_lor": ("mitfitten", "fit as well"),
+    "epr_fit_lor": ("Mitfitten", "Fit as well"),
     "epr_nuclei": ("Kerne (a/mT)", "Nuclei (a/mT)"),
-    "epr_nuclei_ph": ("z. B. 2 14N 0.65; 4 1H 0.32", "e.g. 2 14N 0.65; 4 1H 0.32"),
+    "epr_nuclei_ph": ("Z. B. 2 14N 0.65; 4 1H 0.32", "E.g. 2 14N 0.65; 4 1H 0.32"),
     "epr_nuclei_tip": ("Gruppen äquivalenter Kerne: Anzahl, Isotop (1H, 2H, 11B, 13C, 14N, 15N, 19F, 31P, 63Cu, …) oder I=… (auch I=3/2),\n"
                        "Kopplung a in mT; Gruppen mit ';' trennen. Erste Ordnung, isotrop (Lösung, schnelle Rotation).",
                        "Groups of equivalent nuclei: number, isotope (1H, 2H, 11B, 13C, 14N, 15N, 19F, 31P, 63Cu, …) or I=… (also I=3/2),\n"
@@ -2869,7 +2869,7 @@ TEXTS = {
                             "prüfen).", "{name}: a component has a negative weight – no fractions given (check the "
                             "components)."),
     "epr_nuclei_unknown": ("Kern nicht erkannt: {parts} (Schreibweise z. B. „2 14N 0.65“ oder „2 I=1 0.65“).",
-                           "Nucleus not recognized: {parts} (write e.g. “2 14N 0.65” or “2 I=1 0.65”)."),
+                           "Nucleus not recognised: {parts} (write e.g. “2 14N 0.65” or “2 I=1 0.65”)."),
     "epr_fractions": ("{name}: Anteile (Doppelintegral) {parts}", "{name}: fractions (double integral) {parts}"),
     "epr_ref_freq": ("Frequenz angleichen", "Scale to frequency"),
     "epr_ref_freq_tip": ("B·ν_ref/ν: Spektren mit leicht unterschiedlicher Mikrowellenfrequenz vergleichbar machen\n"
@@ -2917,27 +2917,27 @@ TEXTS = {
                       "⚠ Fitted before the field calibration or reference frequency was changed: g belongs to the "
                       "old field axis and is not reported. Please fit again."),
     "epr_kin_tip": ("Gegen Zeit: isotherm, je Temperatur I(t) = I0·exp(−k·t) (die Auswahl rechts gilt dort nicht);\n"
-                    "die Ansicht 1/T (Arrhenius) fittet immer, auch wenn hier „aus“ steht.\n"
+                    "die Ansicht 1/T (Arrhenius) fittet immer, auch wenn hier „Aus“ steht.\n"
                     "Gegen Temperatur (Rampe): I(T) = exp(−A·∫exp(−E_a/RT)/β dT), erste Ordnung; Heizrate β aus mittlerem\n"
-                    "T- und Zeitschritt; bei „wie Skript“ Intensität vorher min-max normiert (wie im MATLAB-Skript).\n"
+                    "T- und Zeitschritt; bei „Wie Skript“ Intensität vorher min-max normiert (wie im MATLAB-Skript).\n"
                     "Die gepunkteten Grenzen setzen beide Intervallenden von E_a und ln A ein (wie im Skript) – wegen der\n"
                     "starken Kopplung liegen sie fast auf der Kurve und sind kein Unsicherheitsband der Kurve.",
                     "Against time: isothermal, per temperature I(t) = I0·exp(−k·t) (the choice on the right does not apply);\n"
-                    "the view 1/T (Arrhenius) always fits, even if this says 'off'.\n"
+                    "the view 1/T (Arrhenius) always fits, even if this says 'Off'.\n"
                     "Against temperature (ramp): I(T) = exp(−A·∫exp(−E_a/RT)/β dT), first order; heating rate β from mean T\n"
-                    "and time step; with 'as script' the intensity is min–max normalised first (like the MATLAB script).\n"
+                    "and time step; with 'As script' the intensity is min–max normalised first (like the MATLAB script).\n"
                     "The dotted limits insert both interval ends of E_a and ln A (as in the script) – because of the strong\n"
                     "coupling they lie almost on the curve and are not an uncertainty band of the curve."),
-    "epr_kin_script": ("wie Skript (√|r|)", "as script (√|r|)"),
-    "epr_kin_lsq": ("kleinste Quadrate", "least squares"),
-    "epr_kin_norm_tip": ("„wie Skript“: lsqnonlin auf √|Modell − Messung| (L1-Norm), Intervall formal aus der Jacobi-Matrix –\n"
+    "epr_kin_script": ("Wie Skript (√|r|)", "As script (√|r|)"),
+    "epr_kin_lsq": ("Kleinste Quadrate", "Least squares"),
+    "epr_kin_norm_tip": ("„Wie Skript“: lsqnonlin auf √|Modell − Messung| (L1-Norm), Intervall formal aus der Jacobi-Matrix –\n"
                          "reproduziert die bisherigen Zahlen, unterschätzt aber die Unsicherheit stark.\n"
-                         "„kleinste Quadrate“: gemessene Intensitäten ohne Min-Max, Startintensität mitgefittet, Integral\n"
+                         "„Kleinste Quadrate“: gemessene Intensitäten ohne Min-Max, Startintensität mitgefittet, Integral\n"
                          "über die Messzeit (auch Haltephasen); Kovarianz s²·(JᵀJ)⁻¹ mit t-Quantil – belastbares Intervall.\n"
                          "E_a und ln A sind fast vollständig korreliert (Kompensationseffekt).",
-                         "'as script': lsqnonlin on √|model − data| (L1 norm), interval formally from the Jacobian –\n"
+                         "'As script': lsqnonlin on √|model − data| (L1 norm), interval formally from the Jacobian –\n"
                          "reproduces previous numbers but strongly underestimates the uncertainty.\n"
-                         "'least squares': measured intensities without min–max, initial intensity fitted, integral over\n"
+                         "'Least squares': measured intensities without min–max, initial intensity fitted, integral over\n"
                          "the measured time (also holds); covariance s²·(JᵀJ)⁻¹ with t quantile – reliable interval.\n"
                          "E_a and ln A are almost completely correlated (compensation effect)."),
     "epr_kin_data": ("Messung", "data"),
@@ -3006,10 +3006,10 @@ TEXTS = {
     "xr_add": ("CIF hinzufügen …", "Add CIF …"),
     "xr_name": ("Name (in Tabellen)", "Name (in tables)"),
     "xr_ref": ("Interne Referenz", "Internal reference"),
-    "xr_npd": ("nicht positiv definit (als Kugel aus U_iso gezeichnet): {atoms}",
-               "non-positive definite (drawn as sphere from U_iso): {atoms}"),
-    "xr_no_symops": ("keine Symmetrieoperationen in der CIF – als P1 gezeigt, Molekül evtl. unvollständig",
-                     "no symmetry operations in the CIF – shown as P1, molecule may be incomplete"),
+    "xr_npd": ("Nicht positiv definit (als Kugel aus U_iso gezeichnet): {atoms}",
+               "Non-positive definite (drawn as sphere from U_iso): {atoms}"),
+    "xr_no_symops": ("Keine Symmetrieoperationen in der CIF – als P1 gezeigt, Molekül evtl. unvollständig",
+                     "No symmetry operations in the CIF – shown as P1, molecule may be incomplete"),
     "xr_align_collinear": ("Die gewählten Atome liegen auf einer Linie – keine Ebene.",
                            "The selected atoms are collinear – no plane."),
     "xr_cif_truncated": ("CIF unvollständig: Schleife {tag} endet mitten in einer Zeile",
@@ -3020,15 +3020,15 @@ TEXTS = {
     "xr_prob_tip": ("Aufenthaltswahrscheinlichkeit der Schwingungsellipsoide (üblich: 50 %)",
                     "Probability level of the displacement ellipsoids (usual: 50 %)"),
     "xr_disorder": ("Fehlordnung", "Disorder"),
-    "xr_dis_main": ("nur Hauptteil", "major part only"),
-    "xr_dis_all": ("alle Teile (PART)", "all parts (PART)"),
-    "xr_dis_minor": ("Nebenteil", "minor part"),
+    "xr_dis_main": ("Nur Hauptteil", "Major part only"),
+    "xr_dis_all": ("Alle Teile (PART)", "All parts (PART)"),
+    "xr_dis_minor": ("Nebenteil", "Minor part"),
     "xr_show_h": ("H-Atome", "H atoms"),
     "xr_labels": ("Labels", "Labels"),
     "xr_h_labels": ("H-Labels", "H labels"),
     "xr_bond_lw": ("Bindungsdicke", "Bond thickness"),
     "xr_label_size": ("Labelgröße", "Label size"),
-    "xr_label_size_std": ("wie Textformat", "as text format"),
+    "xr_label_size_std": ("Wie Textformat", "As text format"),
     "xr_label_size_tip": ("Schriftgröße der Atomlabels in diesem Tab; ganz links = Größe aus Format → Text",
                           "Font size of the atom labels in this tab; leftmost = size from Format → Text"),
     "xr_frags": ("Fragmente", "Fragments"),
@@ -3070,7 +3070,7 @@ TEXTS = {
     "xr_calc_src": ("Rechnung", "Calculation"),
     "xr_calc_src_tip": ("Berechnete Geometrie derselben Verbindung: aus dem DFT-Tab oder als Datei (xyz, ORCA, Gaussian)",
                         "Calculated geometry of the same compound: from the DFT tab or as a file (xyz, ORCA, Gaussian)"),
-    "xr_calc_none": ("keine", "none"),
+    "xr_calc_none": ("Keine", "None"),
     "xr_calc_file": ("Datei …", "File …"),
     "xr_calc_file_tip": ("Berechnete Geometrie laden (xyz, ORCA- oder Gaussian-Ausgabe); die Datei bleibt unverändert",
                          "Load a calculated geometry (xyz, ORCA or Gaussian output); the file is not changed"),
@@ -3164,10 +3164,10 @@ TEXTS = {
                 "{n} atoms in the asymmetric unit, {m} shown/generated, space group {sg}"),
     "xr_sym_info": ("Symmetrieerzeugt: {ops}", "Symmetry-generated: {ops}"),
     "xr_parts_info": ("Fehlordnung: PART {parts}", "Disorder: PART {parts}"),
-    "xr_no_geom": ("keine _geom_bond-Tabelle – Bindungen aus kovalenten Radien, Abstände ohne esd",
-                   "no _geom_bond table – bonds from covalent radii, distances without s.u."),
-    "xr_no_torsion": ("keine _geom_torsion-Tabelle (CONF fehlt) – Diederwinkel ohne esd",
-                      "no _geom_torsion table (CONF missing) – torsion angles without s.u."),
+    "xr_no_geom": ("Keine _geom_bond-Tabelle – Bindungen aus kovalenten Radien, Abstände ohne esd",
+                   "No _geom_bond table – bonds from covalent radii, distances without s.u."),
+    "xr_no_torsion": ("Keine _geom_torsion-Tabelle (CONF fehlt) – Diederwinkel ohne esd",
+                      "No _geom_torsion table (CONF missing) – torsion angles without s.u."),
     "xr_style": ("Stil", "Style"),
     "xr_label_color": ("Labelfarbe", "Label colour"),
     "xr_label_color_black": ("Schwarz", "Black"),
@@ -3197,8 +3197,8 @@ TEXTS = {
     "xr_labels_none": ("Keine Labels", "No labels"),
     "xr_atoms_reset": ("Standard", "Default"),
     "xr_label_mode": ("Labels für", "Labels for"),
-    "xr_lab_all": ("alle Nicht-H-Atome", "all non-H atoms"),
-    "xr_lab_hetero": ("nur Heteroatome (ohne C)", "heteroatoms only (no C)"),
+    "xr_lab_all": ("Alle Nicht-H-Atome", "All non-H atoms"),
+    "xr_lab_hetero": ("Nur Heteroatome (ohne C)", "Heteroatoms only (no C)"),
     "xr_hide_solv": ("Lösungsmittel ausblenden", "Hide solvent"),
     "xr_hide_ions": ("Gegenionen ausblenden", "Hide counterions"),
     "xr_hide_tip": ("Erkannt über die Summenformel des Fragments (THF, Et₂O, CH₂Cl₂, Toluol …; OTf⁻, BF₄⁻, PF₆⁻, "
@@ -3208,7 +3208,7 @@ TEXTS = {
     "xr_kind_molecule": ("weiteres Molekül, Z′ > 1", "further molecule, Z′ > 1"),
     "xr_kind_solvent": ("Lösungsmittel", "solvent"),
     "xr_kind_ion": ("Gegenion", "counterion"),
-    "xr_atom_wire": ("Draht", "wire"),
+    "xr_atom_wire": ("Draht", "Wire"),
     "xr_wire": ("Als Drahtmodell", "As wireframe"),
     "xr_wire_tip": ("Bindung zum Substituenten wählen, Atom am Kern zuerst (z. B. N, dann C_ipso): alles dahinter wird "
                     "als Drahtmodell gezeigt. Liegt die Bindung in einem Ring (z. B. Spiro-C, dann ein Atom des "
@@ -3229,7 +3229,7 @@ TEXTS = {
     "xr_wire_h_tip": ("H-Atome an Drahtmodell-Gruppen zeigen (sonst ausgeblendet)",
                       "Show H atoms on wireframe groups (hidden otherwise)"),
     "xr_wire_name": ("Drahtmodell-Gruppen", "Wireframe groups"),
-    "xr_wire_name_ph": ("z. B. Dipp groups", "e.g. Dipp groups"),
+    "xr_wire_name_ph": ("Z. B. Dipp groups", "E.g. Dipp groups"),
     "xr_wire_name_tip": ("Bezeichnung der Drahtmodell-Gruppen für die Bildunterschrift", "Name of the wireframe groups for the caption"),
     "xr_par_head": ("Parameter", "Parameter"),
     "xr_par_value": ("Wert", "Value"),
@@ -3273,14 +3273,14 @@ TEXTS = {
     "xr_align_done_bond": ("{bond} zeigt jetzt in die gewählte Richtung.", "{bond} now points in the chosen direction."),
     "xr_align_done_plane": ("Ebene durch {atoms} liegt jetzt in der Bildebene.",
                             "Plane through {atoms} now lies in the image plane."),
-    "xr_truncated": ("Polymer/Netzwerk: Vervollständigung abgebrochen", "polymer/network: growing stopped"),
+    "xr_truncated": ("Polymer/Netzwerk: Vervollständigung abgebrochen", "Polymer/network: growing stopped"),
 
     # ---- Synthese ----------------------------------------------------------
     "tab_syn": ("Synthese", "Synthesis"),
     "syn_title_grp": ("Überschrift", "Heading"),
     "syn_name_tip": ("Name/Nummer der Verbindung in „Synthesis of …“ (leer = Name unter „Verbindung“)",
                      "Name/number of the compound in “Synthesis of …” (empty = name under “Compound”)"),
-    "syn_name_ph": ("z. B. S2", "e.g. S2"),
+    "syn_name_ph": ("Z. B. S2", "E.g. S2"),
     "syn_old_name": ("Diese Vorschrift heißt noch „Synthesis of {name}“ (früher hier eingetragen). Namen vergibt jetzt nur "
                      "der Tab „Verbindung“.",
                      "This procedure is still titled “Synthesis of {name}” (entered here earlier). Names are now assigned "
@@ -3332,10 +3332,10 @@ TEXTS = {
     "syn_col_M": ("M / Formel", "M / formula"),
     "syn_col_role": ("Rolle", "Role"),
     "syn_col_eq": ("eq. / %", "eq. / %"),
-    "syn_role_ref": ("Bezug (1.0 eq.)", "reference (1.0 eq.)"),
-    "syn_role_reagent": ("Reagenz", "reagent"),
-    "syn_role_product": ("Produkt", "product"),
-    "syn_role_other": ("sonstiges", "other"),
+    "syn_role_ref": ("Bezug (1.0 eq.)", "Reference (1.0 eq.)"),
+    "syn_role_reagent": ("Reagenz", "Reagent"),
+    "syn_role_product": ("Produkt", "Product"),
+    "syn_role_other": ("Sonstiges", "Other"),
     "syn_table_tip": ("M als Zahl (g mol⁻¹) oder Summenformel; n aus m/M, V·c oder V·ρ/M; eq. bzw. Ausbeute bezogen auf "
                       "die Zeile „Bezug“. Die Namen dienen auch der Prüfung der Vorschrift.\nAusfüllen: m + M, V + c oder V + ρ + M "
                       "(m hat Vorrang) oder n direkt (zählt, wenn n nicht aus m/V berechenbar ist); fehlt eine Angabe, bleiben n und eq. leer („–“)."
@@ -3419,11 +3419,11 @@ TEXTS = {
                         "⚠ nucleus not found in the axis label – please enter it (e.g. 1H or 1H/13C)."),
     "nmr_temp": ("Temperatur", "Temperature"),
     "nmr_freq": ("Frequenz [MHz]", "Frequency [MHz]"),
-    "nmr_freq_ph": ("aus dem MNova-Text bzw. Bruker", "from the MNova text or Bruker"),
+    "nmr_freq_ph": ("Aus dem MNova-Text bzw. Bruker", "From the MNova text or Bruker"),
     "nmr_freq_tip": ("Nur nötig, wenn der MNova-Text den Kern nicht enthält; 2D: 500/126",
                      "Only needed if the MNova text lacks the nucleus; 2D: 500/126"),
     "nmr_solvent": ("Lösungsmittel", "Solvent"),
-    "nmr_solv_ph": ("aus dem MNova-Text (z. B. CDCl3)", "from the MNova text (e.g. CDCl3)"),
+    "nmr_solv_ph": ("Aus dem MNova-Text (z. B. CDCl3)", "From the MNova text (e.g. CDCl3)"),
     "nmr_bruker": ("Bruker-Ordner …", "Bruker folder …"),
     "nmr_bruker_tip": ("Experimentordner (mit acqus) diesem Spektrum zuordnen: Parameterübersicht; der Ordner kommt ganz in "
                        "die Verbindung (data/nmr/<Art>)",
@@ -3614,17 +3614,17 @@ TEXTS = {
     "nmr_copy": ("NMR-Zeile kopieren", "Copy NMR line"),
     "nmr_struct": ("Struktur", "Structure"),
     "nmr_struct_on": ("Einsetzen", "Insert"),
-    "nmr_struct_tip": ("Struktur als Vektorgrafik ins Spektrum setzen (ersetzt den Schritt in Inkscape). „automatisch“ "
+    "nmr_struct_tip": ("Struktur als Vektorgrafik ins Spektrum setzen (ersetzt den Schritt in Inkscape). „Automatisch“ "
                        "sucht die freie Stelle möglichst weit oben links, ohne Signale, Labels oder Integrale zu "
                        "verdecken; in der Vorschau lässt sie sich mit der Maus verschieben, das Mausrad über der Struktur ändert die Größe (% der Bildbreite).",
                        "Insert the structure as vector graphics into the spectrum (replaces the Inkscape step). "
-                       "“automatic” finds the free space nearest the top left without covering signals, labels or "
+                       "“Automatic” finds the free space nearest the top left without covering signals, labels or "
                        "integrals; it can be dragged in the preview; the mouse wheel over the structure changes its size (% of the figure width)."),
-    "nmr_pos_auto": ("automatisch (frei)", "auto (free space)"),
-    "nmr_pos_manual": ("von Hand (gezogen)", "by hand (dragged)"),
-    "nmr_pos_tl": ("oben links", "top left"),
-    "nmr_pos_tc": ("oben Mitte", "top centre"),
-    "nmr_pos_tr": ("oben rechts", "top right"),
+    "nmr_pos_auto": ("Automatisch (frei)", "Auto (free space)"),
+    "nmr_pos_manual": ("Von Hand (gezogen)", "By hand (dragged)"),
+    "nmr_pos_tl": ("Oben links", "Top left"),
+    "nmr_pos_tc": ("Oben Mitte", "Top centre"),
+    "nmr_pos_tr": ("Oben rechts", "Top right"),
     "nmr_struct_pick": ("Andere Struktur …", "Other structure …"),
     "nmr_struct_pick_tip": ("Sonst gilt die Struktur der Verbindung (Werkzeugleiste „Verbindung“)",
                             "Otherwise the structure of the compound is used (toolbar “Compound”)"),
@@ -3654,7 +3654,7 @@ TEXTS = {
     "other_add": ("Abbildung hinzufügen …", "Add figure …"),
     "other_details": ('Gewählte Abbildung', 'Selected Figure'),
     "other_cap": ("Unterschrift", "Caption"),
-    "other_cap_ph": ("z. B. DSC trace of 3b (10 K min-1).", "e.g. DSC trace of 3b (10 K min-1)."),
+    "other_cap_ph": ("Z. B. DSC trace of 3b (10 K min-1).", "E.g. DSC trace of 3b (10 K min-1)."),
     "other_cap_tip": ("Englisch wie die übrigen Unterschriften; „Figure Sn:“ setzt der Export davor.",
                       "English like the other captions; the export adds “Figure Sn:”."),
     "other_cap_empty": ("Noch keine Bildunterschrift: links unter „Unterschrift“ eintragen.",
@@ -3662,7 +3662,7 @@ TEXTS = {
     "other_chapter": ("Kapitel", "Chapter"),
     "other_new_heading": ("Neue Überschrift …", "New heading …"),
     "other_heading": ("Überschrift", "Heading"),
-    "other_heading_ph": ("z. B. Thermal Analysis", "e.g. Thermal Analysis"),
+    "other_heading_ph": ("Z. B. Thermal Analysis", "E.g. Thermal Analysis"),
     "other_flt": ("Abbildungen", "Figures"),
     "other_bad_ext": ("{name}: nur PDF, SVG oder PNG", "{name}: PDF, SVG or PNG only"),
     "act_quick": ("Schnellauswertung", "Quick evaluation"),
@@ -3799,8 +3799,8 @@ TEXTS = {
     "dft_irc_x": ("x-Achse", "x axis"),
     "dft_irc_rc": ("Reaktionskoordinate [Å]", "Reaction coordinate [Å]"),
     "dft_irc_ref": ("Bezug", "Reference"),
-    "dft_irc_ref_first": ("erster Punkt", "first point"),
-    "dft_irc_ref_ts": ("Übergangszustand", "transition state"),
+    "dft_irc_ref_first": ("Erster Punkt", "First point"),
+    "dft_irc_ref_ts": ("Übergangszustand", "Transition state"),
     "dft_irc_none": ("keine IRC-Tabelle („IRC PATH SUMMARY“ mit TS-Zeile) gefunden",
                      "no IRC table (“IRC PATH SUMMARY” with TS row) found"),
     "dft_irc_trj": ("Trajektorie {name} fehlt (gehört neben die .out)", "trajectory {name} missing (belongs next to the .out)"),
@@ -3813,6 +3813,7 @@ TEXTS = {
     "dft_nics_start": ("Gaussian-NMR-Ausgaben mit Bq-Atomen hinzufügen (Schritt Daten, Karte NICS-Rechnungen)",
                        "Add Gaussian NMR outputs with Bq atoms (Data step, card NICS Calculations)"),
     "dft_nics_files": ("Dateien", "Files"),
+    "mr_card": ("Multireferenz", "Multireference"),
     "mr_result": ("Ergebnis", "Result"),
     "mr_singlet": ("Singulett", "Singlet"),
     "mr_triplet": ("Triplett", "Triplet"),
@@ -3837,7 +3838,7 @@ TEXTS = {
                              "Are partial calculations missing?"),
     "dft_nics_add": ("Gaussian-NMR (Bq) hinzufügen …", "Add Gaussian NMR (Bq) …"),
     "dft_nics_geom": ("Geometrie-Methode", "Geometry method"),
-    "dft_nics_geom_ph": ("z. B. r2SCAN-3c(SMD:THF)", "e.g. r2SCAN-3c(SMD:THF)"),
+    "dft_nics_geom_ph": ("Z. B. r2SCAN-3c(SMD:THF)", "E.g. r2SCAN-3c(SMD:THF)"),
     "dft_nics_geom_tip": ("Für die Unterschrift „<NMR-Methode>//<Geometrie>“ (die NMR-Ausgabe kennt die Methode der "
                           "Optimierung nicht).",
                           "For the caption “<NMR method>//<geometry>” (the NMR output does not know the "
@@ -3911,13 +3912,13 @@ TEXTS = {
     "acid_empty": ("ACID-Abbildung erscheint hier, sobald eine AICD-Ausgabe oder ein ACID-Cube geladen ist",
                    "The ACID figure appears here once an AICD output or an ACID cube is loaded"),
     "dft_orb_iso": ("Schwellentyp", "Threshold Type"),
-    "dft_orb_iso_frac": ("Dichte", "density"),
-    "dft_orb_iso_abs": ("absolut", "absolute"),
+    "dft_orb_iso_frac": ("Dichte", "Density"),
+    "dft_orb_iso_abs": ("Absolut", "Absolute"),
     "dft_orb_thr": ("Schwelle", "Threshold"),
     "dft_orb_iso_tip": ("Wie IboView: „Dichte“ = die Fläche umschließt diesen Anteil von |ψ|² (Standard 80 %); "
-                        "„absolut“ = fester Isowert ±ψ in a.u. (Standard 0.01, üblich 0.02–0.05).",
-                        "As in IboView: “density” = the surface encloses this fraction of |ψ|² (default 80%); "
-                        "“absolute” = fixed isovalue ±ψ in a.u. (default 0.01, typically 0.02–0.05)."),
+                        "„Absolut“ = fester Isowert ±ψ in a.u. (Standard 0.01, üblich 0.02–0.05).",
+                        "As in IboView: “Density” = the surface encloses this fraction of |ψ|² (default 80%); "
+                        "“Absolute” = fixed isovalue ±ψ in a.u. (default 0.01, typically 0.02–0.05)."),
     "dft_orb_alpha": ("Deckkraft", "Opacity"),
     "dft_orb_alpha_tip": ("Deckkraft der Isoflächen (IboView: 0.6); Ränder werden wie in IboView deckender.",
                           "Opacity of the isosurfaces (IboView: 0.6); edges become more opaque as in IboView."),
@@ -4003,20 +4004,20 @@ TEXTS = {
                     "information about the calculation."),
     "dft_si_with": ("Im SI-Text:", "In the SI text:"),
     "dft_si_zpe": ("ZPE-Spalte", "ZPE column"),
-    "dft_method_each": ("Methode je Struktur", "method per structure"),
-    "dft_method_top": ("Methode einmal oben", "method once at the top"),
-    "dft_method_off": ("ohne Methode", "no method"),
+    "dft_method_each": ("Methode je Struktur", "Method per structure"),
+    "dft_method_top": ("Methode einmal oben", "Method once at the top"),
+    "dft_method_off": ("Ohne Methode", "No method"),
     "dft_method_tip": ("„einmal oben“: Abschnitt „Computational details“ mit jeder verschiedenen Eingabezeile (bei "
                        "mehreren Methoden mit den zugehörigen Strukturen), wie „Sample Input Files“ in einer SI.",
                        "“once at the top”: section “Computational details” with each different input line (with the "
                        "structures concerned if there are several methods), like “Sample Input Files” in an SI."),
-    "dft_si_conv": ("Konvergenz", "convergence"),
-    "dft_si_freq": ("Frequenzen", "frequencies"),
+    "dft_si_conv": ("Konvergenz", "Convergence"),
+    "dft_si_freq": ("Frequenzen", "Frequencies"),
     "dft_partner_used": ("Koordinaten aus der gleichnamigen xyz (volle Stellenzahl, passt zur Endgeometrie).",
-                         "coordinates from the xyz of the same name (full precision, matches the final geometry)."),
+                         "Coordinates from the xyz of the same name (full precision, matches the final geometry)."),
     "dft_partner_none": ("Koordinaten aus der Ausgabe (6 Nachkommastellen); die gleichnamige xyz von ORCA daneben "
                          "legen für volle Stellenzahl.",
-                         "coordinates from the output (6 decimals); place ORCA's xyz of the same name next to it for "
+                         "Coordinates from the output (6 decimals); place ORCA's xyz of the same name next to it for "
                          "full precision."),
     "dft_si_copy": ("SI-Text kopieren", "Copy SI text"),
     "dft_si_copy_tip": ("Block dieser Rechnung formatiert kopieren (in Word einfügen); Tabellen als Tabulator-Text.",
@@ -4068,12 +4069,12 @@ TEXTS = {
                           "trajectory frames contain different atoms"),
     "dft_info": ("{n} Atome, {formula}", "{n} atoms, {formula}"),
     "dft_frames": ("Trajektorie mit {n} Bildern: gezeigt das letzte, gespeichert werden alle in der neuen Reihenfolge.",
-                   "trajectory with {n} frames: the last is shown, all are saved in the new order."),
-    "dft_comment": ("Kommentar: {c}", "comment: {c}"),
+                   "Trajectory with {n} frames: the last is shown, all are saved in the new order."),
+    "dft_comment": ("Kommentar: {c}", "Comment: {c}"),
     "dft_fragments": ("{n} getrennte Fragmente", "{n} separate fragments"),
     "dft_renumbered": ("Nummerierung geändert (noch nicht gespeichert, siehe „xyz speichern“).",
-                       "numbering changed (not yet saved, see “Save xyz”)."),
-    "dft_file_order": ("Nummerierung wie in der Datei.", "numbering as in the file."),
+                       "Numbering changed (not yet saved, see “Save xyz”)."),
+    "dft_file_order": ("Nummerierung wie in der Datei.", "Numbering as in the file."),
     "dft_numbering": ("Umnummerieren", "Renumber"),
     "dft_num_start": ("Nummerieren", "Number atoms"),
     "dft_num_cancel": ("Nummerieren abbrechen", "Cancel numbering"),
@@ -4141,9 +4142,9 @@ TEXTS = {
                               "die Vorschau zeigt sie weiter zum Nummerieren.",
                               "Unchecked: figures in the export and Word SI have no labels (usual SI style); the "
                               "preview keeps showing them for numbering."),
-    "dft_lab_el_num": ("Element + Nummer (C12)", "element + number (C12)"),
-    "dft_lab_num": ("nur Nummer (12)", "number only (12)"),
-    "dft_lab_ref": ("Labels der Vorlage (CIF)", "labels of the template (CIF)"),
+    "dft_lab_el_num": ("Element + Nummer (C12)", "Element + number (C12)"),
+    "dft_lab_num": ("Nur Nummer (12)", "Number only (12)"),
+    "dft_lab_ref": ("Labels der Vorlage (CIF)", "Labels of the template (CIF)"),
     "dft_lab_ref_tip": ("„Labels der Vorlage“: nach „Wie Vorlage nummerieren“ mit einer CIF die Atomnamen der "
                         "Kristallstruktur (C1, N2, H3A …); Atome ohne Gegenstück behalten Element + Nummer.",
                         "“labels of the template”: after “Number like template” with a CIF, the atom names of the "
@@ -4228,7 +4229,7 @@ TEXTS = {
                       "Details for the README.txt of the dataset (layout as the group's datasets on TUDOdata) and "
                       "the title page of the complete SI. Empty fields are left out."),
     "pub_f_paper_title": ("Titel des Artikels", "Title of the paper"),
-    "pub_ph_paper_title": ("für das Titelblatt der SI; kursiv mit <i>…</i>", "for the SI title page; italics with <i>…</i>"),
+    "pub_ph_paper_title": ("Für das Titelblatt der SI; kursiv mit <i>…</i>", "For the SI title page; italics with <i>…</i>"),
     "pub_f_title": ("Titel des Datensatzes", "Title of the dataset"),
     "pub_f_authors": ("Autoren", "Authors"),
     "pub_f_affiliation": ("Adresse", "Affiliation"),
@@ -4239,12 +4240,12 @@ TEXTS = {
     "pub_f_project_description": ("Projektbeschreibung", "Project description"),
     "pub_f_dataset_description": ("Beschreibung des Datensatzes", "Dataset description"),   # ein Wort war breiter als die Spalte
     "pub_f_license": ("Lizenz", "License"),
-    "pub_ph_title": ("leer = Electronic supplement to <Titel des Artikels>",
-                     "empty = Electronic supplement to <title of the paper>"),
+    "pub_ph_title": ("Leer = Electronic supplement to <Titel des Artikels>",
+                     "Empty = Electronic supplement to <title of the paper>"),
     "pub_ph_authors": ("Vorname Name, Vorname Name and Vorname Name", "First Last, First Last and First Last"),
-    "pub_ph_doi": ("z. B. 10.17877/RESOLV-…", "e.g. 10.17877/RESOLV-…"),
+    "pub_ph_doi": ("Z. B. 10.17877/RESOLV-…", "E.g. 10.17877/RESOLV-…"),
     "pub_ph_related": ("Zitat und DOI des Artikels", "Citation and DOI of the article"),
-    "pub_ph_project_description": ("z. B. Abstract des Artikels", "e.g. abstract of the article"),
+    "pub_ph_project_description": ("Z. B. Abstract des Artikels", "E.g. abstract of the article"),
     "pub_ph_dataset_description": ("Leer = automatisch aus den Datenarten (NMR, IR, UV-Vis, CV …) und Verbindungen",
                                    "Empty = generated from the data kinds (NMR, IR, UV-Vis, CV …) and compounds"),
     "nav_home": ("Übersicht", "Overview"),
@@ -4410,7 +4411,7 @@ TEXTS = {
     "pub_procs_add": ("Neu", "New"),
     "pub_procs_key": ("Kürzel", "Label"),
     "pub_procs_title": ("Titel", "Title"),
-    "pub_procs_title_ph": ("z. B. Suzuki coupling (optional)", "e.g. Suzuki coupling (optional)"),
+    "pub_procs_title_ph": ("Z. B. Suzuki coupling (optional)", "E.g. Suzuki coupling (optional)"),
     "pub_procs_text_ph": ("Text der Vorschrift (englisch, wie in der SI)", "Procedure text (as in the SI)"),
     "pub_si_groups": ("Gruppen als Unterkapitel", "Groups as subsections"),
     "pub_si_groups_tip": ("Aus: Gruppen ordnen nur die Projektseite, die SI hat keine Unterkapitel (Reihenfolge bleibt). "
@@ -4522,13 +4523,13 @@ TEXTS = {
     "cmp_lab_epa": ("E_pa", "E_pa"),
     "cmp_lab_epc": ("E_pc", "E_pc"),
     "cmp_lab_e12": ("E½", "E½"),
-    "cmp_lab_none": ("keine", "none"),
+    "cmp_lab_none": ("Keine", "None"),
     "cmp_gap": ("Abstand", "Gap"),
     "cmp_gap_tip": ("Abstand der Kurven in Vielfachen der größten Kurvenhöhe",
                     "Gap between the curves in multiples of the largest curve height"),
-    "cmp_normalize": ("Normiert", "Normalized"),
+    "cmp_normalize": ("Normiert", "Normalised"),
     "cmp_normalize_long": ("Jede Kurve auf ihren größten Betrag des Stroms normiert",
-                           "Each curve normalized to its largest absolute current"),
+                           "Each curve normalised to its largest absolute current"),
     "cmp_arrow": ("Scanpfeil", "Scan arrow"),
     "cmp_structures": ("Strukturen", "Structures"),
     "cmp_struct_color": ("Struktur in Kurvenfarbe", "Structure in curve colour"),
@@ -4543,9 +4544,9 @@ TEXTS = {
     "cmp_series": ("Serie (UV-Vis)", "Series (UV-Vis)"),
     "cmp_content": ("Inhalt", "Content"),
     "cmp_content_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
-    "cmp_content_abs_norm": ("UV-Vis normiert", "UV-Vis normalized"),
-    "cmp_content_em": ("Emission normiert", "Emission normalized"),
-    "cmp_content_abs_em": ("UV-Vis + Emission (normiert)", "UV-Vis + emission (normalized)"),
+    "cmp_content_abs_norm": ("UV-Vis normiert", "UV-Vis normalised"),
+    "cmp_content_em": ("Emission normiert", "Emission normalised"),
+    "cmp_content_abs_em": ("UV-Vis + Emission (normiert)", "UV-Vis + emission (normalised)"),
     "cmp_stack": ("Gestapelt", "Stacked"),
     "cmp_norm_tip": ("Bereich, dessen höchste Absorbanz auf 1 gesetzt wird (z. B. die Bande über 400 nm statt der im UV).\n"
                      "Feld leeren = auto: Maximum der ganzen Messung ab dem Anfang des Peakbereichs.",
@@ -4578,9 +4579,9 @@ TEXTS = {
     "cmp_head": ("Größe", "Quantity"),
     "cmp_unit": ("Einheit", "Unit"),
     "cmp_group": ("Gruppe", "Group"),
-    "cmp_head_ph": ("z. B. IR (CN2)", "e.g. IR (CN2)"),
-    "cmp_unit_ph": ("z. B. cm-1", "e.g. cm-1"),
-    "cmp_group_ph": ("z. B. Experimental (leer = keiner)", "e.g. Experimental (empty = none)"),
+    "cmp_head_ph": ("Z. B. IR (CN2)", "E.g. IR (CN2)"),
+    "cmp_unit_ph": ("Z. B. cm-1", "E.g. cm-1"),
+    "cmp_group_ph": ("Z. B. Experimental (leer = keiner)", "E.g. Experimental (empty = none)"),
     "cmp_rows": ("Weitere Verbindungen", "Further Compounds"),
     "cmp_rows_empty": ("Keine weiteren Verbindungen", "No further compounds"),
     "cmp_row_ph": ("Name, z. B. Literaturverbindung", "Name, e.g. literature compound"),
@@ -4641,8 +4642,8 @@ TEXTS = {
                        "nächsten liegt – nur innerhalb der Toleranz, sonst bleibt sie leer",
                        "Position looked for: the cell shows the band or signal from the tab's list closest to it – only "
                        "within the tolerance, otherwise it stays empty"),
-    "cmp_target_ph_ir": ("z. B. 2100 (cm-1)", "e.g. 2100 (cm-1)"),
-    "cmp_target_ph_nmr": ("z. B. 7.26 (ppm)", "e.g. 7.26 (ppm)"),
+    "cmp_target_ph_ir": ("Z. B. 2100 (cm-1)", "E.g. 2100 (cm-1)"),
+    "cmp_target_ph_nmr": ("Z. B. 7.26 (ppm)", "E.g. 7.26 (ppm)"),
     "cmp_tol": ("Toleranz", "Tolerance"),
     "cmp_tol_tip": ("Größter Abstand zum Ziel (Grenze eingeschlossen); Vorgabe IR ±15 cm-1, ¹H ±0.5 ppm, andere "
                     "Kerne ±2 ppm", "Largest distance from the target (limit included); default IR ±15 cm-1, ¹H ±0.5 "
@@ -4664,13 +4665,13 @@ TEXTS = {
     "cmp_cycle_gone": ("{name}: Zyklus {n} fehlt im Stand, gezeigt ist der ausgewertete Zyklus {ev}",
                        "{name}: cycle {n} is not in the snapshot, the evaluated cycle {ev} is shown"),
     "cmp_epr_trace": ("Messung (EPR)", "Measurement (EPR)"),
-    "cmp_ref_freq_tip": ("Feldachsen wie im EPR-Tab auf diese Mikrowellenfrequenz skalieren (B·ν_ref/ν). „aus“: nur "
+    "cmp_ref_freq_tip": ("Feldachsen wie im EPR-Tab auf diese Mikrowellenfrequenz skalieren (B·ν_ref/ν). „Aus“: nur "
                          "Spektren mit derselben Frequenz wie das erste; andere werden nicht gezeigt",
-                         "Scale field axes to this microwave frequency as the EPR tab does (B·ν_ref/ν). “off”: only "
+                         "Scale field axes to this microwave frequency as the EPR tab does (B·ν_ref/ν). “Off”: only "
                          "spectra with the same frequency as the first; others are not shown"),
     "cmp_content_ir": ("IR", "IR"),
-    "cmp_content_epr": ("EPR (Feld, normiert)", "EPR (field, normalized)"),
-    "cmp_content_epr_g": ("EPR (g, normiert)", "EPR (g, normalized)"),
+    "cmp_content_epr": ("EPR (Feld, normiert)", "EPR (field, normalised)"),
+    "cmp_content_epr_g": ("EPR (g, normiert)", "EPR (g, normalised)"),
     "cmp_ir_refused": ("Andere Darstellung als das erste IR-Spektrum ({mode}), nicht gezeigt (nie umgerechnet): {names}",
                        "Other display than the first IR spectrum ({mode}), not shown (never converted): {names}"),
     "cmp_ir_mode_T": ("Transmission", "transmittance"),
@@ -4702,7 +4703,7 @@ TEXTS = {
                        "Acquisition time from the measurement file (Cary CSV “Collection Time”); “–”: the file states no "
                        "time (.DSW/.BSW, other exports). Never from file names or file dates."),
     "uvkin_sel": ("Auswahl", "Selection"),
-    "uvkin_series_ph": ("z. B. 0.5 mM", "e.g. 0.5 mM"),
+    "uvkin_series_ph": ("Z. B. 0.5 mM", "E.g. 0.5 mM"),
     "uvkin_series_apply": ("Für die Auswahl setzen", "Set for Selection"),
     "uvkin_series_apply_tip": ("Reihe für alle markierten Zeilen der Tabelle setzen (Strg/Shift-Klick markiert mehrere).",
                                "Set the series for all selected rows of the table (Ctrl/Shift-click selects several)."),
@@ -4735,7 +4736,7 @@ TEXTS = {
                       "from three points. If the series rises, k < 0 and there is no half-life."),
     "uvkin_cap_tip": ("Bildunterschrift für den SI-Export.", "Caption for the SI export."),
     "uvkin_results_none": ("Noch keine Reihe mit Aufnahmezeiten.", "No series with acquisition times yet."),
-    "uvkin_rel_col": ("relativ [%]", "relative [%]"),
+    "uvkin_rel_col": ("Relativ [%]", "Relative [%]"),
     "uvkin_read_fail": ("Nicht gelesen:\n{files}", "Not read:\n{files}"),
     "uvkin_missing": ("Datei fehlt oder ist nicht lesbar.", "File missing or unreadable."),
     "uvkin_no_series": ("{n} Spektren ohne Reihe werden nicht ausgewertet – Reihe in der Tabelle oder unter „Auswahl“ "
@@ -4781,15 +4782,15 @@ TEXTS = {
     "uvtit_kpi_n": ("Spektren", "Spectra"),
     "uvtit_kpi_none": ("keiner", "none"),
     "uvkin_cap_reagent": ("Reagenz", "Reagent"),
-    "uvkin_cap_reagent_ph": ("Titration, z. B. NOSbF6", "titration, e.g. NOSbF6"),
+    "uvkin_cap_reagent_ph": ("Titration, z. B. NOSbF6", "Titration, e.g. NOSbF6"),
     # -- TD-DFT-Tabelle im Overlay (Paket A 1.2.0) --------------------------------------------------------
     "tddft_tab_card": ("TD-DFT-Tabelle", "TD-DFT Table"),
     "tddft_tab_card_tip": ("Welche Anregungen der TD-DFT-Rechnungen im Reiter „Anregungen“ und in der SI stehen",
                            "Which TD-DFT excitations appear on the “Excitations” page and in the SI"),
     "tddft_tab_page": ("Anregungen", "Excitations"),
     "tddft_tab_f": ("f\u200b ab", "f\u200b from"),          # \u200b: f kursiv (STYLE.QTY)
-    "tddft_tab_f_tip": ("Nur Zustände mit Oszillatorstärke f ab diesem Wert; „aus“ = alle Zustände",
-                        "Only states with oscillator strength f at or above this value; “off” = all states"),
+    "tddft_tab_f_tip": ("Nur Zustände mit Oszillatorstärke f ab diesem Wert; „Aus“ = alle Zustände",
+                        "Only states with oscillator strength f at or above this value; “Off” = all states"),
     "tddft_tab_w": ("Anteile ab", "Contributions from"),
     "tddft_tab_w_tip": ("Hauptanteile (Orbital → Orbital) ab diesem Gewicht in der Tabelle",
                         "Main contributions (orbital → orbital) from this weight on in the table"),
@@ -4829,13 +4830,13 @@ TEXTS = {
                           "Factor for the calculated frequencies; it depends on method and basis set, so enter it here "
                           "yourself (default 1.000 = unscaled)"),
     "ir_calc_fwhm": ("Verbreiterung", "Broadening"),
-    "ir_calc_fwhm_tip": ("Lorentz-Profile mit dieser Halbwertsbreite; „aus“ = Linienspektrum",
-                         "Lorentzian profiles with this full width at half maximum; “off” = line spectrum"),
+    "ir_calc_fwhm_tip": ("Lorentz-Profile mit dieser Halbwertsbreite; „Aus“ = Linienspektrum",
+                         "Lorentzian profiles with this full width at half maximum; “Off” = line spectrum"),
     "ir_calc_tol": ("Toleranz", "Tolerance"),
     "ir_calc_tol_tip": ("Automatisch zugeordnet wird nur, was eindeutig ist: genau eine berechnete Mode (ab 5 % der "
-                        "stärksten) innerhalb ± Toleranz, und sie liegt nur bei dieser Bande; „aus“ = nur von Hand",
+                        "stärksten) innerhalb ± Toleranz, und sie liegt nur bei dieser Bande; „Aus“ = nur von Hand",
                         "Assigned automatically only when unique: exactly one calculated mode (from 5% of the strongest) "
-                        "within ± tolerance, and it lies only at this band; “off” = manual only"),
+                        "within ± tolerance, and it lies only at this band; “Off” = manual only"),
     "ir_calc_band": ("Bande", "Band"),
     "ir_calc_band_tip": ("Gemessene Bande für die Zuordnung von Hand", "Measured band for a manual assignment"),
     "ir_calc_mode": ("Mode", "Mode"),
@@ -4880,15 +4881,15 @@ TEXTS = {
     "xray_pack_axis": ("Blickrichtung", "View"),
     "xray_pack_axis_tip": ("Blick entlang einer Zellachse; Drehen mit der Maus ergibt „frei“",
                            "View along a cell axis; rotating with the mouse gives “free”"),
-    "xray_pack_along": ("entlang {a}", "along {a}"),
-    "xray_pack_free": ("frei gedreht", "freely rotated"),
+    "xray_pack_along": ("Entlang {a}", "Along {a}"),
+    "xray_pack_free": ("Frei gedreht", "Freely rotated"),
     "xray_pack_rule": ("Moleküle", "Molecules"),
     "xray_pack_rule_tip": ("Welche ganzen Moleküle gezeigt werden: Schwerpunkt in der Zelle oder mindestens ein Atom "
                            "in der Zelle. Partner gezeigter Abstände kommen immer dazu.",
                            "Which whole molecules are shown: centroid in the cell or at least one atom in the cell. "
                            "Partners of shown distances are always added."),
-    "xray_pack_rule_centroid": ("Schwerpunkt in der Zelle", "centroid in the cell"),
-    "xray_pack_rule_touch": ("berühren die Zelle", "touching the cell"),
+    "xray_pack_rule_centroid": ("Schwerpunkt in der Zelle", "Centroid in the cell"),
+    "xray_pack_rule_touch": ("Berühren die Zelle", "Touching the cell"),
     "xray_pack_color": ("Farbe Abstände", "Distance colour"),
     "xray_pack_h": ("H-Atome", "H atoms"),
     "xray_pack_si": ("In die SI (Word)", "In the SI (Word)"),
@@ -5103,7 +5104,7 @@ TEXTS = {
                       "Two cube files of one pair (hole and particle, e.g. orca_plot or Gaussian cubegen); hole = "
                       "lower MO number"),
     "nto_weight": ("Gewicht", "Weight"),
-    "nto_weight_none": ("keins", "none"),
+    "nto_weight_none": ("Keins", "None"),
     "nto_weight_tip": ("Nur für Cubes, deren Paar nicht im NTO-Block der Ausgabe steht: Gewicht wie in der Rechnung "
                        "angegeben (0 = keins zeigen)",
                        "Only for cubes whose pair is not in the NTO block of the output: weight as given by the "
@@ -5112,7 +5113,7 @@ TEXTS = {
     "nto_wmin_tip": ("Molden: Paare mit mindestens diesem Gewicht zeigen (höchstens vier)",
                      "Molden: show pairs with at least this weight (four at most)"),
     "nto_iso": ("Isowert", "Isovalue"),
-    "nto_iso_auto": ("auto ({p} % Dichte)", "auto ({p}% density)"),
+    "nto_iso_auto": ("Auto ({p} % Dichte)", "Auto ({p}% density)"),
     "nto_iso_tip": ("Fester Isowert in a.u. für Loch und Teilchen; leer = Fläche umschließt 80 % der Orbitaldichte "
                     "(wie im DFT-Tab)",
                     "Fixed isovalue in a.u. for hole and particle; empty = surface encloses 80% of the orbital "
@@ -5171,10 +5172,10 @@ TEXTS.update({
     "fixt_epr_kin_rise": ("Intensität steigt (k < 0), keine Halbwertszeit: {what}", "Intensity increased (k < 0), no "
                           "half-life: {what}"),
     "fixt_nmr_count_multi_h": ("mehrere H-Zahlen in einem Signal", "several H counts in one signal"),
-    "fixt_raman_exc_none": ("nicht angegeben", "not given"),
+    "fixt_raman_exc_none": ("Nicht angegeben", "Not given"),
     "fixt_cv_acs_ref": ("Referenz", "Reference"),
     "fixt_cv_acs_ref_long": ("Referenzelektrode im Messaufbau", "Reference electrode of the setup"),
-    "fixt_cv_acs_ref_ph": ("z. B. Ag/AgNO₃ (0.01 M in MeCN)", "e.g. Ag/AgNO₃ (0.01 M in MeCN)"),
+    "fixt_cv_acs_ref_ph": ("Z. B. Ag/AgNO₃ (0.01 M in MeCN)", "E.g. Ag/AgNO₃ (0.01 M in MeCN)"),
     "fixt_cv_conv_file": ("Stromkonvention der Datei (CONVENTION {v}) ist nicht die geprüfte (1 = anodisch positiv): "
                           "Vorzeichen der Ströme prüfen", "Current convention of the file (CONVENTION {v}) is not the "
                           "checked one (1 = anodic positive): check the sign of the currents"),
@@ -5187,7 +5188,7 @@ TEXTS.update({
                           "be incomplete, not used."),
     "r2a_nbo_no_lp": ("In der CML fehlen freie Elektronenpaare (lonePair): Formalladungen werden nicht gezeigt.",
                       "The CML lacks lone pairs (lonePair): formal charges are not shown."),
-    "r2a_ea_mean_single": ("Mittel bzw. Einzelwert", "average or single value"),
+    "r2a_ea_mean_single": ("Mittel bzw. Einzelwert", "Average or single value"),
     "r2a_series_sample": ("Probe", "sample"),
     "cv_acs_n_ref": ("Referenzelektrode", "reference electrode"),
 })
@@ -5445,8 +5446,8 @@ TEXTS.update({
     "nmrv_ml_delta_full": ("δ (Klasse, nH)", "δ (class, nH)"),
     "nmrv_ml_range": ("Bereich", "Range"),
     "nmrv_ml_range_full": ("Bereich (Klasse, nH)", "Range (class, nH)"),
-    "nmrv_ml_tip": ("Inhalt der Multiplett-Labels (wie Mnova „Multiplet Label“)",
-                    "Content of the multiplet labels (as Mnova “Multiplet Label”)"),
+    "nmrv_ml_tip": ("Inhalt der Multiplett-Labels (wie MNova „Multiplet Label“)",
+                    "Content of the multiplet labels (as MNova “Multiplet Label”)"),
     "nmrv_pointer_tip": ("Zeiger (Esc): beendet jeden Modus", "Pointer (Esc): leaves any mode"),
     "nmrv_zoom_tip": ("Zoom (Z): Bereich aufziehen; Z erneut wechselt waagerecht → senkrecht → Rechteck",
                       "Zoom (Z): drag over the region; Z again switches horizontal → vertical → box"),
@@ -5692,7 +5693,7 @@ TEXTS.update({                                      # Spur A2, Punkt 3c: Reiter 
     "pub_exp_methods": ("Auswertungstexte", "Analysis texts"),
     "pub_exp_options": ("Optionen", "Options"),
     "pub_exp_paths": ("Reaktionspfade", "Reaction paths"),
-    "pub_exp_paths_off": ("nicht in die SI", "not in the SI"),
+    "pub_exp_paths_off": ("Nicht in die SI", "Not in the SI"),
     "pub_exp_text": ("Auch im Inhalt", "Also in content"),
     "pub_exp_dp_write": ("Datensätze schreiben", "Write datasets"),
     "pub_exp_change": ("Auswahl ändern (Reiter „Export“)", "Change selection (tab “Export”)"),
@@ -5813,8 +5814,8 @@ TEXTS.update({                                      # Spur A2, Punkt 4: Stilkart
                       "und Word", "Line width of all curves of this tab as a factor (1 × = as drawn); applies to preview, "
                       "export and Word"),
     "tf_axis_w": ("Achsenlinien", "Axis lines"),
-    "tf_axis_w_tip": ("Breite von Achsen, Rahmen und Strichen in pt; „auto“ = wie gezeichnet",
-                      "Width of axes, frame and ticks in pt; “auto” = as drawn"),
+    "tf_axis_w_tip": ("Breite von Achsen, Rahmen und Strichen in pt; „Auto“ = wie gezeichnet",
+                      "Width of axes, frame and ticks in pt; “Auto” = as drawn"),
 })
 TEXTS.update({                                      # Spur A2, Entscheidung 102: Segmente im Tab „Export“
     "export_seg_all": ("Alle", "All"),
@@ -5827,19 +5828,19 @@ TEXTS.update({                                      # Spur A2, Entscheidung 102:
 TEXTS.update({
     "nmr_add_raw": ("Rohdaten …", "Raw data …"),
     "nmr_add_raw_tip": ("Bruker-Experiment (Ordner mit acqus und fid) als eigenes Spektrum: Fourier-Transformation, Phase "
-                        "und Basislinie in Elucida, Referenz als Vorschlag. Mnova-SVG bleibt der Standard.",
+                        "und Basislinie in Elucida, Referenz als Vorschlag. MNova-SVG bleibt der Standard.",
                         "Bruker experiment (folder with acqus and fid) as an own spectrum: Fourier transform, phase and "
-                        "baseline in Elucida, reference as a suggestion. Mnova SVG stays the default."),
+                        "baseline in Elucida, reference as a suggestion. MNova SVG stays the default."),
     "nmr_raw_show": ("Als Spektrum", "As spectrum"),
-    "nmr_raw_show_tip": ("Gewähltes 1D-Experiment als eigenes Spektrum zeigen (Bruker-Rohdaten statt Mnova-SVG).",
-                         "Show the selected 1D experiment as an own spectrum (Bruker raw data instead of Mnova SVG)."),
+    "nmr_raw_show_tip": ("Gewähltes 1D-Experiment als eigenes Spektrum zeigen (Bruker-Rohdaten statt MNova-SVG).",
+                         "Show the selected 1D experiment as an own spectrum (Bruker raw data instead of MNova SVG)."),
     "nmr_raw_show_need": ("Erst ein TopSpin-Experiment in der Tabelle wählen.", "Select a TopSpin experiment in the table "
                           "first."),
     "nmr_src": ("Quelle", "Source"),
-    "nmr_src_mnova": ("Mnova-SVG", "Mnova SVG"),
+    "nmr_src_mnova": ("MNova-SVG", "MNova SVG"),
     "nmr_src_bruker": ("Bruker-Rohdaten", "Bruker raw data"),
-    "nmr_src_tip": ("Abbildung und Auswertung aus dem Mnova-Export (Standard) oder aus den Bruker-Rohdaten des "
-                    "verknüpften Experiments.", "Figure and evaluation from the Mnova export (default) or from the "
+    "nmr_src_tip": ("Abbildung und Auswertung aus dem MNova-Export (Standard) oder aus den Bruker-Rohdaten des "
+                    "verknüpften Experiments.", "Figure and evaluation from the MNova export (default) or from the "
                     "Bruker raw data of the linked experiment."),
     "nmr_src_need_raw": ("Kein Bruker-Experiment verknüpft: erst unter „Rohdaten“ ablegen.",
                          "No Bruker experiment linked: add it under “Raw data” first."),
@@ -5911,8 +5912,8 @@ TEXTS.update({
     "nmr_phase_acme_busy": ("Rechnet …", "Working …"),
     "nmr_phase_manual": ("Von Hand (⇧P)", "Manual (⇧P)"),
     "nmr_phase_manual_tip": ("Phase im Bild ziehen: linke Taste 0. Ordnung, rechte 1. Ordnung, Klick setzt den Drehpunkt "
-                             "(wie Mnova Shift+P).", "Drag the phase in the figure: left button zero order, right button "
-                             "first order, a click sets the pivot (like Mnova Shift+P)."),
+                             "(wie MNova Shift+P).", "Drag the phase in the figure: left button zero order, right button "
+                             "first order, a click sets the pivot (like MNova Shift+P)."),
     "nmr_phst_procs": ("aus procs ({ph})", "from procs ({ph})"),
     "nmr_phst_manual": ("von Hand ({ph})", "manual ({ph})"),
     "nmr_phst_topspin": ("TopSpins Spektrum (1r), zusätzlich {ph}", "TopSpin's spectrum (1r), additional {ph}"),
@@ -5921,9 +5922,9 @@ TEXTS.update({
     "nmr_ok": ("bestätigt", "confirmed"),
     "nmr_not_ok": ("nicht bestätigt", "not confirmed"),
     "nmr_baseline": ("Basislinie", "Baseline"),
-    "nmr_baseline_auto": ("automatisch (Polynom 5. Grades)", "automatic (fifth-order polynomial)"),
-    "nmr_baseline_off": ("aus", "off"),
-    "nmr_baseline_bernstein3": ("Bernstein 3. Grades (MNova)", "third-order Bernstein (MNova)"),
+    "nmr_baseline_auto": ("Automatisch (Polynom 5. Grades)", "Automatic (fifth-order polynomial)"),
+    "nmr_baseline_off": ("Aus", "Off"),
+    "nmr_baseline_bernstein3": ("Bernstein 3. Grades (MNova)", "Third-order Bernstein (MNova)"),
     "nmr_nuc_from_acqus": ("Kern aus acqus (NUC1).", "Nucleus from acqus (NUC1)."),
     "nmr_baseline_long": ("Basislinie durch die signalfreien Punkte (Golotvin–Williams). Standard: Polynom 5. Grades wie "
                           "TopSpin ABSG 5 (an TopSpin geprüft). Bernstein 3. Grades ist MNovas Vorgabe „Advised“: "
@@ -5947,8 +5948,8 @@ TEXTS.update({
                        "Take the found residual signal as reference. If it lies in a signal of the compound, the "
                        "suggestion is shifted: then click the right peak in mode R."),
     "nmr_ref_click": ("Spitze wählen (R)", "Pick peak (R)"),
-    "nmr_ref_click_tip": ("Modus R: Spitze im Bild anklicken, sie bekommt den Sollwert (wie Mnova).",
-                          "Mode R: click a peak in the figure, it gets the target δ (like Mnova)."),
+    "nmr_ref_click_tip": ("Modus R: Spitze im Bild anklicken, sie bekommt den Sollwert (wie MNova).",
+                          "Mode R: click a peak in the figure, it gets the target δ (like MNova)."),
     "nmr_ref_none": ("nicht gesetzt: Achse unkalibriert (SF = BF1, TopSpins Kalibrierung wird nie übernommen)",
                      "not set: axis uncalibrated (SF = BF1, TopSpin's calibration is never used)"),
     "nmr_refst_fulmer": ("Restsignal bei {f} → {t} ppm (Verschiebung {d} ppm)", "residual signal at {f} → {t} ppm "
@@ -5978,8 +5979,8 @@ TEXTS.update({
     "nmr_j_tip": ("Kopplungen in Hz, durch Komma getrennt, für „Muster anpassen“.",
                   "Couplings in Hz, separated by commas, for “Fit pattern”."),
     "nmr_nh": ("Kerne", "Nuclei"),
-    "nmr_nh_tip": ("Anzahl H des Signals; „auto“ = Integral × Normierung, gerundet.",
-                   "Number of H of the signal; “auto” = integral × normalisation, rounded."),
+    "nmr_nh_tip": ("Anzahl H des Signals; „Auto“ = Integral × Normierung, gerundet.",
+                   "Number of H of the signal; “Auto” = integral × normalisation, rounded."),
     "nmr_fit": ("Muster anpassen", "Fit pattern"),
     "nmr_fit_tip": ("Klasse und J im Bereich des Signals suchen; die gefundenen Linien stehen als Striche über dem "
                     "Spektrum (orange = Vorschlag).", "Search class and J in the range of the signal; the found lines "
@@ -6021,11 +6022,11 @@ TEXTS.update({
                        "Assignment of the signal for the SI line (*italic*, _{sub}, ^{sup})."),
     "nmr_marks_note": ("Marken", "Marks"),
     "nmr_si_range": ("Bereich", "Range"),
-    "nmr_si_range_tip": ("Bereich der SI-Abbildung in ppm. „auto“: 9 bis 0 ppm (¹H) bzw. 200 bis 0 ppm (¹³C), erweitert, bis "
+    "nmr_si_range_tip": ("Bereich der SI-Abbildung in ppm. „Auto“: 9 bis 0 ppm (¹H) bzw. 200 bis 0 ppm (¹³C), erweitert, bis "
                          "jedes Signal der SI-Zeile mit Rand innen liegt (Hydride, Carbene); andere Kerne das ganze Spektrum. "
                          "Ein eigener Bereich bleibt, ein Signal außerhalb wird gemeldet. Zoomen in der Ansicht ändert die "
                          "Abbildung nicht.",
-                         "Range of the SI figure in ppm. “auto”: 9 to 0 ppm (¹H) or 200 to 0 ppm (¹³C), widened until every "
+                         "Range of the SI figure in ppm. “Auto”: 9 to 0 ppm (¹H) or 200 to 0 ppm (¹³C), widened until every "
                          "signal of the SI line lies inside with a margin (hydrides, carbenes); other nuclei the whole spectrum. "
                          "An own range stays; a signal outside it is reported. Zooming in the view does not change the figure."),
     "nmr_marks_ph": ("* = H2O", "* = H2O"),
@@ -6033,8 +6034,8 @@ TEXTS.update({
                       "Meaning of the marks (mode T) for the caption, e.g. “* = H2O, † = Et2O”."),
     "nmr_sig_unprintable": ("Signal bei {d} ppm nicht schreibbar ({e}): fehlt in der Zeile.",
                             "Signal at {d} ppm cannot be written ({e}): left out of the line."),
-    "nmr_own_line": ("{nuc}: Zeile aus den Rohdaten (ersetzt den Mnova-Text dieses Kerns).",
-                     "{nuc}: line from the raw data (replaces the Mnova text of this nucleus)."),
+    "nmr_own_line": ("{nuc}: Zeile aus den Rohdaten (ersetzt den MNova-Text dieses Kerns).",
+                     "{nuc}: line from the raw data (replaces the MNova text of this nucleus)."),
     "nmr_own_ref": ("Referenz nicht bestätigt", "reference not confirmed"),
     "nmr_own_phase": ("Phase nicht bestätigt", "phase not confirmed"),
     "nmrv_labels_crowded": ("Zu viele Labels für die Breite – Ausschnitt anlegen oder Peaks ausdünnen.",
@@ -6080,20 +6081,20 @@ TEXTS.update({
     "nmr_si_use": ("Eigene Verarbeitung für die SI", "Use own processing in SI"),   # R7: ob NMR in die SI kommt,
                                                     # entscheidet der Teil „NMR-Spektren“ im Tab Export (Vorschlag)
     "nmr_si_use_long": ("Dieses eigene Spektrum ersetzt Zeile und Abbildung des Kerns in der SI, sobald Phase und Referenz "
-                        "bestätigt sind (je Kern höchstens eines). Sonst bleibt der Mnova-Export.",
+                        "bestätigt sind (je Kern höchstens eines). Sonst bleibt der MNova-Export.",
                         "This own spectrum replaces line and figure of its nucleus in the SI once phase and reference are "
-                        "confirmed (at most one per nucleus). Otherwise the Mnova export stays."),
+                        "confirmed (at most one per nucleus). Otherwise the MNova export stays."),
     "nmr_own_none": ("kein eigenes Spektrum", "no own spectrum"),
     "nmr_own_not_chosen": ("nicht „für die SI“ gewählt", "not chosen “for the SI”"),
-    "nmr_own_held": ("{nuc}: {f} nicht in der SI ({why}); es bleibt der Mnova-Export.",
-                     "{nuc}: {f} not in the SI ({why}); the Mnova export stays."),
+    "nmr_own_held": ("{nuc}: {f} nicht in der SI ({why}); es bleibt der MNova-Export.",
+                     "{nuc}: {f} not in the SI ({why}); the MNova export stays."),
     "nmr_own_second": ("{nuc}: {f} ebenfalls „für die SI“ gewählt, aber nur ein eigenes Spektrum je Kern: nicht in der SI.",
                        "{nuc}: {f} also chosen “for the SI”, but only one own spectrum per nucleus: not in the SI."),
     "nmr_own_open": ("{nuc}: {n} Vorschläge offen (nicht gedruckt, erst bestätigen).",
                      "{nuc}: {n} suggestions open (not printed, confirm them first)."),
-    "nmr_own_empty": ("{nuc}: noch kein bestätigtes Signal: es bleibt der Mnova-Text.",
-                      "{nuc}: no confirmed signal yet: the Mnova text stays."),
-    "nmr_fig_mnova": ("Mnova-Abbildung statt der eigenen ({why}).", "Mnova figure instead of the own one ({why})."),
+    "nmr_own_empty": ("{nuc}: noch kein bestätigtes Signal: es bleibt der MNova-Text.",
+                      "{nuc}: no confirmed signal yet: the MNova text stays."),
+    "nmr_fig_mnova": ("MNova-Abbildung statt der eigenen ({why}).", "MNova figure instead of the own one ({why})."),
     "nmr_held_line": ("Zurückgehalten: {n} eigene Abbildung(en) ohne Freigabe (nicht in Word).",
                       "Withheld: {n} own figure(s) without release (not in Word)."),
     "nmr_held_head": ("Zurückgehalten (eigene Abbildung nicht freigegeben):", "Withheld (own figure not released):"),
@@ -6111,8 +6112,8 @@ TEXTS.update({
                           "nominell“ wählen", "2D axes uncalibrated: reference an own 1D of the same magnet first or choose "
                           "“Nominal axes”"),
     "nmr_raw_unreadable": ("Rohdaten nicht lesbar", "raw data not readable"),
-    "nmr_peaks_svg_only": ("Peaks aus den Beschriftungen gibt es nur für Mnova-SVG.",
-                           "Peaks from labels exist only for Mnova SVG."),
+    "nmr_peaks_svg_only": ("Peaks aus den Beschriftungen gibt es nur für MNova-SVG.",
+                           "Peaks from labels exist only for MNova SVG."),
 })
 
 # Stilkarte: Farbrollen je Tab (feste Standardfarben ohne Messungsliste)
@@ -6257,7 +6258,7 @@ TEXTS.update({                                            # NMR-Vergleiche und V
                           "file name."),
     "nmr_cmp_caption": ("Satz", "Sentence"),
     "nmr_cmp_caption_long": ("Satz der Bildunterschrift (nach den Messangaben)", "Sentence of the caption (after the measurement data)"),
-    "nmr_cmp_caption_ph": ("z. B. Signale der Vorstufe mit * markiert.", "e.g. Signals of the precursor marked with *."),
+    "nmr_cmp_caption_ph": ("Z. B. Signale der Vorstufe mit * markiert.", "E.g. Signals of the precursor marked with *."),
     "nmr_cmp_heading": ("SI-Überschrift", "SI heading"),
     "nmr_cmp_heading_tip": ("Überschrift der Vergleiche in der SI (Einzel-SI nach den Spektren, Gesamt-SI als Unterkapitel am "
                             "Ende des NMR-Kapitels).",

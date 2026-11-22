@@ -17,7 +17,7 @@ Eine Ansicht ist erst fertig, wenn jeder Punkt an einem Bild geprüft ist, nicht
 - **Links stellen, rechts sehen.** Alle Eingaben, Dateien, Schalter, Farben, Schwellen stehen als Karten in der linken
   Spalte, im passenden Schritt (Daten: laden/entfernen · Auswertung: rechnen/zuordnen · Darstellung: Aussehen; Titel in
   `STEP_TITLES` eintragen, sonst landet die Karte in Schritt 1). Die rechte Seite zeigt nur Ergebnisse: Abbildung,
-  Tabelle, SI-Text, je als eigener Reiter (`to_right`), jede Seite über `result_page`. Nie ein Formular auf der rechten Seite.
+  Tabelle, SI-Text, je als eigener Reiter (`to_right`), jede Seite über `result_page`. Nie ein Formular auf der rechten Seite. Ausnahme: SI-Optionen auf SI-Text- und Ergebnisseiten (Unterschrift-Felder, „In die SI“-Chips, Wahl der Rechnung), die nur bestimmen, was in die SI kommt; Auswertung (Zuordnung, Zustände, Vorzeichen) steht immer links.
 - **Karten wie alle Karten:** `make_form`, feste Beschriftungsspalte (`STYLE.LABEL_W`), Felder in der Wertespalte in
   voller Breite, Schalter + Wert als ein Feld mit „aus“, Farbfelder und Knopfreihen wie in den Nachbarkarten desselben
   Tabs. Keine schmale Spalte neben leerer Fläche, kein einzelnes zentriertes Kästchen.

@@ -11,10 +11,10 @@ letzten Export (figures/*.png), sonst aus der SI (.elucida/si) oder dem Bild, da
 entsteht (.elucida/thumbs), sonst ein Platzhalter."""
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QFontMetrics
 from PySide6.QtWidgets import (QCheckBox, QFontComboBox, QFrame, QGroupBox, QHBoxLayout, QLabel, QPushButton,
-                               QScrollArea, QSplitter, QVBoxLayout, QWidget)
+                               QScrollArea, QSizePolicy, QSplitter, QVBoxLayout, QWidget)
 
 from elucida.app import style as STYLE
 from elucida.app.i18n import T
@@ -242,6 +242,44 @@ def off_names(main, feed="si"):
     return out
 
 
+def two_lines(text, fm, width):
+    """Teilname auf höchstens zwei Zeilen: Umbruch am letzten Leerzeichen, das passt, sonst mitten im Wort (Dateinamen);
+    Zeile 2 am Ende gekürzt."""
+    if fm.horizontalAdvance(text) <= width:
+        return [text]
+    k = max([i for i in range(1, len(text) + 1) if fm.horizontalAdvance(text[:i]) <= width] or [1])
+    sp = text.rfind(" ", 0, k + 1)
+    cut = sp if sp > 0 else k
+    return [text[:cut].rstrip(), fm.elidedText(text[cut:].lstrip(), Qt.ElideRight, width)]
+
+
+class TwoLineName(QLabel):
+    """Name der Export-Kachel in zwei Zeilen (Nutzerwunsch: lange Teilnamen nicht nach einer Zeile kürzen); immer zwei
+    Zeilen hoch, damit alle Kacheln gleich hoch sind und beim Reiterwechsel nichts springt. Voller Name im Tooltip."""
+
+    def __init__(self, text, **kw):
+        super().__init__(**kw)
+        self._full = text
+        self.setToolTip(text)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.ensurePolished()                              # Schriftgröße aus dem Stylesheet (#tileName) vor dem Messen
+        self.setFixedHeight(2 * self.fontMetrics().lineSpacing())
+
+    def _fit(self):
+        self.setText("\n".join(two_lines(self._full, self.fontMetrics(), max(10, self.width()))))
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._fit()
+
+    def changeEvent(self, ev):                             # Schrift geändert (Theme, Systemschrift): neu umbrechen
+        super().changeEvent(ev)
+        if ev.type() == QEvent.FontChange:
+            self.setFixedHeight(2 * self.fontMetrics().lineSpacing())
+            self._fit()
+
+
 class ExportCard(Tile):
     """Kachel einer Abbildung, eines Berichts oder einer Nur-SI-Tabelle (gemeinsames Kachelraster `app/tiles.py`):
     Marke der Datenart, Vorschau, Teilname. Klick = gespeicherte Auswahl (`set_on`); Tooltip nennt die Knöpfe."""
@@ -258,6 +296,14 @@ class ExportCard(Tile):
         super().__init__((tab._name(key), key), name, None, tip="\n".join(tips))
         self.tab, self.key, self.idx, self.label, self.pred, self.report = tab, key, idx, label, pred, report
         self.cid = card_id(key, pid)
+        one = self.name
+        self.name = TwoLineName(name, objectName="tileName")
+        v = self.layout()
+        i = v.indexOf(one)
+        v.removeWidget(one)                                  # nicht replaceWidget: dessen altes Element bliebe in PySide
+        one.deleteLater()
+        v.insertWidget(i, self.name)
+        self.setFixedHeight(self.height() + self.name.fontMetrics().lineSpacing())   # eine Zeile mehr als die Kachel sonst
 
     def set_thumb(self, path):
         """Vorschau aus dem Bild, sonst Platzhalter je Art in der Farbe der Datenart."""

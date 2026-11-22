@@ -86,3 +86,27 @@ def screen_number(text):
     if m.group(5):
         return float(s), "0." + "0" * dec + "E+00" if dec else "0E+00"
     return float(s), "0." + "0" * dec if dec else "0"
+
+
+# Größen im Methodentext (Nutzerwunsch 2026-11-22, kursiv in Word und Vorschau): einzelne lateinische Buchstaben
+# markiert die Quelle mit Backticks (`k`, `A`, `t`), weil der Kontext sie nicht von Einheiten/Wörtern trennt („17.8 d“
+# Tage, „A/d“ Weglänge, „a g standard“); was an der Form erkennbar ist (τ, Φ, A_0, E1/2, Epa, ip, ΔBpp, v1/2), setzen
+# die Regeln ohne Markierung (si.lines.methods_html). Klartext (Kopieren, _methods.txt, Selbsttest) ohne Backticks:
+# `unmark`/`marks`.
+MARK = re.compile(r"`([A-Za-z]{1,2})`")
+
+
+def unmark(text):
+    """Methodentext mit Markierung -> Klartext (Backticks um Größen weg)."""
+    return MARK.sub(r"\1", text or "")
+
+
+def marks(f):
+    """methods_text(…, marked=False): Quelle schreibt `k`; ohne marked=True kommt Klartext (wie bisher) zurück."""
+    import functools
+
+    @functools.wraps(f)
+    def g(*a, marked=False, **k):
+        t = f(*a, **k)
+        return t if marked else unmark(t)
+    return g

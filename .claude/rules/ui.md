@@ -121,6 +121,7 @@ paths:
   Kästchen angezeigt wird (ε-Ergebnisse: λ = Spalte 7; Rechnungen des Energiediagramms: Name = Spalte 6). Tabellen zeigen
   und wählen nur; Auswahlfelder gehören nicht in Zellen, den gewählten Eintrag ändern Felder unter der Tabelle (Farbfeld
   in der Zelle ist die Ausnahme, wie in CV/EPR/Overlay).
+- Ergebnistabellen: vor dem Querrollen Zellen 6/4 px, dann zweizeilige Köpfe; Namensspalte zuletzt gekürzt; leere Nicht-Eingabespalten verborgen (Dateien behalten sie). Meldungen in der Fußleiste einzeilig, nur „Details“ wächst nach oben.
 - Einzelfelder füllen immer die ganze Wertespalte `VALUE_W` (Nutzerwunsch 2026-11-10 „Leisten gleich breit“); halbe Breite
   nur für zwei Felder in einer Zeile.
 - Keine Popups (Nutzerwunsch 2026-11-11, gilt allgemein): neue Eingaben nie als modaler Dialog, sondern als Tab, Karte

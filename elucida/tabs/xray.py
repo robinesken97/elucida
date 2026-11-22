@@ -1559,7 +1559,10 @@ def table_view_html(header, rows, title=None, notes=()):
     c = STYLE.colors()
     cell = f"border-bottom:1px solid {c['border']}; padding:6px 12px; text-align:center"     # alle Zellen mittig
     th = "".join(f'<th style="{cell}; font-weight:500; color:{c["text2"]}">{to_html(h)}</th>' for h in header)
-    body = "".join("<tr>" + "".join(f'<td style="{cell}">{to_html(x)}</td>' for x in r) + "</tr>" for r in rows)
+    # Einheit hinter „ / “ nie umbrechen („g mol⁻¹“, „g cm⁻³“): geschützte Leerzeichen nur in der Anzeige
+    unit = lambda x: re.sub(r"(?<= / )[^/]+$", lambda m: m.group(0).replace(" ", "\u00a0"), str(x))   # noqa: E731
+    body = "".join("<tr>" + "".join(f'<td style="{cell}">{to_html(unit(x) if j == 0 else x)}</td>' for j, x in enumerate(r))
+                   + "</tr>" for r in rows)
     cap = f'<p style="margin:0 0 4px 0"><b>{to_html(title)}</b></p>' if title else ""
     foot = "".join(f'<p style="font-size:small; color:{c["text2"]}">{to_html(n)}</p>' for n in notes)
     # 99 %: bei 100 % ist die Tabelle in Qt 1 px breiter als das Feld (Querrollbalken unter der Vorschau)

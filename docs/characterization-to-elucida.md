@@ -82,10 +82,10 @@ Alle Felder optional, Text wie in der SI:
 
 | Daten | Aufruf | Hinweis |
 |---|---|---|
-| NMR-Spektrum (Mnova-SVG/-EMF) | `w.nmr_tab.load_svg(p)` | Kern aus der Achse |
+| NMR-Spektrum (MNova-SVG/-EMF) | `w.nmr_tab.load_svg(p)` | Kern aus der Achse |
 | NMR-Rohdaten (TopSpin-Experiment oder Datensatz-Ordner) | `w.nmr_tab.import_topspin(p)` | ganzer Ordner, ordnet sich den Spektren zu |
-| Mnova-Dokument | `w.nmr_tab.add_mnova_file(p)` | nur abgelegt |
-| NMR-Zeile (Text des Mnova-Berichts) | `w.nmr_state["text"] = "1H NMR (…) δ …"` | |
+| MNova-Dokument | `w.nmr_tab.add_mnova_file(p)` | nur abgelegt |
+| NMR-Zeile (Text des MNova-Berichts) | `w.nmr_state["text"] = "1H NMR (…) δ …"` | |
 | IR (OPUS `.0`, OPUS-PDF) | `w.irms_tab.load_ir(p)` | PDF nach dem Spektrum laden |
 | Elementaranalyse | `w.irms_state["ea_found"] = {"C": "81.88", "H": "6.07", "N": "11.86"}` | |
 | HRMS (Bericht `.docx` der Massenabteilung) | `w.hrms_tab.load_ms(p)` | |

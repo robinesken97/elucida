@@ -773,6 +773,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         from elucida.tabs.multireference import MultireferencePage
         self.mr_page = MultireferencePage(self)
         self.to_right(self.mr_page, T('rp_multireference'))
+        self.lv.addWidget(self.mr_page.card)                 # Auswertung links, Schritt „Auswertung“
         self.mr_page.sync()
         from elucida.tabs.dft_pop import PopulationPage      # Ladungen/Spinpopulationen (eigenes Modul)
         self.pop_page = PopulationPage(self)

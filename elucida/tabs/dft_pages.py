@@ -1486,7 +1486,7 @@ class DftPages:
         y = self.prof["y"]
         lev, _ = self.level_text(rows)
         th = rows[0]["opt"].get("thermo") or {}
-        cond = f"; T = {th['T']} K, p = {th['P']} atm" if y != "E" and th.get("T") and th.get("P") else ""
+        cond = f"; <i>T</i> = {th['T']} K, <i>p</i> = {th['P']} atm" if y != "E" and th.get("T") and th.get("P") else ""
         txt = (f"Calculated {KINDS[y][1]} profile of <b>{html.escape(name)}</b> ({KINDS[y][0]} in {UNITS[self.unit()][1]}, relative "
                f"to {html.escape(rows[0]['label'])}{cond})")
         txt += f" calculated at the {html.escape(lev)} level of theory." if lev else "."
@@ -2116,7 +2116,7 @@ class DftPages:
         lev = f"{lev}//{geom}" if lev and geom else lev
         where = " and ".join(dict.fromkeys(parts))
         where = ("at " if where[0].isdigit() else "") + where
-        return (f"NICS (black) and NICSzz (red) scan of <b>{html.escape(name)}</b> {where}"
+        return (f"NICS (black) and NICS<sub>zz</sub> (red) scan of <b>{html.escape(name)}</b> {where}"
                 + (f" calculated at the {html.escape(lev)} level of theory." if lev else "."))
 
     def add_nics(self):
