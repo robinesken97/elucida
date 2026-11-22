@@ -260,7 +260,7 @@ class SideRow(QPushButton):
         h.setSpacing(9)
         if icon:
             lead = QLabel()
-            lead.setPixmap(STYLE.pixmap(icon, 17, STYLE.colors()["accent" if checkable else "text2"]))
+            lead.setPixmap(STYLE.pixmap(icon, 17, "accent" if checkable else "text2"))
         if lead is not None:
             lead.setAttribute(Qt.WA_TransparentForMouseEvents)
             h.addWidget(lead)
@@ -270,6 +270,12 @@ class SideRow(QPushButton):
         self.count = QLabel(str(count), objectName="sideCount")
         self.count.setAttribute(Qt.WA_TransparentForMouseEvents)
         h.addWidget(self.count)
+
+    def set_text(self, text):
+        self.setToolTip(text)
+        self.label._full = text
+        self.label.setToolTip(text)
+        self.label.setText(self.label.fontMetrics().elidedText(text, self.label.MODE, max(10, self.label.width())))
 
 
 TAB_OF = {"syn": "syn", "nmr": "nmr", "ir": "irms", "ms": "hrms", "uvvis": "eps", "uvkin": "uvkin", "fluo": "fluo", "cv": "cv",

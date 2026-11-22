@@ -231,7 +231,7 @@ def add_card(title, hint, height):
     v.setSpacing(4)
     v.addStretch(1)
     pic = QLabel(alignment=Qt.AlignCenter)
-    pic.setPixmap(STYLE.pixmap("add", 22, STYLE.colors()["text2"]))
+    pic.setPixmap(STYLE.pixmap("add", 22, "text2"))
     v.addWidget(pic)
     v.addWidget(QLabel(f"<b>{title}</b>", alignment=Qt.AlignCenter))
     lab = QLabel(hint, objectName="recentSub", alignment=Qt.AlignCenter, wordWrap=True)

@@ -17812,6 +17812,137 @@ def _g_lanes(ctx):
             w.switch_theme(keep_theme_m1)
             report.append("Lane A2 item 1 (unseen dot = accent, step dot stays orange, light and dark): OK")
         with section:
+            # Design an Ort (Entscheidung 191): verborgene gebaute Tabs werden Platzhalter, BEVOR das Stylesheet gesetzt
+            # wird (es kostet je Widget); Fenster, Leisten und offener Tab bleiben dieselben Objekte, Undo (bis auf den
+            # offenen Tab), Reiter und Bildlauf bleiben; Zeit nur gemeldet (Wanduhr je Runner verschieden, geprüft wird
+            # die Widgetzahl beim Stylesheet). Keine alten Farben: hell -> dunkel -> hell an Ort gleicht dem Bild davor, dunkel an Ort einer frisch gebauten Oberfläche (Abbildungen und Fußleiste ausgenommen: dort
+            # schwanken Platzierung und Meldungen, nicht Farben)
+            import numpy as np_ti
+            from PySide6.QtGui import QImage as QI_ti
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FC_ti
+            keep_theme_ti = w.settings.value("ui/theme", "light")
+            pub_ti = w.__dict__.get("pub_page")                 # spätere Abschnitte erwarten das Fenster wie vorher
+            prev_ti = (w.project_dir, w._tab_key,                # Projektseite evtl. schon verworfen: ihr Reiter
+                       pub_ti.project_tabs.currentIndex() if pub_ti is not None else w.__dict__.get("_pub_tab"))
+            map_ti = STYLE._hex_map("light", "dark")           # mehrdeutiges Weiß (Karte, Knopf, Text auf Akzent) bleibt
+            assert "#ffffff" not in map_ti and map_ti["#1f1e1c"] == STYLE.COLORS["dark"]["text"] \
+                and map_ti["#777"] == STYLE.SWATCH_BORDER["dark"], map_ti
+
+            def pump_ti(sec=0.4):
+                t0_ = time.time()
+                while time.time() - t0_ < sec * (2.5 if os.environ.get("CI") else 1):
+                    QApplication.processEvents()
+                    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+                    time.sleep(0.01)
+
+            def shot_ti():
+                w.statusBar().clearMessage()
+                w._notice_done()
+                pump_ti(0.3)
+                im_ = w.grab().toImage().convertToFormat(QI_ti.Format_RGB32)
+                f_ = im_.width() / w.width()
+                a_ = np_ti.frombuffer(im_.constBits(), np_ti.uint8).reshape(im_.height(), im_.bytesPerLine() // 4, 4)
+                a_ = a_[:, :im_.width(), :3].astype(np_ti.int16)
+                for c_ in w.findChildren(FC_ti):
+                    if c_.isVisible():
+                        p_ = c_.mapTo(w, c_.rect().topLeft())
+                        a_[round(p_.y() * f_):round((p_.y() + c_.height()) * f_),
+                           round(p_.x() * f_):round((p_.x() + c_.width()) * f_)] = 0
+                return a_[:a_.shape[0] - round(60 * f_)]
+
+            def diff_ti(a_, b_):
+                return float((np_ti.abs(a_ - b_).max(-1) > 24).mean()) if a_.shape == b_.shape else 1.0
+
+            def shots_ti():                                  # ε offen, dann cv (Reiter 1), wieder ε
+                a_ = shot_ti()
+                w.show_tab("cv")
+                pump_ti(0.6)
+                assert w.cv_tab.right_tabs.currentIndex() == 1, w.cv_tab.right_tabs.currentIndex()
+                c_ = shot_ti()
+                w.show_tab("eps")
+                pump_ti(0.3)
+                return a_, c_
+
+            def build_hidden_ti():
+                w.show_tab("cv")
+                w.show_tab("compound")
+                w.show_tab("eps")
+                pump_ti(1.2)                                 # auch die verzögerte Erfassung der gebauten Tabs
+
+            def state_ti():                                  # letzter Undo-Stand ohne den offenen Tab (der ist kein Schritt)
+                d_ = json.loads(w._undo[-1]) if isinstance(w._undo[-1], str) else dict(w._undo[-1])
+                d_.pop("tab", None)
+                return d_
+            calls_ti = []
+            real_ss_ti = QApplication.setStyleSheet
+
+            def ss_ti(self_, css_):
+                calls_ti.append(len(QApplication.allWidgets()))
+                real_ss_ti(self_, css_)
+            QApplication.setStyleSheet = ss_ti
+            try:
+                w.switch_theme("light")
+                assert w.open_demo(out / "theme_inplace_demo")
+                pump_ti(1.0)
+                w.show_tab("cv")
+                pump_ti()
+                w.cv_tab.right_tabs.setCurrentIndex(1)
+                build_hidden_ti()
+                base_ti = shots_ti()
+                build_hidden_ti()
+                times_ti, diffs_ti = [], []
+                for k_ti, mode_ti in enumerate(("dark", "light", "dark", "light")):    # zweimal hin und zurück
+                    same_ti = (w.eps_page, w.toolbar, w.main_tabs, w.side, w.centralWidget())
+                    undo_ti, snap_ti = len(w._undo), state_ti()
+                    calls_ti.clear()
+                    t0_ti = time.perf_counter()
+                    w.switch_theme(mode_ti)
+                    times_ti.append(time.perf_counter() - t0_ti)
+                    pump_ti(0.5)
+                    n_eps_ti = len(QApplication.allWidgets())          # jetzt ist nur ε gebaut
+                    assert len(calls_ti) == 1 and calls_ti[0] <= 1.05 * n_eps_ti, (mode_ti, calls_ti, n_eps_ti)
+                    assert not w._built("cv") and not w._built("compound"), mode_ti
+                    assert all(a_ is b_ for a_, b_ in zip(same_ti, (w.eps_page, w.toolbar, w.main_tabs, w.side,
+                                                                     w.centralWidget()))), mode_ti
+                    pal_ti = QApplication.instance().palette()
+                    assert STYLE._mode == mode_ti and pal_ti.color(pal_ti.ColorRole.Window).name().upper() \
+                        == STYLE.COLORS[mode_ti]["window"], mode_ti
+                    assert w.theme_actions[mode_ti].isChecked(), mode_ti      # Menü „Design“ ohne Neuaufbau
+                    spec_ti = STYLE._THEMED.get(w.btn_home.icon().cacheKey())     # Symbol in der Farbe des neuen Modus
+                    img_ti = w.btn_home.icon().pixmap(32, 32).toImage()
+                    px_ti = [img_ti.pixelColor(x_, y_) for x_ in range(img_ti.width()) for y_ in range(img_ti.height())]
+                    px_ti = [c_ for c_ in px_ti if c_.alpha() == 255]
+                    assert spec_ti and spec_ti[1] == "text2" and px_ti and all(
+                        c_.name().upper() == STYLE.COLORS[mode_ti]["text2"] for c_ in px_ti[:5]), (mode_ti, spec_ti)
+                    assert len(w._undo) == undo_ti and state_ti() == snap_ti, (mode_ti, len(w._undo), undo_ti)
+                    if k_ti == 1:                            # hell -> dunkel -> hell: wie vorher
+                        now_ti = shots_ti()
+                        diffs_ti += [diff_ti(a_, b_) for a_, b_ in zip(now_ti, base_ti)]
+                        assert max(diffs_ti[-2:]) < 0.0005, ("round trip", diffs_ti)
+                    elif k_ti == 2:                          # dunkel an Ort wie frisch gebaut
+                        now_ti = shots_ti()
+                        w.build_ui()
+                        w.render()
+                        pump_ti(0.8)
+                        w.show_tab("cv")                     # Reiter 1 wieder herstellen wie vorher (Ansicht bleibt)
+                        w.show_tab("eps")
+                        diffs_ti += [diff_ti(a_, b_) for a_, b_ in zip(now_ti, shots_ti())]
+                        assert max(diffs_ti[-2:]) < 0.005, ("rebuild", diffs_ti)
+                    build_hidden_ti()
+            finally:
+                QApplication.setStyleSheet = real_ss_ti
+                w.switch_theme(keep_theme_ti)
+                pump_ti()
+                if prev_ti[0] and w.open_project(Path(prev_ti[0]), ask=False, recent=False):
+                    w.show_tab(prev_ti[1])
+                    if prev_ti[2] is not None:
+                        w.pub_page.project_tabs.setCurrentIndex(prev_ti[2])
+                    pump_ti()
+            report.append(f"theme in place (hidden tabs dropped before the stylesheet, {calls_ti[0] if calls_ti else 0} "
+                          f"widgets; same window objects; round trip and rebuild differ by "
+                          f"{', '.join(f'{d_ * 100:.2f}' for d_ in diffs_ti)} % px; undo and view kept; "
+                          f"switch {max(times_ti):.2f} s max, not checked): OK")
+        with section:
             # Spur A2, Punkt 2 (Entscheidung 57): Exportmeldung mit ausgelassenen Teilen zugeklappt EINE Zeile
             # („SI gespeichert – 2 Hinweise“, Details · Schließen); Details klappt die volle Meldung auf, ohne neue
             # Protokollzeile; ohne Auslassungen unverändert. Gilt für alle Wege (ein Mechanismus: `exported`).

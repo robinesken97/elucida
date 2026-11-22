@@ -493,8 +493,9 @@ class MainWindow(QMainWindow):
         old_cmp = cp_.item["uid"] if cp_ is not None and cp_.opened and cp_.item is not None else None
         if old_cmp:
             cp_.save()
-        old_pub_tab = old_pub.project_tabs.currentIndex() if old_pub else 0
-        old_pdir = old_pub.pdir if old_pub else None
+        old_pub_tab = old_pub.project_tabs.currentIndex() if old_pub else self.__dict__.get("_pub_tab", 0)
+        # nach switch_theme verworfene Seite: wäre dem offenen Projekt gefolgt (set_publication)
+        old_pdir = old_pub.pdir if old_pub else self.publication_dir if self.__dict__.pop("_pub_tab", None) is not None else None
         if old_pub and not old_pub.close_path(): return
         self.update_title()
         mb = self.menuBar()
@@ -599,8 +600,10 @@ class MainWindow(QMainWindow):
         mf.addAction(self.act_text_format)
         mt = mf.addMenu(T("menu_theme"))
         grp_t = QActionGroup(self)
+        self.theme_actions = {}                       # Haken folgt switch_theme (Leiste, Seitenleiste)
         for code in ("system", "light", "dark"):
-            act = QAction(T(f"theme_{code}"), self, checkable=True, checked=self._theme_mode() == code)
+            act = self.theme_actions[code] = QAction(T(f"theme_{code}"), self, checkable=True,
+                                                     checked=self._theme_mode() == code)
             act.triggered.connect(lambda _=False, c=code: self.switch_theme(c))
             grp_t.addAction(act)
             mt.addAction(act)
@@ -1187,6 +1190,17 @@ class MainWindow(QMainWindow):
         for key in lazy:
             if self._tab_spec(key)[0] == name:
                 return self._build_tab(key)
+        if name == "pub_page" and "center" in self.__dict__:    # nach einem Designwechsel verworfen (switch_theme)
+            from elucida.app.publication_view import PublicationPage
+            page = self.__dict__["pub_page"] = PublicationPage(self)
+            page.project_tabs.setCurrentIndex(self.__dict__.pop("_pub_tab", 0))
+            cur, old = self.center.currentIndex(), self.center.widget(2)
+            self.center.insertWidget(2, page)
+            self.center.removeWidget(old)
+            old.deleteLater()
+            self.center.setCurrentIndex(cur)
+            page.set_publication(self.publication_dir)       # erst im Stapel: sichtbarer Vergleich lädt sofort
+            return page
         raise AttributeError(name)
 
     def mark_tab(self, key, on=True):
@@ -1231,6 +1245,8 @@ class MainWindow(QMainWindow):
             self.mark_tab(self._tab_keys[i], False)
         if 0 <= i < len(self._tab_keys) and self._tab_keys[i] in self._lazy:
             self._build_tab(self._tab_keys[i])
+        elif 0 <= i < len(self._tab_keys) and self._tab_keys[i] == "eps" and self.__dict__.pop("_eps_stale", False):
+            self.render()                              # Design gewechselt, während ε verborgen war (switch_theme)
         elif 0 <= i < len(self._tab_keys) and self._tab_keys[i] == "overlay" and \
                 any(e.get("link") for e in self.ov_state.get("entries") or []):
             self.ov_tab.show_details()                # verknüpfte ε-Serien: Änderungen im ε-Tab übernehmen
@@ -1614,7 +1630,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "canvas_toggle", None) is None:
             return
         dark = self.canvas_is_dark()
-        self.canvas_toggle.setIcon(STYLE.icon("moon" if dark else "sun", STYLE.colors()["text2"]))
+        self.canvas_toggle.setIcon(STYLE.icon("moon" if dark else "sun", "text2"))
         self.canvas_toggle.setText(T("canvas_now_dark" if dark else "canvas_now_light"))
         self.canvas_toggle.setToolTip(T("canvas_toggle_tip"))
 
@@ -1690,12 +1706,80 @@ class MainWindow(QMainWindow):
             self.open_csv(path)
 
     def switch_theme(self, mode):
-        self.collect_globals()
-        self.settings.setValue("ui/theme", mode)
-        self._captured = self._capture_views()         # vor dem neuen Stylesheet (setzt den Bildlauf zurück)
-        self.apply_theme()
-        self.build_ui()                                # Symbole in der neuen Textfarbe
-        self.render()
+        """Design an Ort umstellen (Entscheidung 191, < 1 s statt ~4 s Neuaufbau): verborgene gebaute Tabs werden wieder
+        Platzhalter (bauen beim Anzeigen im neuen Design), der Rest bekommt Palette, Stylesheet und Symbole neu
+        (`STYLE.retheme`). Das Stylesheet kostet ~0,4 ms je Widget, deshalb erst nach dem Löschen der verborgenen Tabs."""
+        if self.__dict__.get("_theme_busy") or not self.save_drawings():   # Doppelklick; Octet speichert vorher
+            return
+        self._theme_busy = True
+        try:
+            self.collect_globals()
+            self.settings.setValue("ui/theme", mode)
+            if mode in getattr(self, "theme_actions", {}):
+                self.theme_actions[mode].setChecked(True)
+            views = self._capture_views()[0]
+            pages = []
+            self._relazy = True
+            try:
+                for k in self._TAB_BUILD_ORDER:
+                    if k != self._tab_key and self._built(k):
+                        pages.append(self.__dict__[self._tab_spec(k)[0]])
+                        self.replace_tab(k)
+            finally:
+                self._relazy = False
+            self._views.update(views)                  # Reiter und Bildlauf, wenn der Tab wieder gebaut wird
+            pub = self.__dict__.get("pub_page")        # verborgene Projektseite (~550 Widgets): neu beim Anzeigen
+            if pub is not None and self._center_index() == 1 and not pub.path_workspace \
+                    and not pub.compare_page.opened:
+                self.center.insertWidget(self.center.indexOf(pub), QWidget())
+                self.center.removeWidget(pub)
+                same = bool(pub.pdir and self.publication_dir) and \
+                    Path(pub.pdir).resolve() == Path(self.publication_dir).resolve()   # wie build_ui: nur dasselbe Projekt
+                self._pub_tab = pub.project_tabs.currentIndex() if same else 0
+                del self.pub_page
+                pub.deleteLater()
+                pages.append(pub)
+            for page in pages:                         # jetzt löschen, sonst poliert das Stylesheet sie noch mit
+                QApplication.sendPostedEvents(page, QEvent.DeferredDelete)
+            old = STYLE._mode
+            self.setUpdatesEnabled(False)
+            try:
+                self.apply_theme()
+                if STYLE._mode != old:
+                    self._retheme(old)
+            finally:
+                self.setUpdatesEnabled(True)
+            if self._tab_key == "eps":                 # wie zuvor nach dem Neuaufbau; verborgen erst beim Anzeigen
+                self.render()
+            else:
+                self._eps_stale = True
+        finally:
+            self._theme_busy = False
+
+    def _retheme(self, old):
+        """Nach dem Stylesheet: was beim Bau den Modus festgehalten hat."""
+        STYLE.retheme(self, old)
+        dark = STYLE._mode == "dark"
+        self.act_theme.setIcon(STYLE.icon("moon" if dark else "sun"))
+        self.act_theme.setText(T("theme_now_dark" if dark else "theme_now_light"))
+        side = self.__dict__.get("_side_theme")
+        if side is not None:
+            side.set_text(T("welcome_theme_light" if dark else "welcome_theme_dark"))
+        if self.__dict__.get("_side_logo") is not None:
+            self._side_logo.setPixmap(QIcon(str(self.app_icon())).pixmap(26, 26))
+        self._sync_canvas_toggle()
+        from elucida.app.drawing_editor import DrawingEditor
+        for editor in self.findChildren(DrawingEditor):
+            editor.set_canvas_dark(self.canvas_is_dark())
+        # Vorschaubilder (dunkler Canvas) und Kacheln: nur die sichtbare Seite, die übrigen füllen sich beim Anzeigen neu
+        if self._tab_key == "export" and self._built("export"):
+            self.export_tab.refresh()
+        if self._center_index() == 0:
+            self.fill_recent_list()
+        elif self._center_index() == 2 and self.__dict__.get("pub_page") is not None:
+            self.pub_page.refresh()
+        elif self.__dict__.get("pub_page") is not None:
+            self._pub_stale = True                     # verborgene Projektseite: beim nächsten Zeigen (update_title)
 
     def _system_scheme_changed(self, *_):
         if self._theme_mode() == "system" and STYLE.resolve("system") != STYLE._mode:
@@ -1730,7 +1814,7 @@ class MainWindow(QMainWindow):
         # Pfadleiste: ⌂ Übersicht › Projekt › Verbindung ▾ (jede Stufe anklickbar, Verbindungen des Projekts im Menü);
         # sitzt in der Werkzeugleiste, damit die Tab-Leiste schmaler wird (Mindestbreite des Fensters)
         # Haus als Symbol: das Zeichen ⌂ kommt aus einer Ersatzschrift und hob die Grundlinie um 1 px
-        self.btn_home = QPushButton(STYLE.icon("home", STYLE.colors()["text2"]), T("nav_home"), objectName="crumb")
+        self.btn_home = QPushButton(STYLE.icon("home", "text2"), T("nav_home"), objectName="crumb")
         self.btn_home.setIconSize(self.toolbar.iconSize())      # wie Sonne/Mond und die übrigen Leistensymbole
         self.btn_home.setToolTip(T("act_to_overview"))
         self.btn_home.clicked.connect(self.go_home)
@@ -2259,7 +2343,7 @@ class MainWindow(QMainWindow):
         brand.setSpacing(10)
         icon = self.app_icon()
         if icon.exists():
-            lb = QLabel()
+            lb = self._side_logo = QLabel()
             lb.setPixmap(QIcon(str(icon)).pixmap(26, 26))
             brand.addWidget(lb)
         brand.addWidget(QLabel(APP_NAME, objectName="sideBrand"), 1)
@@ -2292,10 +2376,11 @@ class MainWindow(QMainWindow):
         for text, ic, slot in ((T("side_quickstart"), "help", self.show_quickstart),
                                (T("side_demo"), "flask", self.open_demo_publication),
                                (T("welcome_theme_light" if dark else "welcome_theme_dark"), "theme",
-                                lambda: self.switch_theme("light" if dark else "dark"))):
+                                lambda: self.switch_theme("light" if STYLE._mode == "dark" else "dark"))):
             b = WEL.SideRow(text, icon=ic, checkable=False)
             b.clicked.connect(lambda _=False, f=slot: f())
             v.addWidget(b)
+        self._side_theme = b                            # Text nennt das andere Design (switch_theme an Ort)
         return side
 
     def welcome_page(self):
@@ -2345,7 +2430,7 @@ class MainWindow(QMainWindow):
         self.ed_recent.setMaximumWidth(420)
         self.ed_recent.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         lupe = QLabel(self.ed_recent)                       # eigenes Symbol: genau mittig in der Höhe
-        lupe.setPixmap(STYLE.pixmap("search", 16, STYLE.colors()["text2"]))
+        lupe.setPixmap(STYLE.pixmap("search", 16, "text2"))
         lupe.setFixedSize(16, 16)
         lupe.move(10, 7)
         lupe.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -2777,7 +2862,10 @@ class MainWindow(QMainWindow):
             if self._center_index() == 0:                # Liste nur lesen, wenn sie zu sehen ist
                 self.fill_recent_list()
             elif self._center_index() == 2:              # Projektseite: Seitenleiste nur bei neuen Projekten neu aufbauen
-                if self.recent_publications() != getattr(self, "_side_known", None):
+                if self.__dict__.pop("_pub_stale", False):   # Design gewechselt, während sie verborgen war
+                    self.pub_page.refresh()
+                    self.fill_recent_list()
+                elif self.recent_publications() != getattr(self, "_side_known", None):
                     self.fill_recent_list()
                 self._sync_side()
         if getattr(self, "act_folder", None) is not None:

@@ -8,6 +8,7 @@ import elucida
 
 from pathlib import Path
 import os
+import re
 
 import shiboken6
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, QSize, Qt
@@ -16,7 +17,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
                                QGroupBox, QHeaderView,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyle,
-                               QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QTableWidget, QVBoxLayout, QWidget)
+                               QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QTableWidget, QTextEdit, QVBoxLayout, QWidget)
 
 def _number_locale():
     """Dezimalpunkt in allen Zahlenfeldern (wissenschaftliche Konvention, Nutzerwunsch), ohne Tausendertrennzeichen –
@@ -127,14 +128,18 @@ def colors():
     return COLORS[_mode]
 
 
+SWATCH_BORDER = {"light": "#777", "dark": "#B5B3AC"}
+
+
 def swatch_border():
     """Rand der Farbfelder (`color_button`): im Dunkeln hell, sonst wirkt ein schwarzes Feld auf der Karte leer."""
-    return "#777" if _mode == "light" else "#B5B3AC"
+    return SWATCH_BORDER[_mode]
 
 
 ICON_PX, BUTTON_ICON_PX = 16, 20       # Symbol; Feld des Symbols in Knöpfen (Stylesheet `icon-size`)
 _ICON_SCALES = (1, 1.25, 1.5, 1.75, 2, 2.5, 3)
 _LONE = set()                          # cacheKey der Symbole für Knöpfe ohne Text (Selbsttest)
+_THEMED = {}                           # cacheKey -> (Name, Farbrolle, lone | Größe): Symbole in Palettenfarbe (retheme)
 
 
 def _render(name, color, px, stroke=1.8, box=None, left=False):
@@ -158,7 +163,8 @@ def icon(name, color=None, lone=False):
     bekommen das Symbol unverändert; je Skalierung eigene Bilder, weil Qt sonst nur nach Pixelgröße wählt
     (16 px bei 125 % = 20 px)."""
     ic = QIcon()
-    color = color or colors()["text"]
+    role = color or "text"                                  # Farbrolle (Schlüssel von COLORS) folgt dem Design
+    color = colors().get(role, color)
     for sc in _ICON_SCALES:
         variants = [(px, None) for px in (ICON_PX, 18, 64)] + [(ICON_PX, BUTTON_ICON_PX)]
         for px, box in variants:
@@ -167,13 +173,19 @@ def icon(name, color=None, lone=False):
             ic.addPixmap(pm)
     if lone:
         _LONE.add(ic.cacheKey())
+    if role in COLORS["light"]:
+        _THEMED[ic.cacheKey()] = (name, role, lone)
     return ic
 
 
 def pixmap(name, size=16, color=None):
+    """Symbol als Bild; color: Farbrolle (Schlüssel von COLORS, folgt dem Design) oder feste Farbe."""
     ratio = QGuiApplication.primaryScreen().devicePixelRatio() if QGuiApplication.primaryScreen() else 1.0
-    pm = QPixmap.fromImage(_render(name, color or colors()["text"], int(round(size * ratio))))
+    role = color or "text"
+    pm = QPixmap.fromImage(_render(name, colors().get(role, color), int(round(size * ratio))))
     pm.setDevicePixelRatio(ratio)
+    if role in COLORS["light"]:
+        _THEMED[pm.cacheKey()] = (name, role, size)
     return pm
 
 
@@ -1160,10 +1172,10 @@ def method_color(key):
     return METHOD_COLORS.get(key, METHOD_COLORS["other"])
 
 
-def method_tint(key):
+def method_tint(key, mode=None):
     """Hintergrund der Vorschaufläche: TILE_TINT der Datenart-Farbe über der Kartenfarbe (hell/dunkel)."""
     from PySide6.QtGui import QColor
-    a, b = QColor(method_color(key)), QColor(colors()["card"])
+    a, b = QColor(method_color(key)), QColor(COLORS[mode or _mode]["card"])
     mix = lambda x, y: round(TILE_TINT * x + (1 - TILE_TINT) * y)     # noqa: E731
     return QColor(mix(a.red(), b.red()), mix(a.green(), b.green()), mix(a.blue(), b.blue())).name()
 
@@ -1652,7 +1664,7 @@ class SpecialReset(QObject):
         self.spin = spin
         self.is_special = is_special or (lambda: spin.value() <= spin.minimum() + 1e-9)
         self.reset = reset or (lambda: spin.setValue(spin.minimum()))
-        self.act = spin.lineEdit().addAction(icon("reset", colors()["text2"]), QLineEdit.TrailingPosition)
+        self.act = spin.lineEdit().addAction(icon("reset", "text2"), QLineEdit.TrailingPosition)
         self.act.setToolTip(T("reset_special_tip", what=name or spin.specialValueText() or T("auto")))
         self.act.triggered.connect(self.clicked)
         spin.valueChanged.connect(self.sync)
@@ -3011,9 +3023,10 @@ def apply(mode, cache_dir: Path):
         mode, Qt.ColorScheme.Unknown))
     _mode = resolve(mode)
     c = colors()
-    style = QStyleFactory.create("Fusion")
-    base_style = style.name().lower()
-    app.setStyle(style)
+    if not base_style:                                     # einmal: setStyle poliert alle Widgets neu (~0,3 s je Wechsel)
+        style = QStyleFactory.create("Fusion")
+        base_style = style.name().lower()
+        app.setStyle(style)
     pal = QPalette()
     for role, key in ((QPalette.Window, "window"), (QPalette.WindowText, "text"), (QPalette.Base, "field"),
                       (QPalette.AlternateBase, "alt"), (QPalette.Text, "text"), (QPalette.Button, "button"),
@@ -3045,6 +3058,76 @@ def apply(mode, cache_dir: Path):
     arrows["down_on"] = p.as_posix()
     app.setStyleSheet(stylesheet(c, arrows))
     return _mode
+
+
+_HEX = re.compile(r"#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?(?![0-9A-Fa-f])")
+
+
+def _hex_map(old, new):
+    """Hex old -> new mode for colours baked into widget stylesheets and rich text: palette roles whose old value is
+    unique (light card/button/on_accent share #FFFFFF), swatch border, step dot, tile tints."""
+    o, n = COLORS[old], COLORS[new]
+    vals = [v.lower() for v in o.values()]
+    m = {o[k].lower(): n[k] for k in o if vals.count(o[k].lower()) == 1}
+    m[SWATCH_BORDER[old].lower()] = SWATCH_BORDER[new]
+    m[MARK_COLORS[old].lower()] = MARK_COLORS[new]
+    m.update({method_tint(k, old).lower(): method_tint(k, new) for k in METHOD_COLORS})
+    return {k: v for k, v in m.items() if k != v.lower()}
+
+
+def retheme(root, old):
+    """Designwechsel an Ort (statt Neuaufbau, Entscheidung 191): Symbole in Palettenfarbe neu zeichnen (`_THEMED`) und
+    Palettenfarben in eigenen Stylesheets und Rich-Text-Labels auf den neuen Modus umstellen. Gemalte Widgets lesen
+    `colors()` beim Zeichnen selbst. -> Zahl der geänderten Objekte."""
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QAbstractButton
+    m = _hex_map(old, _mode)
+    n = 0
+
+    def sub(text, keep=None):
+        return _HEX.sub(lambda x: x.group(0) if x.group(0).lower() == keep else m.get(x.group(0).lower(), x.group(0)),
+                        text)
+    widgets = [root] + root.findChildren(QWidget)
+    for w in widgets:
+        css = w.styleSheet()
+        if css and "#" in css:
+            c = w.property("color")                       # Farbfeld: die gewählte Farbe bleibt, nur der Rand folgt
+            new = sub(css, c.lower() if isinstance(c, str) else None)
+            if new != css:
+                w.setStyleSheet(new)
+                n += 1
+        if isinstance(w, QLabel):
+            t = w.text()
+            if "color" in t and "#" in t:
+                new = sub(t)
+                if new != t:
+                    w.setText(new)
+                    n += 1
+            pm = w.pixmap()
+            spec = None if pm.isNull() else _THEMED.get(pm.cacheKey())
+            if spec:
+                w.setPixmap(pixmap(spec[0], spec[2], spec[1]))
+                n += 1
+        elif isinstance(w, QAbstractButton):
+            spec = _THEMED.get(w.icon().cacheKey())
+            if spec:
+                w.setIcon(icon(*spec))
+                n += 1
+        elif isinstance(w, QTextEdit) and w.isReadOnly():  # Anzeige (Tabellen im Stil der App); Eingaben nie anfassen
+            h = w.toHtml()
+            new = sub(h)
+            if new != h:
+                bars = [(b, b.value()) for b in (w.verticalScrollBar(), w.horizontalScrollBar())]
+                w.setHtml(new)
+                for b, v in bars:
+                    b.setValue(v)
+                n += 1
+    for a in root.findChildren(QAction):
+        spec = _THEMED.get(a.icon().cacheKey())
+        if spec:
+            a.setIcon(icon(*spec))
+            n += 1
+    return n
 
 
 def _mix(a, b, t):
