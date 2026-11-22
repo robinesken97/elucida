@@ -23946,6 +23946,24 @@ def _g_nmr_own(ctx):
             cp_f7 = [b_ for b_ in card_f7.findChildren(QPB_f7) if b_.property("tablecopy") and b_.isVisible()]
             assert y_f7 < 60 and cp_f7 and all(b_.mapTo(card_f7, QP_f7(0, 0)).y() + b_.height() <= y_f7 for b_ in cp_f7), \
                 (y_f7, [b_.mapTo(card_f7, QP_f7(0, 0)).y() for b_ in cp_f7])
+            # Geschwister: lange Ergebnistabellen (hug) wachsen weiter bis zu ihren Zeilen (Kinetik 12, H-Cell 40 Zeilen)
+            from PySide6.QtWidgets import QTabWidget as QTb_f7
+            for key_ in ("uvkin", "hcell"):
+                w.main_tabs.setCurrentIndex(w._tab_keys.index(key_))
+                pump_f7(1.0)
+                seen_ = 0
+                for rt_ in w.main_tabs.currentWidget().findChildren(QTb_f7):
+                    if rt_.objectName() != "resultTabs" or not rt_.isVisible():
+                        continue
+                    for j_ in range(rt_.count()):
+                        rt_.setCurrentIndex(j_)
+                        pump_f7(0.5)
+                        for t_ in rt_.currentWidget().findChildren(QTW_f7):
+                            if t_.isVisible() and t_.property("hug") and t_.rowCount() > 5:
+                                seen_ += 1
+                                assert t_.height() >= min(t_.maximumHeight(), 300), (key_, t_.height(), t_.maximumHeight())
+                    rt_.setCurrentIndex(0)
+                assert seen_, key_
             # 2 CV Messbedingungen: Methodentext so hoch wie sein Umbruch; Dateiliste so hoch wie ihre Zeilen (6)
             w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
             pump_f7(0.8)

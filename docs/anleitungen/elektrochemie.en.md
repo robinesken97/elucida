@@ -3,7 +3,7 @@
 # Electrochemistry: CV, SEC and H-cell
 
 **What you get:** cyclic voltammograms with E½, ΔEₚ and peak current ratio (Nicholson), the analysis versus scan rate
-(Randles–Ševčík with confidence interval), referencing against Fc⁺/Fc and from that the figures with SI caption and a
+(Randles–Ševčík with confidence interval), referencing against Fc⁰/⁺ and from that the figures with SI caption and a
 methods paragraph. In the SEC tab the spectrum series during the potential scan.
 
 **What you need:** Gamry .DTA files (e.g. a scan-rate series), ideally one measurement with an internal standard (Fc
@@ -25,7 +25,7 @@ current before the peak; the peak potentials stay unchanged.
 ## 3. Referencing
 
 Under **Referencing** choose: as measured, internal (Fc or Ac₂Fc couple in one of the measurements; default Ac₂Fc
-+0.49 V vs. Fc⁺/Fc, please check against your literature) or a fixed shift. When comparing several solvents every
++0.49 V vs. Fc⁰/⁺, please check against your literature) or a fixed shift. When comparing several solvents every
 measurement gets its own standard (click the measurement → reference of the selected measurement).
 
 ## 4. Results and plots

@@ -1424,7 +1424,7 @@ def result_page(group):
     """Ergebnisse als Reiter neben „Abbildung“, in allen Tabs gleich: Karte füllt die Seite, Tabellen/Texte wachsen
     mit der Höhe (statt fester kleiner Kästen), reine Knopfreihen stehen rechts unten, der erste Knopf der letzten
     Reihe ist der Hauptknopf (blau wie „Exportieren“). -> QScrollArea für addTab."""
-    from PySide6.QtWidgets import QSizePolicy, QTextBrowser, QTextEdit
+    from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QTextBrowser, QTextEdit
     big = (QTextBrowser, QTextEdit, QPlainTextEdit, QTableWidget, QListWidget)
     group.setParent(None)
     if STYLE.card_grids(group) and not any(b.property("tablecopy") for b in group.findChildren(QPushButton)):
@@ -1434,14 +1434,11 @@ def result_page(group):
     v = group.layout()
     v.setContentsMargins(12, 12, 12, 12)                     # mit Padding 4 + Rahmen: ringsum 17
     v.setSpacing(10)
-    actions, grows = [], False
+    actions = []
     for idx in range(v.count()):
         it = STYLE.item_at(v, idx)
         w, lay = it.widget(), it.layout()
-        if isinstance(w, QTableWidget) and (w.property("hug") or w.property("rows_fit")):   # so hoch wie ihre Zeilen: sonst
-            continue                                         # verteilt Qt den Rest auf Kopfzeile und Lücken (UV-Vis 36)
         if isinstance(w, big):
-            grows = True
             w.setMaximumHeight(16777215)
             w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             v.setStretch(idx, 1)
@@ -1469,10 +1466,15 @@ def result_page(group):
                     lay.addWidget(x)
                     _natural(x)
                 actions.append(lay)
-    fixed = lambda x: isinstance(x, QTableWidget) and (x.property("hug") or x.property("rows_fit"))   # noqa: E731
-    grows = grows or any(x is not None and not fixed(x) and x.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
-                         for x in (STYLE.item_at(v, i).widget() for i in range(v.count())))   # Platzhalter bleibt mittig
-    if not grows:                                            # nur Tabellen in Zeilenhöhe: Platz bleibt unten frei
+    # Nur Tabellen in Zeilenhöhe (hug: Höchstmaß = Zeilen) und Texte/Knöpfe: Rest unten frei. Sonst verteilte Qt den Rest
+    # auf Kopfzeile und Lücken, die Tabelle stand unten (UV-Vis, Sichtung 1.4.0); Bilder und offene Tabellen wachsen weiter.
+    capped = lambda x: isinstance(x, QTableWidget) and (x.property("hug") or x.property("rows_fit"))   # noqa: E731
+    ws = [(i, x) for i, x in ((i, STYLE.item_at(v, i).widget()) for i in range(v.count())) if x is not None]
+    if any(capped(x) for _, x in ws) and all(capped(x) or isinstance(x, (QLabel, QAbstractButton)) and
+                                             x.sizePolicy().verticalPolicy() != QSizePolicy.Expanding for _, x in ws):
+        for i, x in ws:                                      # Tabellen zuerst bis zu ihren Zeilen (Kinetik: 12, H-Cell: 40),
+            if capped(x):                                    # erst der Rest geht an den Abstand unten
+                v.setStretch(i, 100)
         v.addStretch(1)
     if actions:
         last = actions[-1]

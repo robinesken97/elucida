@@ -1001,7 +1001,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **Copy** (Methods Text card on the SI Text tab): English paragraph on the data evaluation (referencing, peak determination, baseline, Nicholson,
   regressions) to append to the setup paragraph "Cyclic Voltammetry" of the SI, plus the results per redox couple.
 - **Referencing:** as measured (reference electrode, e.g. Ag/AgNO₃), **internal** (Fc or Ac₂Fc couple in one
-  of the measurements; E½ of the reference vs. Fc⁺/Fc is editable – default Ac₂Fc +0.49 V, check against your
+  of the measurements; E½ of the reference vs. Fc⁰/⁺ is editable – default Ac₂Fc +0.49 V, check against your
   literature) or a manual shift. The axis then reads "E [V vs. Fc⁰/⁺]".
 - **Reference by click:** in the measurement list, tick the run that contains the standard (column "Fc" or "Ac₂Fc"; one
   per series – with several groups the tick applies to all measurements of its group). Then press **Set Reference** in
@@ -1084,7 +1084,7 @@ Absorption and emission in one figure, as commonly shown in papers:
   with the number. Colour map selectable (viridis, cividis, magma or RdBu, PuOr, coolwarm), upper end "Auto" or fixed.
   Raw-signal series are called "raw signal" here as well. The mouse shows λ, spectrum and value; the CSV export holds
   the matrix (rows = spectra, columns = λ).
-- Potential axis as measured, shifted by E(Fc⁺/Fc) or with the referencing of the CV tab (chip “From CV tab”: the
+- Potential axis as measured, shifted by E(Fc⁰/⁺) or with the referencing of the CV tab (chip “From CV tab”: the
   field is named after the CV tab's reference and shows its E½, e.g. “E½ Fc (CV)”, with a manual shift “Shift (CV)”; if the CV tab finds no reference, the axis stays as measured against this tab's
   electrode and the results say so).
 

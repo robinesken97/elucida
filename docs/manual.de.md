@@ -1046,7 +1046,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
 - **Kopieren** (Karte „Methodentext“ im Reiter SI-Text): englischer Absatz zur Auswertung (Referenzierung, Peakbestimmung, Basislinie, Nicholson,
   Regressionen) zum Anhängen an den Aufbau-Absatz „Cyclic Voltammetry“ der SI, dazu die Ergebnisse je Redoxpaar.
 - **Referenzierung:** wie gemessen (Referenzelektrode, z. B. Ag/AgNO₃), **intern** (Fc- oder Ac₂Fc-Paar in einer
-  der Messungen; E½ der Referenz gegen Fc⁺/Fc ist änderbar – Vorgabe Ac₂Fc +0,49 V, mit eurer Literatur abgleichen)
+  der Messungen; E½ der Referenz gegen Fc⁰/⁺ ist änderbar – Vorgabe Ac₂Fc +0,49 V, mit eurer Literatur abgleichen)
   oder Verschiebung von Hand. Die Achse heißt dann „E [V vs. Fc⁰/⁺]“.
 - **Referenz per Klick:** In der Messungsliste die Messung anhaken, die den Standard enthält (Spalte „Fc“ bzw. „Ac₂Fc“;
   eine je Reihe – mit mehreren Gruppen gilt das Häkchen für alle Messungen seiner Gruppe). Dann in der Karte Referenz
@@ -1132,7 +1132,7 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   der Nummer. Farbskala wählbar (viridis, cividis, magma bzw. RdBu, PuOr, coolwarm), oberes Ende „Auto“ oder fest.
   Rohsignal-Serien heißen auch hier „raw signal“. Die Maus zeigt λ, Spektrum und Wert; der CSV-Export enthält die
   Matrix (Zeilen = Spektren, Spalten = λ).
-- Potentialachse wie gemessen, um E(Fc⁺/Fc) verschoben oder mit der Referenzierung des CV-Tabs (Chip „Aus CV-Tab“: das
+- Potentialachse wie gemessen, um E(Fc⁰/⁺) verschoben oder mit der Referenzierung des CV-Tabs (Chip „Aus CV-Tab“: das
   Feld heißt nach der Referenz des CV-Tabs und zeigt deren E½, z. B. „E½ Fc (CV)“, bei Verschiebung von Hand „Verschiebung (CV)“; findet der CV-Tab keine Referenz, bleibt die Achse wie gemessen gegen die Elektrode
   dieses Tabs, und die Ergebnisse nennen das).
 

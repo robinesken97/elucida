@@ -136,11 +136,13 @@ def swatch_border():
     return SWATCH_BORDER[_mode]
 
 
-def swatch_css(color, css=""):
+def swatch_css(color, css="", pale=True):
     """Stylesheet eines Farbfelds; gesperrt (Karte oder Feld aus) blass wie die ausgegrauten Farbrollen (`sync_roles`:
-    30 % Farbe im Grau deaktivierter Texte), sonst wirkte ein gesperrtes Feld bedienbar (Sichtung 1.4.0)."""
+    30 % Farbe im Grau deaktivierter Texte), sonst wirkte ein gesperrtes Feld bedienbar (Sichtung 1.4.0).
+    pale=False: Feld zeigt gesperrt die Farbe im Bild (CV-Farbverlauf), nur der Rand wird grau."""
     q, grey = QColor(color), QColor(colors()["disabled"])
-    pale = QColor(*(round(0.3 * a + 0.7 * b) for a, b in zip(q.getRgb()[:3], grey.getRgb()[:3]))).name()
+    pale = QColor(*(round(0.3 * a + 0.7 * b) for a, b in zip(q.getRgb()[:3], grey.getRgb()[:3]))).name() if pale \
+        else color
     return (f"QPushButton {{ {css or ''}background-color: {color}; border: 1px solid {swatch_border()}; }} "
             f"QPushButton:disabled {{ background-color: {pale}; border-color: {colors()['border_strong']}; }}")
 
@@ -1064,11 +1066,17 @@ class SiText(HintLabel):
         self.sync()
 
     def _fit_height(self):
-        """Mindesthöhe = Höhe des umbrochenen Texts bei der eigenen Breite: QFormLayout gab der Zeile mit dem Text weniger
-        Höhe als heightForWidth (CV Messbedingungen DE: letzte Zeile fehlte ohne Rollleiste, Sichtung 1.4.0)."""
-        h = self.heightForWidth(self.width()) if self.width() > 0 and not self._hold else 0
-        if h > 0 and h != self.minimumHeight():
-            self.setMinimumHeight(h)
+        """QFormLayout gab der Zeile mit dem Text weniger Höhe als heightForWidth (CV Messbedingungen DE: letzte Zeile
+        fehlte ohne Rollleiste, Sichtung 1.4.0): Mindesthöhe über minimumSizeHint, neu bei geänderter Umbruchhöhe."""
+        h = self.heightForWidth(self.width()) if self.width() > 0 and self._plain and not self._hold else 0
+        if h != getattr(self, "_hfw", 0):
+            self._hfw = h
+            self.updateGeometry()
+
+    def minimumSizeHint(self):                               # ein gesetztes Mindestmaß (NMR 56 px) bleibt vorrangig
+        s = super().minimumSizeHint()
+        s.setHeight(max(s.height(), getattr(self, "_hfw", 0)))
+        return s
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)

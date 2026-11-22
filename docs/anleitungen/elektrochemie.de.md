@@ -3,7 +3,7 @@
 # Elektrochemie: CV, SEC und H-Zelle
 
 **Was herauskommt:** Cyclovoltammogramme mit E½, ΔEₚ und Peakstromverhältnis (Nicholson), Auswertung über die
-Scanrate (Randles-Ševčík mit Konfidenzintervall), die Referenzierung gegen Fc⁺/Fc und daraus die Abbildungen mit
+Scanrate (Randles-Ševčík mit Konfidenzintervall), die Referenzierung gegen Fc⁰/⁺ und daraus die Abbildungen mit
 SI-Unterschrift und ein Methodenabsatz. Im SEC-Tab die Spektrenserie während des Potentialscans.
 
 **Was du brauchst:** Gamry-.DTA-Dateien (z. B. eine Scanraten-Serie), am besten eine Messung mit internem Standard
@@ -26,7 +26,7 @@ Ladestrom vor dem Peak ab; die Peakpotentiale bleiben unverändert.
 ## 3. Referenzierung
 
 Unter **Referenzierung** wählst du: wie gemessen, intern (Fc- oder Ac₂Fc-Paar in einer der Messungen; Vorgabe
-Ac₂Fc +0,49 V vs. Fc⁺/Fc, bitte mit eurer Literatur abgleichen) oder eine feste Verschiebung. Beim Vergleich mehrerer
+Ac₂Fc +0,49 V vs. Fc⁰/⁺, bitte mit eurer Literatur abgleichen) oder eine feste Verschiebung. Beim Vergleich mehrerer
 Lösungsmittel bekommt jede Messung ihren eigenen Standard (Messung anklicken → Referenz der ausgewählten Messung).
 
 ## 4. Ergebnisse und Auftragungen
