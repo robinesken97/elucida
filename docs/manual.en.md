@@ -608,6 +608,9 @@ to Word or as part of the SI section.
   full width at half maximum of 120 cm⁻¹). Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
   **Correct baseline (as in OPUS)** subtracts the baseline like OPUS (figure and peak search only); **Set threshold**:
   click points into the figure, peaks beyond the line. With only the OPUS PDF the spectrum is read from the PDF.
+  Elucida recognises the OPUS print-out by its layout (axis titles "Wavenumber cm-1" and "Transmittance"/"Absorbance",
+  peak values vertical at the peaks). Any other PDF or image (e.g. a table with "1713.5") gives a **candidate list**:
+  integers (x.5 rounded up) with line and detail in the tooltip, nothing preselected; only ticked values go into the IR line.
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
   m/z (from the embedded spectra) are read out. The formula comes from the compound (warning if the report
   says something else), the ion is selectable ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), and the closest measured m/z is
@@ -1554,6 +1557,17 @@ that a value there differs from the default. Results, tables and SI texts sit in
 wheel scrolls the column and only changes a field after it has been clicked. Notes while drawing (e.g. curves left out)
 appear below the preview, **Help → Log…** shows all messages. The caption sits at the bottom right below the figure; exporting happens in the tab **Export** or with **Ctrl+E**. **Presets ▾** at the bottom left saves a tab's display for
 other compounds (without files, analysis and caption; older presets, too, change only the display when loaded). The figures are not affected by the theme.
+
+**Reset ▾ → Clear Tab (Data and Settings)** removes all loaded files from the tab and resets its settings to defaults,
+like a new tab; the files stay in the compound folder, and Undo (Ctrl+Z) brings everything back in one step. In Synthesis
+and NMR it is the only entry. In the tab **Compound** it clears everything except the name (formula, molar mass,
+structure, melting point, purity …); formula and structure are then missing in every tab, ε series keep their molar mass.
+The drawing editor (structure, in Synthesis the scheme) then opens a new empty drawing; the previous file stays unchanged
+in `structures/`, and Undo shows it again.
+
+**Format → Interface Size** (100–150 %, on this computer only) applies after a restart. **Restart Now** in the notice saves,
+restarts Elucida and opens the same compound in the same tab again, on the project page the project, on the overview the
+overview (an open comparison or reaction path does not come back).
 
 **Canvas dark / Canvas light** in the toolbar (moon = dark, sun = light; also Format → Canvas) switches; dark shows all plots, previews and editors on pure black. Hues stay (red stays
 red), dark colours are lightened so that they remain legible. This changes the screen only, never exports, stored

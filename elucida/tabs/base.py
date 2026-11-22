@@ -136,19 +136,23 @@ def table_files(tab, base, done=()):
     return out
 
 
-def reset_button(reset_layout, reset_defaults, clear=None):
+def reset_button(reset_layout, reset_defaults, clear=None, clear_tip=None):
     """Knopf „Zurücksetzen“ mit Menü: nur Layout (Lage von Labels/Inset/Bildern) oder alles auf Standard; clear: dazu
-    „Tab leeren“ (nur im Hauptfenster, `MainWindow.clear_tab`)."""
+    „Tab leeren“ (nur im Hauptfenster, `MainWindow.clear_tab`). Ohne Abbildung (Synthese, NMR, Verbindung): beide None,
+    nur „Tab leeren“; clear_tip: eigener Tooltip dafür."""
     b = QPushButton(STYLE.icon("reset"), T("btn_reset"))
     m = QMenu(b)
-    m.addAction(T("btn_reset_layout"), reset_layout)
-    a = m.addAction(T("btn_reset_defaults"), reset_defaults)
-    a.setToolTip(T("btn_reset_defaults_tip"))
-    tip = T("btn_reset_defaults_tip")
+    tips = []
+    if reset_layout is not None:
+        m.addAction(T("btn_reset_layout"), reset_layout)
+        a = m.addAction(T("btn_reset_defaults"), reset_defaults)
+        a.setToolTip(T("btn_reset_defaults_tip"))
+        tips.append(T("btn_reset_defaults_tip"))
     if clear is not None:
         a = m.addAction(T("btn_clear_tab"), clear)
-        a.setToolTip(T("btn_clear_tab_tip"))
-        tip += "\n" + T("btn_reset_clear_tip")
+        a.setToolTip(clear_tip or T("btn_clear_tab_tip"))
+        tips.append(clear_tip or T("btn_reset_clear_tip"))
+    tip = "\n".join(tips)
     m.setToolTipsVisible(True)
     b.setMenu(m)
     b.setToolTip(tip)
@@ -1447,17 +1451,22 @@ def result_page(group):
     return sa
 
 
-def footer(tab, left_scroll):
+def footer(tab, left_scroll, clear=False, clear_tip=None):
     """Linke Spalte mit Fußleiste wie in den anderen Tabs (Synthese, NMR). Der Hauptknopf „Exportieren“ (hier:
     Word-Datei ins Projekt) entsteht hier als tab.btn_export und gehört in die Fußleiste rechts: `side_bar(tab.btn_export,
-    stretch_at=0)` unter die Vorschau."""
+    stretch_at=0)` unter die Vorschau. clear: links „Zurücksetzen“ mit „Tab leeren“ (nur im Hauptfenster)."""
     from PySide6.QtWidgets import QPushButton, QVBoxLayout, QWidget
     b = QPushButton(STYLE.icon("export", "#FFFFFF"), T("btn_export"))
     b.setProperty("accent", True)
     b.setToolTip(T("btn_export_word_tip"))
     b.clicked.connect(lambda: _export_word(tab))
     tab.btn_next = next_step_button()
-    bar = side_bar(tab.btn_next, stretch_at=0)
+    do_clear = getattr(tab.main, "clear_tab", None) if clear else None
+    if do_clear is not None:
+        tab.btn_reset = reset_button(None, None, lambda: do_clear(tab.main.tab_key_of(tab)), clear_tip)
+        bar = side_bar(tab.btn_reset, tab.btn_next, stretch_at=1)
+    else:
+        bar = side_bar(tab.btn_next, stretch_at=0)
     col = QWidget()
     v = QVBoxLayout(col)
     v.setContentsMargins(0, 0, 0, 0)

@@ -5113,7 +5113,8 @@ def _g_ir_hrms(ctx):
             doc_ = pymupdf.open()
             pg_ = doc_.new_page()
             for i_, v_ in enumerate(["2961.20", "1678.41", "1501.33", "500", "1000", "Transmittance [%]", "80"]):
-                pg_.insert_text((50, 60 + 20 * i_), v_)
+                pg_.insert_text((50 + 40 * i_, 300), v_, rotate=90 if "." in v_ or v_[0] == "T" else 0)
+            pg_.insert_text((200, 400), "Wavenumber cm-1")          # Layout wie OPUS: Achsentitel, Peakwerte senkrecht
             doc_.save(str(irdir / "test_ir.pdf"))
             assert IRMS.read_ir_pdf(irdir / "test_ir.pdf") == [2961.2, 1678.41, 1501.33]
             def emf(texts):
@@ -5373,7 +5374,7 @@ def _g_ir_hrms(ctx):
             sh_.commit()
             pg_.insert_text((380, 570), "Wavenumber cm-1", fontsize=10)
             pg_.insert_text((5, 300), "Transmittance [%]", fontsize=10, rotate=90)
-            pg_.insert_text((600, 100), "1700.12", fontsize=8)
+            pg_.insert_text((600, 100), "1700.12", fontsize=8, rotate=90)
             d_.save(str(irdir / "only.pdf"))
             cv_ = IRMS.read_ir_pdf_curve(irdir / "only.pdf")
             assert cv_["kind"] == "T" and abs(cv_["wn"].max() - 3500) < 2 and abs(cv_["wn"].min() - 500) < 2, (cv_["wn"].min(), cv_["wn"].max())
@@ -6141,7 +6142,9 @@ def _g_ir_hrms(ctx):
                     d_ = pymupdf.open()
                     pg_ = d_.new_page()
                     for i_, v_ in enumerate(vals_):
-                        pg_.insert_text((50, 60 + 20 * i_), v_)
+                        pg_.insert_text((50 + 40 * i_, 300), v_, rotate=90)       # Layout wie OPUS (is_opus_pdf)
+                    pg_.insert_text((200, 400), "Wavenumber cm-1")
+                    pg_.insert_text((20, 300), "Transmittance [%]", rotate=90)
                     d_.save(str(irdir / name_))
                 t_ir.load_ir(str(irdir / "test.0"))
                 t_ir.load_ir(str(irdir / "p3a.pdf"))
@@ -23135,6 +23138,326 @@ def _g_nmr_own(ctx):
             report.append("Sichtung r2: notices in the footer slot, legend wraps, '+N' list, empty result columns hidden "
                           "(kept in files), measurement table hugs its rows, whole rows in left tables, NICS(1)zz, "
                           "SEC empty state opens step 2: OK")
+        with section:
+            # Spur fix5, Punkt 1: „Tab leeren“ auch in Synthese, NMR und Verbindung (Verbindung: der Name bleibt); ein
+            # Rückgängig-Schritt, keine Datei angefasst, laufende Eingabe vorher übernommen und nicht zurückgeschrieben
+            import hashlib as _hl_f1
+            dp_f1 = demo_pub(w, out / "f5_1_pub")
+            s3_f1 = dp_f1 / "S3"
+            assert w.open_project(s3_f1, ask=False, recent=False)
+            pump(0.5)
+            dump_f1 = lambda d_: json.dumps(d_, sort_keys=True, default=str)          # noqa: E731
+
+            def files_f1():                                   # Daten der Verbindung (ohne Projektdatei, .elucida: Autosave)
+                return {p_.relative_to(s3_f1).as_posix(): _hl_f1.sha256(p_.read_bytes()).hexdigest()
+                        for p_ in s3_f1.rglob("*") if p_.is_file() and p_.name != PRJ.PROJECT_FILE
+                        and ".elucida" not in p_.relative_to(s3_f1).parts}
+
+            def clear_f1(key_):
+                acts_ = getattr(w, w._tab_spec(key_)[0]).btn_reset.menu().actions()
+                acts_[0].trigger()
+                pump(2.0)                                     # Zeichner und Dateiüberwachung holen nichts zurück
+            errs_f1, hook_f1 = [], sys.excepthook
+            sys.excepthook = lambda t_, v_, tb_: errs_f1.append(f"{t_.__name__}: {v_}")
+            try:
+                for key_ in ("syn", "nmr", "compound"):
+                    w.show_tab(key_)
+                    pump(1.0)
+                files0_f1 = files_f1()
+                for key_ in ("syn", "nmr", "compound"):
+                    w.show_tab(key_)
+                    pump(0.8)
+                    tab_f1 = getattr(w, w._tab_spec(key_)[0])
+                    acts_f1 = tab_f1.btn_reset.menu().actions()
+                    assert [a_.text() for a_ in acts_f1] == [T("btn_clear_tab")], (key_, [a_.text() for a_ in acts_f1])
+                    assert tab_f1.btn_reset.isVisible() and tab_f1._footer_parts[1].isVisible(), key_
+                    assert acts_f1[0].toolTip() == T("btn_clear_compound_tip" if key_ == "compound" else "btn_clear_tab_tip")
+                    cv0_f1, snap_f1, n_undo_f1 = dump_f1(w.cv_state), w._snap(), len(w._undo)
+                    struct0_f1 = w.compound.get("structure")
+                    clear_f1(key_)
+                    st_f1 = getattr(w, w._tab_spec(key_)[2])
+                    if key_ in ("compound", "syn"):                 # Zeichner leer (neue leere CDXML oder leere Vorlage)
+                        ed_f1 = getattr(w, w._tab_spec(key_)[0]).drawing_editor
+                        assert ed_f1 is None or not PRJ.cdxml_has_content(ed_f1.path), (key_, ed_f1.path)
+                    if key_ == "compound":
+                        assert w.compound == {"name": "S3"}, w.compound
+                    elif key_ == "syn":
+                        assert not (st_f1.get("scheme") or st_f1.get("proc") or st_f1.get("reagents")), st_f1
+                    else:
+                        assert not (st_f1.get("spectra") or st_f1.get("text") or st_f1.get("raw")), st_f1
+                    assert dump_f1(w.cv_state) == cv0_f1, key_          # anderer Tab unverändert
+                    assert len(w._undo) == n_undo_f1 + 1, (key_, len(w._undo), n_undo_f1)    # genau ein Schritt
+                    now_f1 = files_f1()                                 # nichts gelöscht, verschoben oder geändert
+                    assert {k_: now_f1.get(k_) for k_ in files0_f1} == files0_f1, key_
+                    new_f1 = set(now_f1) - set(files0_f1)               # höchstens eine neue leere Zeichnung
+                    assert len(new_f1) <= (key_ != "nmr") and all(
+                        re.fullmatch(r"structures/(structure|scheme)-[0-9a-f]{8}\.cdxml", k_)
+                        and not PRJ.cdxml_has_content(s3_f1 / k_) for k_ in new_f1), (key_, new_f1)
+                    files0_f1 = now_f1
+                    w.undo()
+                    pump(1.0)
+                    assert w._snap() == snap_f1, key_
+                    if key_ == "compound" and w.comp_tab.drawing_editor is not None and struct0_f1:
+                        assert w.comp_tab.drawing_editor.path == Path(struct0_f1).resolve(), w.comp_tab.drawing_editor.path
+                # laufende Eingabe: Feld mit Fokus (Verbindung) und Vorschrift (Zeitgeber) gelten vor dem Leeren
+                w.show_tab("compound")
+                pump(0.5)
+                ed_f1 = w.comp_tab.fields["labbook"]
+                w.activateWindow()                                       # Feld bekommt wirklich den Fokus
+                pump(0.2)
+                ed_f1.setFocus()
+                pump(0.1)
+                assert QApplication.focusWidget() is ed_f1, QApplication.focusWidget()
+                ed_f1.setText("LB-f5")
+                ed_f1.setModified(True)
+                clear_f1("compound")
+                assert w.compound == {"name": "S3"}, w.compound
+                w.undo()
+                pump(1.0)
+                assert w.compound.get("labbook") == "LB-f5" and w.compound.get("formula"), w.compound
+                w.show_tab("syn")
+                pump(0.5)
+                w.syn_tab.ed_proc.setPlainText("Invented procedure f5.")
+                assert w.syn_tab.timer.isActive()
+                clear_f1("syn")
+                assert not w.syn_state.get("proc"), w.syn_state.get("proc")
+                w.undo()
+                pump(1.0)
+                assert "Invented procedure f5." in (w.syn_state.get("proc") or ""), w.syn_state.get("proc")
+                w.show_tab("nmr")
+                pump(0.5)
+                w.nmr_tab.ed_text.setPlainText("1H NMR (400 MHz, CDCl3) d 7.00 (s, 1H, invented).")
+                assert w.nmr_tab.text_timer.isActive()
+                clear_f1("nmr")
+                assert not w.nmr_state.get("text"), w.nmr_state.get("text")
+                w.undo()
+                pump(1.0)
+                assert "invented" in (w.nmr_state.get("text") or ""), w.nmr_state.get("text")
+                # in Elucida gezeichnet (Struktur = Vorlage): Verweis weg, Zeichner leer, die Datei bleibt unverändert;
+                # Rückgängig zeigt die Zeichnung wieder
+                tpl_f1 = PRJ.template_paths(s3_f1)[0]
+                shutil.copy(w.compound["structure"], tpl_f1)
+                assert w.chemdraw_saved(str(tpl_f1), quiet=True)          # wie gespeichert (nicht erst über die Überwachung)
+                w.show_tab("compound")
+                pump(1.0)
+                tpl0_f1 = _hl_f1.sha256(tpl_f1.read_bytes()).hexdigest()
+                clear_f1("compound")
+                pump(1.0)
+                assert w.compound == {"name": "S3"}, w.compound
+                assert _hl_f1.sha256(tpl_f1.read_bytes()).hexdigest() == tpl0_f1
+                ed_f1 = w.comp_tab.drawing_editor
+                if ed_f1 is not None:
+                    assert ed_f1.path != tpl_f1.resolve() and not PRJ.cdxml_has_content(ed_f1.path), ed_f1.path
+                assert w.chemdraw_file("structure") != tpl_f1             # auch ChemDraw öffnet die leere Datei
+                w.undo()
+                pump(1.0)
+                assert Path(w.compound.get("structure") or "").resolve() == tpl_f1.resolve(), w.compound
+                if w.comp_tab.drawing_editor is not None:
+                    assert w.comp_tab.drawing_editor.path == tpl_f1.resolve(), w.comp_tab.drawing_editor.path
+                assert _hl_f1.sha256(tpl_f1.read_bytes()).hexdigest() == tpl0_f1
+            finally:
+                sys.excepthook = hook_f1
+            assert not errs_f1, errs_f1[:3]
+            w.close_project()
+            report.append("Clear tab in Synthesis, NMR and Compound (lane fix5 1): reset menu with 'clear tab' only, "
+                          "compound keeps its name, one undo step, files unchanged, typed input taken first and not "
+                          "written back, drawing editor opens a new empty file (template untouched, undo shows it): OK")
+        with section:
+            # Spur fix5, Punkt 2: „Jetzt neu starten“ auf der Projektseite öffnet sie wieder, auf der Übersicht nichts
+            dp_f2 = demo_pub(w, out / "f5_2_pub")
+            w.go_home()
+            pump(0.3)
+            assert w.open_publication(dp_f2)
+            pump(0.5)
+            assert w.center.currentIndex() == 2 and not w.project_dir
+            got_f2, head_f2 = [], MW.restart_command()[0]
+            spawn_f2 = lambda c_, e_: got_f2.append(c_) or True           # noqa: E731  startet nichts
+            assert w.restart_now(spawn_f2)
+            assert got_f2[-1][:len(head_f2)] == head_f2, got_f2
+            arg_f2 = MW.parse_open_args(got_f2[-1][len(head_f2):])
+            assert Path(arg_f2[0]).resolve() == dp_f2.resolve() and arg_f2[1] is None, got_f2[-1]
+            w.go_home()
+            pump(0.3)
+            assert w.center.currentIndex() == 0
+            w.open_start_args(got_f2[-1][len(head_f2):])
+            pump(0.5)
+            assert w.center.currentIndex() == 2 and not w.project_dir, w.center.currentIndex()
+            assert Path(w.publication_dir).resolve() == dp_f2.resolve(), w.publication_dir
+            w.go_home()
+            pump(0.3)
+            assert w.restart_now(spawn_f2) and got_f2[-1] == head_f2, got_f2[-1]     # Übersicht: ohne Argument
+            w.open_start_args(got_f2[-1][len(head_f2):])
+            assert w.center.currentIndex() == 0 and not w.publication_dir
+            report.append("Restart now (lane fix5 2): from the project page the command names the project folder and "
+                          "the start argument opens the project page again; from the overview no argument: OK")
+        with section:
+            # Spur fix5, Punkt 3: fremdes PDF mit Dezimalwerten -> Kandidaten zum Anhaken; OPUS nur am Layout erkannt
+            import pymupdf as _mu_f3
+            in_f3 = out / "f5_3_in"
+            in_f3.mkdir(exist_ok=True)
+
+            def pdf_f3(name_, lines_, rotate_=0, axes_=False):     # erfunden; axes_: Achsentitel wie OPUS
+                d_ = _mu_f3.open()
+                pg_ = d_.new_page()
+                for i_, ln_ in enumerate(lines_):
+                    pg_.insert_text((50 + 40 * i_, 300) if rotate_ else (50, 60 + 20 * i_), ln_, rotate=rotate_)
+                if axes_:
+                    pg_.insert_text((200, 400), "Wavenumber cm-1")
+                    pg_.insert_text((20, 300), "Transmittance [%]", rotate=90)
+                d_.save(str(in_f3 / name_))
+                d_.close()
+                return in_f3 / name_
+            foreign_f3 = pdf_f3("foreign_ir.pdf", ["Table S9. IR bands (invented)", "3301.125 br", "2950.25 w",
+                                                   "1713.5 s", "1712.5 s", "1605 m"])
+            flat_f3 = pdf_f3("flat_ir.pdf", ["1713.5", "1600.2"], axes_=True)      # Achsentitel, Werte waagerecht
+            opus_f3 = pdf_f3("opus_ir.pdf", ["2961.20", "1678.41"], rotate_=90, axes_=True)
+            comma_f3 = pdf_f3("comma_ir.pdf", ["IR (ATR): 1713,5 s", "2950,25 w"])    # Dezimalkomma
+            assert IRMS.read_ir_pdf(foreign_f3)                       # früher: alle Werte sofort übernommen
+            assert not IRMS.is_opus_pdf(foreign_f3) and not IRMS.is_opus_pdf(flat_f3) and IRMS.is_opus_pdf(opus_f3)
+            dp_f3 = demo_pub(w, out / "f5_3_pub")
+            assert w.open_project(dp_f3 / "S3", ask=False, recent=False)
+            w.show_tab("irms")
+            pump(0.5)
+            t_f3 = w.irms_tab
+            t_f3.load_ir(str(foreign_f3))
+            t_f3.render()
+            pump(0.6)
+            st_f3 = w.irms_state
+            assert st_f3.get("ir_doc") and not st_f3.get("ir_pdf") and st_f3.get("ir_doc_sel") == [], st_f3
+            tb_f3 = t_f3.tbl_doc
+            got_f3 = [tb_f3.item(r_, 0).data(Qt.UserRole) for r_ in range(tb_f3.rowCount())]
+            assert got_f3 == [3301, 2950, 1714, 1713, 1605], got_f3              # x.5 aufgerundet wie die IR-Zeile
+            assert not any(tb_f3.item(r_, 0).checkState() == Qt.Checked for r_ in range(tb_f3.rowCount()))
+            tb_f3.item(3, 0).setCheckState(Qt.Checked)
+            pump(0.6)
+            assert st_f3["ir_doc_sel"] == [1713] and [p_["wn"] for p_ in t_f3.peaks()] == [1713.0], t_f3.peaks()
+            t_f3.load_ir(str(comma_f3))
+            t_f3.render()
+            pump(0.6)
+            got_f3 = [tb_f3.item(r_, 0).data(Qt.UserRole) for r_ in range(tb_f3.rowCount())]
+            assert got_f3 == [1714, 2950] and t_f3.doc_candidates()[1] == "pdf", got_f3     # Textebene, keine OCR
+            t_f3.load_ir(str(flat_f3))
+            assert w.irms_state.get("ir_doc") and not w.irms_state.get("ir_pdf")
+            t_f3.load_ir(str(opus_f3))                                # OPUS-Layout: Peakwerte gelten wie bisher
+            assert w.irms_state.get("ir_pdf") and not w.irms_state.get("ir_doc"), w.irms_state
+            assert [p_["wn"] for p_ in t_f3.peaks()] == [2961.2, 1678.41], t_f3.peaks()
+            w.close_project()
+            report.append("IR PDF (lane fix5 3): foreign PDF with decimal values -> candidates to tick (nothing "
+                          "preselected, x.5 rounded up), OPUS only by its layout (axis titles, vertical peak values): OK")
+        with section:
+            # Spur fix5, Punkt 4: HRMS mit Bericht und/oder .d, aber ohne Spektrum: ein Satz statt der Anleitung, kein Knopf
+            dp_f4 = demo_pub(w, out / "f5_4_pub")
+            assert w.open_project(dp_f4 / "S3", ask=False, recent=False)
+            w.show_tab("hrms")
+            pump(0.8)
+            t_f4 = w.hrms_tab
+            t_f4.ensure_rendered()
+            assert t_f4.F is not None and w.hrms_state.get("ms_raw") and w.hrms_state.get("ms_file")
+            i_f4 = t_f4.cmb_adduct.findData("M+Na")
+            assert i_f4 >= 0
+            t_f4.cmb_adduct.setCurrentIndex(i_f4)
+            w.hrms_state["adduct"] = "M+Na"                           # Ion nicht in den Rohdaten
+            t_f4.render()
+            pump(0.5)
+            g_f4 = t_f4.empty_guide
+            assert t_f4.F is None and t_f4.preview_stack.currentIndex() == 0
+            assert T("hrms_no_spectrum_raw") in g_f4.label.text() and g_f4.btn.isHidden(), g_f4.label.text()
+            t_f4.clear_raw()
+            t_f4.render()
+            pump(0.5)
+            assert T("hrms_no_spectrum_img") in g_f4.label.text() and g_f4.btn.isHidden(), g_f4.label.text()
+            w.close_project()
+            report.append("HRMS without a spectrum (lane fix5 4): report and raw data but ion not found, or a Word "
+                          "report only -> one sentence, no 'add files' button: OK")
+        with section:
+            # Spur fix5, Punkt 5: (a) nicht sanitisierbare Struktur zeichnen ohne Absturz, (b) Verbindung über einen Symlink
+            from elucida.core import chem as _CH_f5
+            from elucida.formats import cdxml as _CDX_f5
+            in_f5 = out / "f5_5_in"
+            in_f5.mkdir(exist_ok=True)
+            cdx_f5 = in_f5 / "n4.cdxml"                               # erfunden: neutrales N mit vier Bindungen
+            cdx_f5.write_text('<?xml version="1.0" encoding="UTF-8" ?><CDXML><page id="1"><fragment id="2">'
+                              '<n id="10" p="100 100" Element="7"/><n id="11" p="114 100"/><n id="12" p="86 100"/>'
+                              '<n id="13" p="100 114"/><n id="14" p="100 86"/><b id="20" B="10" E="11"/>'
+                              '<b id="21" B="10" E="12"/><b id="22" B="10" E="13"/><b id="23" B="10" E="14"/>'
+                              '</fragment></page></CDXML>', encoding="utf-8")
+            c_f5 = _CH_f5.load_cdxml(cdx_f5)
+            assert c_f5["svg"] and c_f5["mw"] is None and T("cdxml_unsanitized") in c_f5["warnings"], c_f5["warnings"]
+            assert IMG.load_structure(cdx_f5)["rgba"].size
+            real_rd_f5, own_f5 = _CH_f5._rdkit, _CDX_f5.render_svg
+
+            def bad_rd_f5():                                  # RDKit scheitert trotzdem (z. B. gleiche Koordinaten)
+                Ch_, De_, Dr_, Md_, D2_ = real_rd_f5()
+
+                class Bad_:
+                    def __init__(self, *a_):
+                        self.d_ = D2_.MolDraw2DSVG(*a_)
+
+                    def drawOptions(self):
+                        return self.d_.drawOptions()
+
+                    def DrawMolecule(self, m_):
+                        raise RuntimeError("Cannot normalize a zero length vector")
+
+                class D2b_:
+                    MolDraw2DSVG = Bad_
+                return Ch_, De_, Dr_, Md_, D2b_
+
+            def no_own_f5(*a_, **k_):
+                raise ValueError("own drawer off")
+            _CH_f5._rdkit = bad_rd_f5
+            try:
+                for i_, own_ok_ in enumerate((True, False)):
+                    p_ = in_f5 / f"n4_{i_}.cdxml"
+                    shutil.copy(cdx_f5, p_)
+                    _CDX_f5.render_svg = own_f5 if own_ok_ else no_own_f5
+                    c_ = _CH_f5.load_cdxml(p_)
+                    assert c_["svg"] is None and any("RDKit" in x_ for x_ in c_["warnings"]), c_["warnings"]
+                    if own_ok_:                               # eigene Zeichnung statt Absturz
+                        assert IMG.load_structure(p_)["rgba"].size
+                    else:                                     # gar keine Zeichnung: Fehler mit Grund
+                        try:
+                            IMG.load_structure(p_)
+                            raise AssertionError("structure without any drawing accepted")
+                        except RuntimeError as e_:
+                            assert "RDKit" in str(e_) and "own drawer off" in str(e_), e_
+            finally:
+                _CH_f5._rdkit, _CDX_f5.render_svg = real_rd_f5, own_f5
+            dp_f5 = demo_pub(w, out / "f5_5_pub")
+            assert w.open_project(dp_f5 / "S3", ask=False, recent=False)
+            errs_f5, hook_f5 = [], sys.excepthook
+            sys.excepthook = lambda t_, v_, tb_: errs_f5.append(f"{t_.__name__}: {v_}")
+            try:
+                w.show_tab("compound")
+                pump(0.5)
+                w.comp_tab.set_structure(str(cdx_f5))                 # Oberfläche: Struktur der Verbindung, alle Tabs
+                w.show_tab("eps")
+                pump(2.0)
+            finally:
+                sys.excepthook = hook_f5
+            assert not errs_f5 and Path(w.compound["structure"]).name == "n4.cdxml", (errs_f5[:3], w.compound)
+            w.close_project()
+            link_f5 = out / "f5_5_link"
+            try:
+                os.symlink(dp_f5, link_f5, target_is_directory=True)
+            except (OSError, NotImplementedError):                    # Windows ohne Recht auf Symlinks
+                link_f5 = None
+            if link_f5 is not None:
+                assert w.open_project(link_f5 / "S3", ask=False, recent=False)
+                assert w.project_dir == str(link_f5 / "S3"), w.project_dir      # Pfad über den Link, nicht aufgelöst
+                ext_f5 = in_f5 / "ext_ir.pdf"
+                ext_f5.write_bytes(b"%PDF-1.4\n% invented\n")          # außerhalb der Verbindung
+                new_f5 = w.import_file(str(ext_f5), PRJ.data_sub("irms"))
+                assert Path(new_f5).parent == (dp_f5 / "S3" / PRJ.data_sub("irms")).resolve(), new_f5
+                w.irms_state["ir_doc"] = new_f5
+                assert w.save_project() is not False
+                txt_f5 = (dp_f5 / "S3" / PRJ.PROJECT_FILE).read_text(encoding="utf-8")
+                assert "ext_ir.pdf" in txt_f5 and str(out) not in txt_f5, txt_f5[:300]    # relativ gespeichert
+                w.close_project()
+            report.append("Structures and symlinks (lane fix5 5): neutral N with four bonds drawn with a hint, RDKit "
+                          "failure -> own drawing or an error with the reason, no crash in the UI; compound opened "
+                          "through a symlink imports a file and saves it relative"
+                          + (": OK" if link_f5 is not None else " (symlink not permitted here, skipped): OK"))
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

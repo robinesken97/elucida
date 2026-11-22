@@ -485,7 +485,7 @@ class SynthTab(QWidget):
             self.drawing_editor.open_path(self.main.chemdraw_file("scheme"))
         from elucida.tabs.base import footer, side_bar
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(footer(self, ls))
+        split.addWidget(footer(self, ls, clear=True))
         ro.addWidget(side_bar(self.btn_export, stretch_at=0))
         split.addWidget(right)
         split.setSizes([620, 800])

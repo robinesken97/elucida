@@ -94,6 +94,22 @@ def _open_pdf(path):
         raise ValueError(T("r2l_pdf_bad", name=Path(path).name)) from None
 
 
+def is_opus_pdf(path) -> bool:
+    """OPUS-Bericht am Layout erkennen (OPUS 8.5): Achsentitel „Wavenumber cm-1“ und „Transmittance …“/„Absorbance …“,
+    Peakwerte (Zahl mit Nachkommastellen) senkrecht an den Peaks. Fremde PDFs mit Dezimalzahlen -> False (dort wählt der
+    Nutzer Kandidaten, statt dass alle Werte übernommen werden)."""
+    with _open_pdf(path) as doc:
+        for page in doc:
+            lines = [(" ".join("".join(s["text"] for s in ln["spans"]).split()), ln["dir"])
+                     for b in page.get_text("dict")["blocks"] for ln in b.get("lines", [])]
+            texts = {t for t, _ in lines}
+            dec = [d for t, d in lines if re.fullmatch(r"\d{3,4}[.,]\d{1,3}", t)]
+            if ("Wavenumber cm-1" in texts and any(t.startswith(("Transmittance", "Absorbance")) for t in texts)
+                    and dec and all(abs(d[0]) < 0.1 for d in dec)):
+                return True
+    return False
+
+
 def read_ir_pdf(path) -> list[float]:
     """OPUS-PDF-Ausdruck -> Peaklagen [cm⁻¹] aus den Textbeschriftungen. Achsenwerte (runde Hunderter/Prozente)
     werden verworfen; Peakwerte tragen in OPUS Nachkommastellen."""

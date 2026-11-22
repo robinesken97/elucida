@@ -392,6 +392,8 @@ TEXTS = {
                     "oder „.pdf“ aus ChemDraw daneben speichern.", "Drawn from the CDXML coordinates (as in ChemDraw, "
                     "Helvetica font). Exact: save “{name}.svg” or “.pdf” from ChemDraw next to it."),
     "cdxml_own_failed": ("Eigene Zeichnung nicht möglich ({what}).", "Own drawing not possible ({what})."),
+    "cdxml_draw_failed": ("RDKit kann die Struktur nicht zeichnen ({e}) – Zeichnung in ChemDraw prüfen.",
+                          "RDKit cannot draw the structure ({e}) – check the drawing in ChemDraw."),
     "drawing_from": ("Zeichnung: Original aus {name}", "Drawing: original from {name}"),
     "files_loaded": ("{n} Dateien: {names}", "{n} files: {names}"),
     "cdx_binary": ("Binäres .cdx wird nicht gelesen – in ChemDraw als .cdxml oder .svg speichern",
@@ -599,6 +601,12 @@ TEXTS = {
                           "wie bei einem neuen Tab. Die Dateien bleiben im Ordner der Verbindung. Rückgängig mit Strg+Z.",
                           "Removes all loaded files from this tab and resets its settings to defaults,\n"
                           "like a new tab. The files stay in the compound folder. Undo with Ctrl+Z."),
+    "btn_clear_compound_tip": ("Leert alle Angaben zur Verbindung außer dem Namen (Summenformel, Molmasse, Struktur, Schmelzpunkt,\n"
+                               "Reinheit …); Summenformel und Struktur fehlen dann in allen Tabs. Die Dateien bleiben im Ordner\n"
+                               "der Verbindung. Rückgängig mit Strg+Z.",
+                               "Clears everything about the compound except its name (formula, molar mass, structure, melting\n"
+                               "point, purity …); formula and structure are then missing in every tab. The files stay in the\n"
+                               "compound folder. Undo with Ctrl+Z."),
     "btn_reset_clear_tip": ("„Tab leeren“: Dateien und Einstellungen dieses Tabs entfernen (Dateien bleiben im Ordner).",
                             "“Clear tab”: remove this tab's files and settings (the files stay in the folder)."),
     "tab_cleared": ("Tab geleert – die Dateien bleiben im Ordner. Rückgängig mit Strg+Z.",
@@ -6420,6 +6428,9 @@ TEXTS.update({                                            # HRMS: eigenes Ion, F
                     "⚠ no numbers between 350 and 4500 found in the document – enter the values manually"),
     "hrms_no_spectrum_img": ("Kein Spektrum – für eine Abbildung MS-Rohdaten (.d) laden.",
                              "No spectrum – load MS raw data (.d) for a figure."),
+    "hrms_no_spectrum_raw": ("Kein Spektrum – das Ion ist in den MS-Rohdaten nicht zu finden. Summenformel und Ion links "
+                             "prüfen.", "No spectrum – the ion is not found in the MS raw data. Check the formula and "
+                             "ion on the left."),
     "dp_pdf_check": ("PDF-Köpfe prüfen (MS-Bericht als Bild oder mit unbekanntem Aufbau, Inhalt unverändert):\n  {files}",
                      "check PDF headers (MS report as image or with unknown layout, content unchanged):\n  {files}"),
 })

@@ -1226,7 +1226,7 @@ class NMRTab(QWidget):
         rl.addWidget(self.right_tabs)
         from elucida.tabs.base import footer, side_bar
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(footer(self, ls))
+        split.addWidget(footer(self, ls, clear=True))
         rl.addWidget(side_bar(self.btn_export, stretch_at=0))   # Hauptknopf rechts unter der Vorschau wie in allen Tabs
         split.addWidget(right)
         split.setSizes([500, 900])

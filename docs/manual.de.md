@@ -640,6 +640,10 @@ als eigene Word-Datei oder im SI-Abschnitt.
   absteigend).
   **Basislinie korrigieren (wie OPUS)** zieht die Basislinie wie OPUS ab (nur Bild und Peaksuche); **Schwelle setzen**:
   Punkte ins Bild klicken, Peaks jenseits der Linie. Liegt nur das OPUS-PDF vor, wird das Spektrum aus dem PDF gelesen.
+  Den OPUS-Ausdruck erkennt Elucida an seinem Layout (Achsentitel „Wavenumber cm-1“ und „Transmittance“/„Absorbance“,
+  Peakwerte senkrecht an den Peaks). Jedes andere PDF oder Bild (z. B. eine Tabelle mit „1713.5“) liefert eine
+  **Kandidatenliste**: ganze Zahlen (x,5 aufgerundet) mit Zeile und Ausschnitt im Tooltip, nichts ist vorgewählt; erst die
+  angehakten Werte kommen in die IR-Zeile.
 - **HRMS:** den **Word-Bericht** der Massenabteilung laden; Formel, Ionisierung, Polarität und die gemessenen m/z (aus
   den eingebetteten Spektren) werden ausgelesen. Die Formel kommt aus der Verbindung (Warnung, wenn der
   Bericht etwas anderes sagt), das Ion ist wählbar ([M+H]⁺, [M+Na]⁺, [M]⁺, [M−H]⁻ …), vorgewählt ist das nächste
@@ -1619,6 +1623,17 @@ SI-Texte stehen als Reiter neben der Abbildung. Das Mausrad scrollt die Spalte; 
 angeklickt ist. Hinweise beim Zeichnen (z. B. ausgelassene Kurven) stehen unter der Vorschau, **Hilfe → Protokoll…**
 zeigt alle Meldungen. Unten rechts unter der Abbildung steht die Bildunterschrift; exportiert wird im Tab **Export** oder mit **Strg+E**. **Vorlagen ▾** unten links speichert die Darstellung eines Tabs für andere Verbindungen (ohne Dateien, Auswertung und Bildunterschrift; auch ältere Vorlagen ändern beim Laden nur die Darstellung). Die Abbildungen
 sind vom Erscheinungsbild nicht betroffen.
+
+**Zurücksetzen ▾ → Tab leeren (Daten und Einstellungen)** entfernt alle geladenen Dateien aus dem Tab und setzt seine
+Einstellungen auf Standard, wie bei einem neuen Tab; die Dateien bleiben im Ordner der Verbindung, Rückgängig (Strg+Z) holt
+alles in einem Schritt zurück. In Synthese und NMR ist es der einzige Eintrag. Im Tab **Verbindung** leert er alle Angaben
+außer dem Namen (Summenformel, Molmasse, Struktur, Schmelzpunkt, Reinheit …); Summenformel und Struktur fehlen dann in
+allen Tabs, ε-Serien behalten ihre Molmasse. Der Zeichner (Struktur, in der Synthese das Schema) öffnet danach eine neue
+leere Zeichnung; die bisherige Datei bleibt unverändert in `structures/`, Rückgängig zeigt sie wieder.
+
+**Format → Oberflächengröße** (100–150 %, nur auf diesem Rechner) gilt nach dem Neustart. **Jetzt neu starten** in der
+Einblendung speichert, startet Elucida neu und öffnet wieder dieselbe Verbindung im selben Tab, auf der Projektseite das
+Projekt, auf der Übersicht die Übersicht (ein offener Vergleich oder Reaktionspfad kommt nicht wieder).
 
 **Canvas dunkel / Canvas hell** in der Werkzeugleiste (Mond = dunkel, Sonne = hell; auch Format → Canvas) schaltet um; dunkel zeigt alle Diagramme, Vorschauen und Editoren auf reinem Schwarz. Farbtöne
 bleiben (Rot bleibt Rot), dunkle Farben werden aufgehellt, damit sie lesbar sind. Das betrifft nur den Bildschirm, nie

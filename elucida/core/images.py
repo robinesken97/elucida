@@ -507,9 +507,12 @@ def _load_structure(path, target_px=2400, color=None):
             own, notes = CDXDRAW.render_svg(path)
         except Exception as e:
             own, notes = None, [str(e)]
-        if own is not None and not notes:
-            info["warnings"] = info["warnings"] + [T("cdxml_drawn", name=path.stem)]
+        if own is not None and (not notes or svg is None):      # RDKit konnte nicht zeichnen: die eigene trotz Lücken
+            info["warnings"] = info["warnings"] + [T("cdxml_drawn", name=path.stem)] + \
+                ([T("cdxml_own_failed", what=", ".join(notes))] if notes else [])
             return _render_doc(_vector_doc(path, recolor_svg(own, color) if color else own), target_px, info)
+        if svg is None:                                # keine Zeichnung möglich: Grund statt Absturz
+            raise RuntimeError("\n".join(info["warnings"] + notes))
         info["warnings"] = info["warnings"] + [T("cdxml_redrawn", name=path.stem)] + \
             ([T("cdxml_own_failed", what=", ".join(notes))] if notes else [])
         if color:

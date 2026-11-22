@@ -1336,15 +1336,16 @@ class HRMSTab(TABS.FigureTab):
         self.main.push_undo()
 
     def sync_empty(self):
-        """PDF-Bericht geladen, aber kein Bild daraus gewählt und keine .d-Daten: ein Satz statt der allgemeinen
-        Anleitung (Nutzerwunsch); sonst die Anleitung."""
+        """Bericht und/oder .d geladen, aber kein Spektrum (kein Bild gewählt, Ion nicht in den Rohdaten): ein Satz
+        statt der allgemeinen Anleitung mit „Dateien hinzufügen“ (Nutzerwunsch); ohne Dateien die Anleitung."""
         g = self.empty_guide
         if g is None:
             return
         p = self.st.get("ms_file")
         ext = Path(p).suffix.lower() if p else ""
-        only = self.F is None and ext in (".pdf", *OCR.IMAGE_EXT) and not self.st.get("ms_raw")
-        key = "hrms_no_spectrum" if ext == ".pdf" else "hrms_no_spectrum_img"     # Bild (OCR): kein Bild zu wählen
+        only = self.F is None and bool(p or self.st.get("ms_raw"))
+        key = "hrms_no_spectrum_raw" if self.st.get("ms_raw") else "hrms_no_spectrum" if ext == ".pdf" \
+            else "hrms_no_spectrum_img"                # Bild (OCR) oder Word-Bericht: kein Bild zu wählen
         g.label.setText(f"<p style='font-size:15px'>{T(key)}</p>" if only else TABS.guide_html(self.GUIDE))
         if g.btn is not None:
             g.btn.setVisible(not only)

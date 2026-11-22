@@ -206,10 +206,10 @@ _OWN_SCALE = False     # QT_SCALE_FACTOR kam von apply_ui_scale (main), nicht vo
 
 def restart_command(project_dir=None, tab=None, frozen=None, executable=None, env=None, own_scale=None):
     """„Jetzt neu starten“: (Befehl, Umgebung) für ein neues Elucida mit derselben Verbindung und demselben Tab
-    (Startargumente: Ordner der Verbindung, `--tab KEY`, siehe `parse_open_args`). Gebaut die App selbst (AppImage: die
-    Datei $APPIMAGE, der eingehängte Ordner verschwindet mit diesem Prozess), sonst Python mit Elucida.py. Eine selbst
-    gesetzte QT_SCALE_FACTOR erbt der neue Prozess nicht (die neue Größe gälte sonst nicht); PyInstaller: unabhängige
-    neue Instanz (PYINSTALLER_RESET_ENVIRONMENT)."""
+    (Startargumente: Ordner der Verbindung, `--tab KEY`, siehe `parse_open_args`; Projektseite: Ordner des Projekts).
+    Gebaut die App selbst (AppImage: die Datei $APPIMAGE, der eingehängte Ordner verschwindet mit diesem Prozess), sonst
+    Python mit Elucida.py. Eine selbst gesetzte QT_SCALE_FACTOR erbt der neue Prozess nicht (die neue Größe gälte sonst
+    nicht); PyInstaller: unabhängige neue Instanz (PYINSTALLER_RESET_ENVIRONMENT)."""
     env = dict(os.environ if env is None else env)
     frozen = getattr(sys, "frozen", False) if frozen is None else frozen
     exe = executable or sys.executable
@@ -428,6 +428,7 @@ class MainWindow(QMainWindow):
         self.cd_watch = QFileSystemWatcher(self)
         self.cd_watch.fileChanged.connect(self._cd_changed)
         self._cd_kinds = {}                              # Pfad -> "structure" | "scheme"
+        self._fresh_draw = {}                            # nach „Tab leeren“: leere CDXML statt der Vorlage zum Zeichnen
         self._cd_pending = set()
         self._drawn, self._taken = {}, None              # je Strukturdatei: Formel/Molmasse der Zeichnung; zuletzt übernommen
         self.cd_timer = QTimer(self, singleShot=True, interval=800)   # ChemDraw schreibt in mehreren Schritten
@@ -1656,13 +1657,14 @@ class MainWindow(QMainWindow):
 
     def restart_now(self, spawn=None):
         """Knopf „Jetzt neu starten“ der Meldung zur Oberflächengröße: speichern, ein neues Elucida mit derselben
-        Verbindung und demselben Tab starten, dieses beenden. spawn(Befehl, Umgebung): Selbsttest, startet und beendet
-        nichts."""
+        Verbindung und demselben Tab starten (Projektseite: dasselbe Projekt, Übersicht: ohne Argument), dieses beenden.
+        Ein offener Vergleich oder Reaktionspfad der Projektseite kommt nicht wieder. spawn(Befehl, Umgebung):
+        Selbsttest, startet und beendet nichts."""
         if not self.maybe_save():
             return False
         self.autosave(force=True)
         self.settings.sync()
-        cmd, env = restart_command(self.project_dir, self._tab_key if self.project_dir else None)
+        cmd, env = restart_command(self.project_dir or self.publication_dir, self._tab_key if self.project_dir else None)
         if spawn is not None:
             return spawn(cmd, env)
         if not self.close():
@@ -1675,12 +1677,15 @@ class MainWindow(QMainWindow):
         return True
 
     def open_start_args(self, argv):
-        """Startargumente: Ordner einer Verbindung (Neustart, mit `--tab KEY`) oder Messdatei (Doppelklick / Ziehen auf
-        das Programmsymbol)."""
+        """Startargumente: Ordner einer Verbindung (Neustart, mit `--tab KEY`), eines Projekts (Neustart auf der
+        Projektseite) oder Messdatei (Doppelklick / Ziehen auf das Programmsymbol)."""
+        from elucida.app import publication as PUB
         path, tab = parse_open_args(argv)
         if path and PRJ.is_project(path):
             if self.open_project(path) and tab in self._tab_keys:
                 self.show_tab(tab)
+        elif path and PUB.is_publication(path):
+            self.open_publication(path)
         elif path and Path(path).exists():
             self.open_csv(path)
 
@@ -2807,7 +2812,7 @@ class MainWindow(QMainWindow):
         bearbeitete CDXML werden übernommen)."""
         if self.cd_watch.files():
             self.cd_watch.removePaths(self.cd_watch.files())
-        self._cd_kinds = {}
+        self._cd_kinds, self._fresh_draw = {}, {}
         if not self.project_dir:
             return
         try:
@@ -2828,6 +2833,9 @@ class MainWindow(QMainWindow):
         cur = self.compound.get("structure") if kind == "structure" else self.syn_state.get("scheme")
         if cur and Path(cur).suffix.lower() == ".cdxml" and Path(cur).exists():
             return Path(cur)
+        fresh = self._fresh_draw.get(kind)
+        if fresh and fresh.exists():
+            return fresh
         return s_t if kind == "structure" else sch_t
 
     def edit_in_elucida(self, kind):
@@ -3007,9 +3015,9 @@ class MainWindow(QMainWindow):
         if not self.project_dir:
             return str(Path(path).resolve())
         new = PRJ.import_file(self.project_dir, path, sub, name)
-        if Path(new) != Path(path).resolve():
+        if Path(new) != Path(path).resolve():          # new ist aufgelöst: Verbindung evtl. über einen Symlink geöffnet
             self.log_signal.emit("  " + T("file_imported", src=Path(path).name, dst=Path(new).relative_to(
-                self.project_dir).as_posix()))
+                Path(self.project_dir).resolve()).as_posix()))
         return new
 
     def _flush_edits(self):
@@ -4185,11 +4193,25 @@ class MainWindow(QMainWindow):
     def clear_tab(self, key):
         """„Tab leeren“ (Nutzerwunsch): Zustand des Tabs wie frisch gebaut – geladene Dateien vergessen, Einstellungen
         und eigenes Textformat auf Standard. Dateien im Ordner der Verbindung bleiben. Ohne Rückfrage, ein
-        Rückgängig-Schritt: wie Rückgängig über set_state, Vorgaben beim ersten Zeichnen erst danach erfassen."""
+        Rückgängig-Schritt: wie Rückgängig über set_state, Vorgaben beim ersten Zeichnen erst danach erfassen.
+        Verbindung: alles außer dem Namen; wie jede Änderung der Verbindung erreicht das alle Tabs (ε-Serien behalten
+        ihre Molmasse: die Verbindung nennt keine mehr). Zeigt der Zeichner (Struktur/Schema) etwas, öffnet er danach
+        eine neue leere CDXML wie `remove_scheme`; die bisherige Datei bleibt unverändert."""
         if not key or self._restoring:
             return
+        if not self.save_drawings():                   # Zeichnung zuerst speichern: ihre Übernahme gehört vor den Schnappschuss
+            return
+        self._flush_edits()                            # laufende Eingabe (Feld mit Fokus, Vorschrift) vorher übernehmen
+        kind = {"compound": "structure", "syn": "scheme"}.get(key)
+        if kind and self.project_dir and PRJ.cdxml_has_content(self.chemdraw_file(kind)):
+            # Zeichner leeren wie remove_scheme: neue leere CDXML; die alte Datei bleibt unberührt, Rückgängig zeigt sie wieder
+            import uuid
+            fresh = Path(self.project_dir) / PRJ.STRUCTURES / f"{kind}-{uuid.uuid4().hex[:8]}.cdxml"
+            fresh.write_text(PRJ.EMPTY_CDXML, encoding="utf-8")
+            self._fresh_draw[kind] = fresh
         state = json.loads(self._snap())
-        state[key] = {}
+        name = (state.get("compound") or {}).get("name")
+        state[key] = {"name": name} if key == "compound" and name else {}     # Verbindung: der Name bleibt
         (state.get("text_tabs") or {}).pop("epsilon" if key == "eps" else self._tab_spec(key)[1].STATE_KEY, None)
         self._restoring = True
         self._series_kept = None                       # ε: Serien-Einstellungen gehörten den vergessenen Messdaten

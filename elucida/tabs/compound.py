@@ -80,16 +80,14 @@ class CompoundTab(QWidget):
             ed.external_requested.connect(lambda: main.edit_in_chemdraw("structure"))
             ed.status_to(lambda t: main.statusBar().showMessage(t, 8000))
         split = QSplitter(Qt.Horizontal)
-        split.addWidget(TABS.footer(self, ls))
+        split.addWidget(TABS.footer(self, ls, clear=True, clear_tip=T("btn_clear_compound_tip")))
         self.btn_export.setParent(self)                   # kein eigener Export: der Knopf der Fußleiste entfällt
         self.btn_export.hide()
         right_bar = TABS.side_bar(stretch_at=0)
         ro.addWidget(right_bar)
         split.addWidget(right)
         split.setSizes([620, 800])
-        TABS.fit_footer_column(self, split)
-        self._footer_parts[1].hide()                      # ein Schritt, kein Export: leere Fußleisten entfallen
-        right_bar.hide()
+        TABS.fit_footer_column(self, split)               # Fußleisten wie in Synthese/NMR (links „Zurücksetzen“)
         lay = QHBoxLayout(self)                           # kein QVBoxLayout: tidy(Tab) rückt sonst alles ein
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(split)

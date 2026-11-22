@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-from elucida.formats.opus import (read_opus, is_opus, read_ir_pdf, read_ir_pdf_curve)  # noqa: E402,F401  (Leser in elucida/formats)
+from elucida.formats.opus import (read_opus, is_opus, is_opus_pdf, read_ir_pdf, read_ir_pdf_curve)  # noqa: E402,F401  (Leser in elucida/formats)
 from elucida.formats.ms_report import (read_ms_docx, _emf_texts, cdx_structure)  # noqa: E402,F401  (Leser in elucida/formats)
 from elucida.formats.elements import ELEMENTS  # noqa: E402
 from elucida.formats.bruker_ms import (read_bruker_d, is_bruker_d, BAF_LINE_MAGIC, BAF_TRANSFORMATOR, _baf_mz)  # noqa: E402,F401  (Leser in elucida/formats)
@@ -666,7 +666,7 @@ from elucida.app import project as PRJ  # noqa: E402
 from elucida.app.style import HINT_CSS, WARN_CSS, HintLabel, make_form, off_spin  # noqa: E402
 from elucida.core import ocr as OCR  # noqa: E402
 from elucida.formats.ms_report import header_line  # noqa: E402
-IR_DOC_NUM = r"\d{3,4}(\.\d{1,2})?"                    # ṽ in einem fremden Dokument (ganze Zahl oder 1–2 Nachkommastellen)
+IR_DOC_NUM = r"\d{3,4}([.,]\d{1,3})?"                  # ṽ in einem fremden Dokument (ganze Zahl oder 1–3 Nachkommastellen)
 IR_DOC_RANGE = (350, 4500)
 
 IR_COLOR = "#7a1a12"
@@ -1659,10 +1659,12 @@ class IRMSTab(TABS.FigureTab):
             self.load_ir(p)
 
     def load_ir(self, p):
-        """PDF -> Peakliste aus OPUS, OPUS-Datei -> Spektrum (eigene Peaksuche); beides darf gleichzeitig da sein."""
+        """OPUS-PDF (am Layout erkannt) -> Peakliste, anderes PDF/Bild -> Kandidaten zum Anhaken (nichts vorgewählt),
+        OPUS-Datei -> Spektrum (eigene Peaksuche); Spektrum und PDF dürfen gleichzeitig da sein."""
         p = self.main.import_file(p, PRJ.data_sub(self.STATE_KEY))
         try:
-            if Path(p).suffix.lower() in OCR.IMAGE_EXT or (Path(p).suffix.lower() == ".pdf" and not read_ir_pdf(p)):
+            if Path(p).suffix.lower() in OCR.IMAGE_EXT or (Path(p).suffix.lower() == ".pdf"
+                                                               and not (is_opus_pdf(p) and read_ir_pdf(p))):
                 if Path(p).suffix.lower() == ".pdf":
                     import pymupdf
                     with pymupdf.open(p) as doc_:                 # unlesbar: Grund statt leerer Liste
@@ -1800,7 +1802,7 @@ class IRMSTab(TABS.FigureTab):
     def _ir_ints(cands):
         out, seen = [], set()
         for v, line, crop in cands:
-            k = int(round(v))
+            k = int(wn_text(v))                     # x.5 aufgerundet wie in der IR-Zeile
             if k not in seen:
                 seen.add(k)
                 out.append((k, line, crop))

@@ -79,8 +79,8 @@ def text_items(path) -> list[dict]:
             lines = {}
             for w in words:
                 lines.setdefault((w[5], w[6]), []).append(w[4])
-            for x0, y0, x1, y1, word, blk, ln, _ in words:
-                num = float(word) if re.fullmatch(r"\d+(\.\d+)?", word) else None
+            for x0, y0, x1, y1, word, blk, ln, _ in words:      # Textebene: Dezimalkomma ist Schreibweise, kein OCR-Fehler
+                num = float(word.replace(",", ".")) if re.fullmatch(r"\d+([.,]\d+)?", word) else None
                 crop = None
                 if num is not None:
                     r = pymupdf.Rect(x0 - 1, y0 - 1, x1 + 1, y1 + 1)

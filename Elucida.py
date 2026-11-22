@@ -1,4 +1,4 @@
-"""Startdatei: python Elucida.py [VERBINDUNGSORDNER [--tab KEY] | MESSDATEI]
+"""Startdatei: python Elucida.py [VERBINDUNGSORDNER [--tab KEY] | PROJEKTORDNER | MESSDATEI]
 [--selftest ORDNER [--selftest-group NAME[,NAME…]]] (auch Einstieg für PyInstaller, siehe tools/build.py)."""
 from elucida.app.main_window import main
 

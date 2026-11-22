@@ -309,6 +309,11 @@ def _load_cdxml(path, *, render=True) -> dict:
     Draw.SetACS1996Mode(opts, bl)
     opts.clearBackground = False
     opts.prepareMolsBeforeDrawing = sanitized
-    d.DrawMolecule(dm)
-    d.FinishDrawing()
+    try:
+        if not sanitized:                              # RDKit zeichnet sonst nicht (getNumImplicitHs ohne Valenz)
+            dm.UpdatePropertyCache(strict=False)
+        d.DrawMolecule(dm)
+        d.FinishDrawing()
+    except Exception as e:                             # keine RDKit-Zeichnung: Werte bleiben, Grund als Hinweis
+        return {**properties, "svg": None, "warnings": warnings + [T("cdxml_draw_failed", e=str(e).splitlines()[0])]}
     return {"svg": d.GetDrawingText(), **properties}
