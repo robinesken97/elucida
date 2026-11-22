@@ -36,9 +36,8 @@ const kekule = [0, 1, 2, 3, 4, 5].map((k) => B(k, (k + 1) % 6, k % 2 ? 1 : 2));
 assert.equal(cf(hex, kekule), "\\chemfig{?[1]=^[:-90]-[:-30]=^[:30]-[:90]=^[:150]?[1]}");
 // Pyridine: the hook goes on the N, after its label.
 assert.equal(cf(hex.map((a, k) => (k === 2 ? { ...a, label: "N" } : a)), kekule), "\\chemfig{N?[1]=^[:-90]-[:-30]=^[:30]-[:90]=^[:150]?[1]}");
-// A double bond in a chain is centred (Elucida: a bond in no ring), as a terminal C=O; a side set by hand is kept.
-assert.equal(cf([A("C", 0, 0), A("C", c30, s30), A("C", 2 * c30, 0), A("C", 3 * c30, s30)], [B(0, 1), B(1, 2, 2), B(2, 3)]), "\\chemfig{-[:30]=[:-30]-[:30]}");
-assert.equal(cf([A("C", 0, 0), A("C", c30, s30), A("C", 2 * c30, 0), A("C", 3 * c30, s30)], [B(0, 1), B(1, 2, 2, { position: "right" }), B(2, 3)]), "\\chemfig{-[:30]=_[:-30]-[:30]}");
+// A double bond in a chain goes on the page's side; a terminal C=O is centred.
+assert.equal(cf([A("C", 0, 0), A("C", c30, s30), A("C", 2 * c30, 0), A("C", 3 * c30, s30)], [B(0, 1), B(1, 2, 2), B(2, 3)]), "\\chemfig{-[:30]=_[:-30]-[:30]}");
 assert.equal(cf([A("C", 0, 0), A("C", c30, s30), A("O", c30, 1 + s30), A("O", 2 * c30, 0)], [B(0, 1), B(1, 2, 2), B(1, 3)]), "\\chemfig{-[:30](=[:90]O)-[:-30,,,1]OH}");
 
 // Triple bonds; a quadruple bond, which chemfig has no character for, as a triple.
