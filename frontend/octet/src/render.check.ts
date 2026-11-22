@@ -771,3 +771,36 @@ console.log("render.check: written labels ok");
   assert.deepEqual([corner(), corner(0.25)], [40 - 3, 40 - 2.5]);
   console.log("render.check: a rounded box's own corner ok");
 }
+
+// Elucida: a double bond in no ring is centred when no side is set (chain C=C, terminal =CH2, exocyclic C=C, ketone and
+// ester C=O); in a ring it goes inside, and a side set by hand wins.
+{
+  const c30 = Math.cos(Math.PI / 6);
+  const mol = (atoms: [string, number, number][], bonds: [number, number, number, Bond["position"]?][]): Mol => ({
+    atoms: atoms.map(([label, x, y]) => ({ label, location: [x, y, 0] as [number, number, number] })),
+    bonds: bonds.map(([a, b, type, position]) => ({ type, atoms: [a, b] as [number, number], ...(position ? { position } : {}) })) });
+  const doubles = (m: Mol) => render(m, S, ink).sides!.filter((_, k) => m.bonds[k].type === 2);
+  const zig = (n: number): [string, number, number][] => [...Array(n)].map((_, i) => ["C", i * c30, i % 2 ? 0.5 : 0]);
+  const ring = [...Array(6)].map((_, i): [string, number, number] => ["C", Math.cos((Math.PI / 3) * i), Math.sin((Math.PI / 3) * i)]);
+  const ringBonds: [number, number, number][] = [0, 1, 2, 3, 4, 5].map((i) => [i, (i + 1) % 6, 1]);
+  const chain: [number, number, number][] = [[0, 1, 1], [1, 2, 2], [2, 3, 1], [3, 4, 1]];
+  assert.deepEqual(doubles(mol(zig(5), chain)), [0], "chain C=C centred");
+  assert.deepEqual(doubles(mol(zig(3), [[0, 1, 2], [1, 2, 1]])), [0], "terminal =CH2 centred");
+  assert.deepEqual(doubles(mol([...zig(2), ["O", c30, 1.5], ["O", 2 * c30, 0], ["C", 3 * c30, 0.5]], [[0, 1, 1], [1, 2, 2], [1, 3, 1], [3, 4, 1]])), [0], "ester C=O centred");
+  assert.deepEqual(doubles(mol([...ring, ["O", 2, 0]], [...ringBonds, [0, 6, 2]])), [0], "ketone on a ring centred");
+  assert.deepEqual(doubles(mol([...ring, ["C", 2, 0]], [...ringBonds, [0, 6, 2]])), [0], "exocyclic C=C centred");
+  assert.deepEqual(doubles(mol(zig(5), chain.map(([a, b, t]) => [a, b, t, t === 2 ? "left" : undefined]))), [-1], "a side set by hand is kept");
+  // Cyclohexene: the second line goes into the ring (toward its centre).
+  const ene = mol(ring, ringBonds.map(([a, b], k) => [a, b, k ? 1 : 2]));
+  assert.notEqual(doubles(ene)[0], 0, "a ring double bond is not centred");
+  const pl = render(ene, S, ink).polygons;
+  const inner = pl.filter((poly) => Math.hypot(...centroid(poly)) < L * Math.cos(Math.PI / 6) - 1);
+  assert.equal(inner.length, 1, "cyclohexene's second line inside the ring");
+  // A twelve-membered ring (past ringsThrough's nine atoms) is still a ring: its double bond goes inside.
+  const r12 = 1 / (2 * Math.sin(Math.PI / 12));
+  const big = mol([...Array(12)].map((_, i): [string, number, number] => ["C", r12 * Math.cos((Math.PI / 6) * i), r12 * Math.sin((Math.PI / 6) * i)]),
+    [...Array(12)].map((_, i): [number, number, number] => [i, (i + 1) % 12, i ? 1 : 2]));
+  assert.notEqual(doubles(big)[0], 0, "a macrocycle's double bond is not centred");
+  assert.equal(render(big, S, ink).polygons.filter((poly) => Math.hypot(...centroid(poly)) < r12 * L * Math.cos(Math.PI / 12) - 1).length, 1, "inside the twelve-membered ring");
+  console.log("render.check: acyclic double bonds centred ok");
+}

@@ -72,3 +72,10 @@ its files `sides: 1` at the top; files without the mark (older Octet) keep Octet
 minus (en dash) until its ink's middle is level with a plus's, and draws a free written label's trailing sign (BF4-) as a
 charge sign (bonded labels such as SO3- keep the sign in the text, since labelOf measures it there); a count before the sign is a charge only for a monatomic ion
 (metal cation Fe2+, chalcogenide O2-) or after a space (SO4 2-), else a count (NH4+, SO42-, I3-) (writtenCharge); signAt in cdxml.ts follows. Upstream has neither; offer them upstream.
+
+Local change on November 22 (Elucida decision 194): a double bond with no side set (Automatic, or a source without
+DoublePosition) that is in no ring is drawn centred: chain C=C, terminal =CH2, exocyclic C=C and C=O alike (render.ts;
+upstream put a chain double bond toward the side with more substituents and a terminal =CH2 into the angle at its
+inner atom). Ring double bonds and sides set by hand or read from a file (CDXML DoublePosition, CDX) are unchanged.
+A ring past ringsThrough's nine atoms still counts (shortestRing, breadth first), so a macrocycle's double bond goes inside.
+chemfig.check expects `=` for an automatic chain double bond now. The own drawer (elucida/formats/cdxml.py) follows.

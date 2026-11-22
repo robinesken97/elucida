@@ -23590,6 +23590,70 @@ def _g_nmr_own(ctx):
                           "through a symlink imports a file and saves it relative"
                           + (": OK" if link_f5 is not None else " (symlink not permitted here, skipped): OK"))
         with section:
+            # lane-octetcenter (Entscheidung 194): eine Doppelbindung ohne gesetzte Seite, die in keinem Ring liegt, steht
+            # in der eigenen Zeichnung mittig (Kette, =CH2, exocyclisch, Keton, Ester); im Ring nach innen, eine Seite aus
+            # der Datei (DoublePosition) gewinnt. Octet prüft dasselbe in render.check.ts. Erfundene Moleküle.
+            import math as math_oc
+            from elucida.formats import cdxml as CDXD_oc
+            c30_oc = math_oc.cos(math_oc.pi / 6)
+            def offsets_oc(atoms, bonds, name):
+                """Abstände (in Bindungslängen) der Linien entlang der Doppelbindung von ihrer Achse, sortiert."""
+                n_ = "".join(f'<n id="{i + 2}" p="{100 + x * 14.4:.2f} {100 + y * 14.4:.2f}"'
+                             + (f' Element="8"><t p="{96 + x * 14.4:.2f} {104 + y * 14.4:.2f}"><s font="3" size="10" '
+                                'face="96">O</s></t></n>' if lab == "O" else "/>") for i, (lab, x, y) in enumerate(atoms))
+                b_ = "".join(f'<b id="{100 + j}" B="{a + 2}" E="{e + 2}"' + (' Order="2"' if t == 2 else "")
+                             + (f' DoublePosition="{dp}"' if dp else "") + "/>" for j, (a, e, t, dp) in enumerate(bonds))
+                f_ = out / f"octetcenter_{name}.cdxml"
+                f_.write_text(f'<CDXML BondLength="14.40"><page BoundingBox="0 0 540 720"><fragment id="1">{n_}{b_}'
+                              "</fragment></page></CDXML>", encoding="utf-8")
+                svg_oc = CDXD_oc.render_svg(f_)[0]
+                a_, e_ = next((a, e) for a, e, t, _ in bonds if t == 2)
+                (_, ax, ay), (_, ex, ey) = atoms[a_], atoms[e_]
+                L_ = math_oc.hypot(ex - ax, ey - ay)
+                ux, uy = (ex - ax) / L_, (ey - ay) / L_
+                found = []
+                for m_ in re.findall(r'<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"', svg_oc):
+                    x1, y1, x2, y2 = ((float(v) - 100) / 14.4 for v in m_)
+                    dx, dy = x2 - x1, y2 - y1
+                    if abs(dx * uy - dy * ux) > 1e-3 * math_oc.hypot(dx, dy):
+                        continue                                            # nicht parallel zur Doppelbindung
+                    mx, my = (x1 + x2) / 2 - ax, (y1 + y2) / 2 - ay
+                    t_ = mx * ux + my * uy
+                    o_ = round(-mx * uy + my * ux, 3)                   # + = "rechts" wie nx/ny in cdxml.py
+                    if -0.1 < t_ < L_ + 0.1 and abs(o_) < 0.5:
+                        found.append(o_)
+                return sorted(found)
+            zig_oc = [("C", i * c30_oc, -0.5 if i % 2 else 0.0) for i in range(5)]
+            hex_oc = [("C", math_oc.cos(math_oc.pi / 3 * i), math_oc.sin(math_oc.pi / 3 * i)) for i in range(6)]
+            ring_oc = [(i, (i + 1) % 6, 1, "") for i in range(6)]
+            chain_oc = [(0, 1, 1, ""), (1, 2, 2, ""), (2, 3, 1, ""), (3, 4, 1, "")]
+            centred_oc = {
+                "chain": offsets_oc(zig_oc, chain_oc, "chain"),
+                "vinyl": offsets_oc(zig_oc[:3], [(0, 1, 2, ""), (1, 2, 1, "")], "vinyl"),
+                "ester": offsets_oc(zig_oc[:2] + [("O", c30_oc, -1.5), ("O", 2 * c30_oc, 0.0), ("C", 3 * c30_oc, -0.5)],
+                                    [(0, 1, 1, ""), (1, 2, 2, ""), (1, 3, 1, ""), (3, 4, 1, "")], "ester"),
+                "ketone": offsets_oc(hex_oc + [("O", 2.0, 0.0)], ring_oc + [(0, 6, 2, "")], "ketone"),
+                "exo": offsets_oc(hex_oc + [("C", 2.0, 0.0)], ring_oc + [(0, 6, 2, "")], "exo"),
+            }
+            for k_oc, v_oc in centred_oc.items():
+                assert len(v_oc) == 2 and v_oc[0] < 0 < v_oc[1] and abs(v_oc[0] + v_oc[1]) < 1e-3, (k_oc, v_oc)
+            # explizite Seite aus der Datei: Achse plus eine zweite Linie (ChemDraws Left = rechts von B->E im Bild)
+            kept_oc = offsets_oc(zig_oc, [(a, e, t, "Left" if t == 2 else "") for a, e, t, _ in chain_oc], "explicit")
+            assert len(kept_oc) == 2 and kept_oc[0] == 0 and kept_oc[1] > 0, kept_oc
+            # Cyclohexen ohne Seite: Achse plus zweite Linie zur Ringmitte (die liegt auf der +-Seite von 0->1)
+            ene_oc = offsets_oc(hex_oc, [(a, e, 2 if a == 0 else 1, "") for a, e, _, _ in ring_oc], "ene")
+            assert len(ene_oc) == 2 and ene_oc[0] == 0 and ene_oc[1] > 0, ene_oc
+            # Zwölfring (größer als die alte Ringsuche bis 9 Atome): bleibt Ringbindung, zweite Linie nach innen
+            r12_oc = 1 / (2 * math_oc.sin(math_oc.pi / 12))
+            big_oc = offsets_oc([("C", r12_oc * math_oc.cos(math_oc.pi / 6 * i), r12_oc * math_oc.sin(math_oc.pi / 6 * i))
+                                 for i in range(12)], [(i, (i + 1) % 12, 2 if i == 0 else 1, "") for i in range(12)], "ring12")
+            assert len(big_oc) == 2 and big_oc[0] == 0 and big_oc[1] > 0, big_oc
+            for f_oc in out.glob("octetcenter_*.cdxml"):
+                f_oc.unlink()
+            report.append("Own structure drawing: a double bond in no ring without a set side is centred (chain C=C, "
+                          "=CH2, ester and ketone C=O, exocyclic C=C), a ring double bond goes inside (also in a "
+                          "12-ring), a side from the file is kept: OK")
+        with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
             import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-

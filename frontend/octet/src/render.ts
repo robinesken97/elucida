@@ -695,6 +695,24 @@ export function signBonds(i: number, nbrs: number[][], covalent: number[][], bon
 }
 
 // Small rings through bond a–b (simple paths from a back to b, up to 8 atoms).
+// Elucida: the smallest ring through bond a–b of any size (ringsThrough stops at nine atoms), as a path from a to b
+// found breadth first without the bond itself; undefined when the bond is in no ring. A macrocycle's double bond then
+// goes inside it instead of being centred as a chain's.
+function shortestRing(a: number, b: number, nbrs: number[][]): number[] | undefined {
+  const prev = new Map<number, number>([[a, -1]]);
+  let front = [a];
+  while (front.length) {
+    const next: number[] = [];
+    for (const x of front) for (const n of nbrs[x]) {
+      if ((x === a && n === b) || prev.has(n)) continue;
+      prev.set(n, x);
+      if (n === b) { const path = [b]; for (let k = x; k !== -1; k = prev.get(k)!) path.unshift(k); return path; }
+      next.push(n);
+    }
+    front = next;
+  }
+  return undefined;
+}
 function ringsThrough(a: number, b: number, nbrs: number[][]): number[][] {
   const out: number[][] = [];
   const walk = (path: number[]) => {
@@ -1326,10 +1344,11 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
     // Double Either: two lines crossing between the atoms, whatever the ring or substituents.
     if (bond.display === "either") { plan.kind = 'none'; plan.cross = true; return plan; }
 
-    // Side of the second line: into the ring with the most double bonds (then six-membered, then smallest),
-    // toward the inside of the angle at an unlabelled degree-2 end, or toward more substituents. 0 = centred.
+    // Side of the second line: into the ring with the most double bonds (then six-membered, then smallest); a bond
+    // in no ring is centred (Elucida: chain C=C, exocyclic C=C and C=O alike). 0 = centred.
     let sd = 0, ring: number[] | undefined;
-    const rings = ringsThrough(a, b, covalent);
+    const rings = ringsThrough(a, b, covalent), big = rings.length ? undefined : shortestRing(a, b, covalent);
+    if (big) rings.push(big);
     // A position the user set wins. On screen (y down) the left of a→b is the -n side.
     if (bond.position) sd = bond.position === "centre" ? 0 : bond.position === "left" ? -1 : 1;
     else if (rings.length) {
@@ -1337,17 +1356,6 @@ function drawn(mol: Mol, s: Style, measure: (text: string, face?: Face) => Ink, 
       ring = rings.sort((x, y) => doubles(y) - doubles(x) || Number(y.length === 6) - Number(x.length === 6) || x.length - y.length)[0];
       const centre = mul(ring.reduce<P>((c, i) => add(c, pts[i]), [0, 0]), 1 / ring.length);
       sd = Math.sign(dot(sub(centre, p), n));
-    } else if (deg(a) === 1 || deg(b) === 1) {
-      const inner = deg(a) === 1 ? b : a, outer = inner === a ? b : a;
-      if (deg(inner) === 2 && !labelled[inner]) sd = side(nbrs[inner].find((j) => j !== outer)!);
-    } else {
-      const linear = (x: number, y: number) =>
-        deg(x) === 2 && nbrs[x].every((j) => bondAt.get(key(x, j))!.type === 2) &&
-        angle(sub(pts[y], pts[x]), sub(pts[nbrs[x].find((j) => j !== y)!], pts[x])) > (161.8 * Math.PI) / 180;
-      if (!(labelled[a] && labelled[b]) && !linear(a, b) && !linear(b, a)) {
-        const others = [...nbrs[a].filter((j) => j !== b), ...nbrs[b].filter((j) => j !== a)];
-        sd = Math.sign(others.reduce((c, j) => c + side(j), 0)) || side(nbrs[a].find((j) => j !== b)!);
-      }
     }
 
     plan.side = sd;
