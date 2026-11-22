@@ -1449,9 +1449,9 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   Nachkommastelle, Unterschrift „… calculated at the <Einzelpunkt>//<Geometrie> level of theory“.
   **Multireferenz-Plateaus** (ORCA 6 CASSCF/NEVPT2/SORCI, als Einzelpunkt oder als Rechnung selbst): die Felder
   **Methode** und **Zustand** unter der Tabelle wählen, welche Zustandsenergie das Plateau zeigt (Vorgabe: höchste Theorie
-  der Datei, NEVPT2 vor CASSCF, Wurzel 0). Genommen wird nur die elektronische Gesamtenergie dieses Zustands; G und H
+  der Datei, NEVPT2 vor CASSCF, Root 0). Genommen wird nur die elektronische Gesamtenergie dieses Zustands; G und H
   addieren die thermische Korrektur der eigenen Frequenzrechnung des Plateaus. Fehlt sie, zeigt das Plateau seine
-  elektronische Energie, mit Hinweis und Satz in der Unterschrift. Die Unterschrift nennt Methode und Wurzel.
+  elektronische Energie, mit Hinweis und Satz in der Unterschrift. Die Unterschrift nennt Methode und Root.
   **IRC** (ORCA): Ausgabe + `<Name>_IRC_Full_trj.xyz`, x = Reaktionskoordinate in Å (Summe der kartesischen Verschiebungen, nicht massengewichtet; TS = 0) oder eine Bindungslänge, mehrere
   IRCs nacheinander, Barrieren am Übergangszustand.
 - **NICS** (Reiter): Gaussian-NMR-Ausgaben mit Geisteratomen (Bq, z. B. aus py.Aroma): NICS und NICSzz (entlang der

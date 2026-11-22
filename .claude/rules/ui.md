@@ -190,7 +190,7 @@ paths:
     Bildunterschrift ebenso (`CaptionLabel` über `SI.chem_plain`).
   - Tabellen in Textfeldern (X-Ray: Kristalldaten, Parameter) im Stil der übrigen Tabellen: Zeilenlinien, Luft, **alle
     Zellen mittig**, ganze Breite (`table_view_html`); die Zwischenablage behält die Dreilinien-Tabelle.
-  - Chips bleiben in einer Zeile (`ChipRow._fit`: zwei Dichtestufen über die Eigenschaft `tight`, Innenrand 11/7/4);
+  - Chips bleiben in einer Zeile (`ChipRow._fit`: eine enge Stufe über die Eigenschaft `tight`, Innenrand 11/7 (bei 4 px lag der Text in der Rundung));
     passen sie auch eng nicht, gilt die Stufe mit den wenigsten Zeilen. Chip-Texte deshalb kurz halten.
   - Platzhalter und kurze Hinweise einer Ergebnisseite stehen groß und grau in der Mitte der Karte
     (`SciLabel(text, empty)`: einzeiliger Text bis 180 Zeichen), mehrzeilige Ergebnisse oben links.

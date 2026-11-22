@@ -18,7 +18,7 @@ paths:
   Rückbasislinie (doppelt korrigiert); Peakpotentiale aus dem Rohstrom. Regressionen gegen v je Gruppe, mit 95-%-KI.
   Nicholson nur ohne weiteren Prozess zwischen Hinpeak und Umkehrpotential (Strom steigt um > 10 % der Peakhöhe wieder
   an → „–“). E½ im Bild und alle Mittelwerte je Gruppe, nie über Lösungsmittel gemittelt.
-  Ac₂Fc-Vorgabe +0,49 V vs. Fc⁺/Fc, immer änderbar lassen.
+  Ac₂Fc-Vorgabe +0,49 V vs. Fc⁰/⁺, immer änderbar lassen.
 - Diffusionskoeffizient (F8, Nutzerauftrag 2026-11-12; `diffusion_coefficient`, `CVTab.diffusion`): aus der
   Randles–Ševčík-Steigung **des Hinpeaks** (nie des Rückpeaks: gegen die verschobene Hin-Basislinie gemessen ergäbe er
   ein um ~40 % zu kleines D, Literaturprüfung 2026-11) für ein reversibles, frei diffundierendes Paar, i_p = 0,4463·n·F·A·c·√(n·F·v·D/RT); Angaben

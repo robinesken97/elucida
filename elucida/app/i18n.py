@@ -175,9 +175,9 @@ TEXTS = {
                         "Multireference result whose state energy the level shows (default: highest level of theory in "
                         "the file, NEVPT2 before CASSCF)."),
     "rp_level_root": ("Zustand", "State"),
-    "rp_level_root_tip": ("Zustand (Wurzel wie gedruckt); das Profil nimmt seine Gesamtenergie, nur elektronisch.",
+    "rp_level_root_tip": ("Zustand (Root wie gedruckt); das Profil nimmt seine Gesamtenergie, nur elektronisch.",
                           "State (root as printed); the profile uses its total energy, electronic only."),
-    "rp_level_root_item": ("Wurzel {root} · M = {mult} · {E} Eh", "Root {root} · M = {mult} · {E} Eh"),
+    "rp_level_root_item": ("Root {root} · M = {mult} · {E} Eh", "Root {root} · M = {mult} · {E} Eh"),
     'rp_auto_level': ('Plateau automatisch', 'Automatic level'),
     'rp_auto_level_tip': ('Lage, Breite, Höhe und Farbe dieses Plateaus wieder automatisch (Beschriftungen: „Beschriftungen zurücksetzen“).', 'Position, width, height and colour of this level back to automatic (labels: “Reset labels”).'),
     'rp_3d_orbitals': ('3D / Orbitale', '3D / Orbitals'),
@@ -3816,7 +3816,7 @@ TEXTS = {
     "mr_card": ("Multireferenz", "Multireference"),
     "mr_result": ("Ergebnis", "Result"),
     # Eintrag der Listen Singulett/Triplett: Wurzel (root) wie von ORCA gezählt, Energie wie gedruckt (echtes Minus)
-    "mr_root_item": ("Wurzel {root}{irrep} · {energy} Eh", "Root {root}{irrep} · {energy} Eh"),
+    "mr_root_item": ("Root {root}{irrep} · {energy} Eh", "Root {root}{irrep} · {energy} Eh"),
     "mr_singlet": ("Singulett", "Singlet"),
     "mr_triplet": ("Triplett", "Triplet"),
     "mr_sign": ("Vorzeichen", "Sign"),
