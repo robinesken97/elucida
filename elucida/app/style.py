@@ -13,8 +13,8 @@ import shiboken6
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFontMetrics, QGuiApplication, QIcon, QImage, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import (QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
-                               QHeaderView,
+from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
+                               QGroupBox, QHeaderView,
                                QHBoxLayout, QLabel, QLineEdit, QMessageBox, QScrollArea, QSizePolicy, QPushButton, QStyle,
                                QStyledItemDelegate, QStyleFactory, QStyleOptionViewItem, QTableWidget, QVBoxLayout, QWidget)
 
@@ -327,6 +327,73 @@ class _CellDelegate(QStyledItemDelegate):
         return super().editorEvent(event, model, option, index)
 
 
+class _RoundFrame(QWidget):
+    """Runde Ecken einer Tabelle/Liste (Nutzerwunsch 2026-11-21: oben und unten rund wie die Felder): Kopf, Zeilen und
+    Auswahl malen eckig bis an den Rahmen. Diese Schicht über der ganzen Tabelle füllt außerhalb des runden Rahmens mit
+    der Farbe dahinter und zieht den Rahmen nach (geglättet, auch HiDPI); Maus und Ziehen gehen durch."""
+
+    def __init__(self, view):
+        super().__init__(view)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.view = view
+        view.installEventFilter(self)
+        self.setGeometry(view.rect())
+        self.raise_()
+        self.show()                                          # Kind einer schon sichtbaren Tabelle bliebe sonst verborgen
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (QEvent.Resize, QEvent.Show):
+            self.setGeometry(self.view.rect())
+            self.raise_()
+        elif ev.type() in (QEvent.ChildAdded, QEvent.LayoutRequest):   # neue Kinder, Bildlaufleiste erscheint: danach obenauf
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self, self.raise_)
+        return False
+
+    def _behind(self):
+        p = self.view.parentWidget()
+        while p is not None:
+            name = p.objectName()
+            if isinstance(p, QGroupBox) or name in ("card", "matrixPanel", "recentRow"):
+                return colors()["card"]
+            if name == "sideBar":
+                return colors()["side"]
+            if p.isWindow():
+                break
+            p = p.parentWidget()
+        return colors()["window"]
+
+    def paintEvent(self, ev):
+        from PySide6.QtGui import QPainterPath, QPen
+        r, rad = QRectF(self.rect()), FIELD_RADIUS
+        inner = QPainterPath()
+        inner.addRoundedRect(r, rad, rad)
+        outside = QPainterPath()
+        outside.addRect(r)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.fillPath(outside.subtracted(inner), QColor(self._behind()))
+        p.setPen(QPen(QColor(colors()["border"]), 1))
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r.adjusted(0.5, 0.5, -0.5, -0.5), rad - 0.5, rad - 0.5)
+        p.end()
+
+
+def round_frame(view):
+    """Tabelle/Liste mit Rahmen rund abschließen (einmal je Tabelle; tidy, Tabellen-Helfer, Dialoge)."""
+    if view.frameShape() != QFrame.NoFrame and not isinstance(view.__dict__.get("_round"), _RoundFrame):
+        view._round = _RoundFrame(view)
+    return view
+
+
+def round_frames(root):
+    """round_frame für alle Tabellen, Listen und Bäume unter root (nicht Kopfzeilen oder Listen von Auswahlfeldern)."""
+    from PySide6.QtWidgets import QAbstractItemView, QListWidget, QTableView, QTreeWidget
+    for v in root.findChildren(QAbstractItemView):
+        if isinstance(v, (QTableView, QListWidget, QTreeWidget)):
+            round_frame(v)
+
+
 CHECK_ROW_H = 30
 
 
@@ -358,7 +425,7 @@ def fit_columns(table):
     (Nutzerwunsch 2026-11-13: keine Spalte viel zu breit, keine ohne Platz)."""
     from PySide6.QtWidgets import QHeaderView
     hh = table.horizontalHeader()
-    need, fixed = {}, 0
+    need, fixed, raw = {}, 0, {}
     for c in range(table.columnCount()):
         head = table.horizontalHeaderItem(c)
         if table.isColumnHidden(c):
@@ -373,12 +440,28 @@ def fit_columns(table):
                 w = max(w, cell.sizeHint().width() - 2 * _CellDelegate.PAD, 76)   # Farbfeld: 76 px wie bisher
             elif it is not None:
                 w = max(w, table.fontMetrics().horizontalAdvance(it.text()))
-        need[c] = max(56, w + 2 * _CellDelegate.PAD)
+        need[c], raw[c] = max(56, w + 2 * _CellDelegate.PAD), w
     avail = table.viewport().width() if table.isVisible() else INNER_W - 2     # linke Spalte: Karteninhalt ohne Rahmen
+    names = table.property("stretch_cols") or [c for c in need if hh.sectionResizeMode(c) == QHeaderView.Stretch]
+    table.setProperty("stretch_cols", names)
+    names = [c for c in names if c in need]
+    if names and avail - fixed - sum(need.values()) < 0:      # Namen vor Luft (Sichtung): Nebenspalten mit 6 px je Seite
+        for c in need:
+            if c not in names:
+                need[c] = raw[c] + 12
     extra = max(0, min(40, (avail - fixed - sum(need.values())) // max(1, len(need))))
     for c, w in need.items():
-        if hh.sectionResizeMode(c) != QHeaderView.Stretch:
+        if c not in names:
             hh.resizeSection(c, w + extra)
+    if len(names) > 1:                  # mehrere dehnbare Spalten: Platz nach Bedarf statt halbe-halbe (Qt), die letzte
+        last = max(names, key=hh.visualIndex)                 # nimmt den Rest
+        room = avail - fixed - sum(hh.sectionSize(c) for c in need if c not in names)
+        tot = sum(need[c] for c in names)
+        for c in names:
+            if c != last:
+                hh.setSectionResizeMode(c, QHeaderView.Interactive)
+                hh.resizeSection(c, max(ELIDE_MIN_W // 2, min(need[c], room * need[c] // tot) if room < tot else need[c]
+                                        + (room - tot) * need[c] // tot))
     check_columns(table)
 
 
@@ -392,9 +475,47 @@ class FitGrid(QTableWidget):
     Inhalt mit Bildlaufleiste."""
     elide_col = None
 
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        rich_header(self, force=True)    # gleich hier: ein späterer Tausch (zweizeilige Köpfe in fit) ließ gehaltene Köpfe tot
+        round_frame(self)
+
+    def setColumnHidden(self, col, hide):
+        self.__dict__.setdefault("_auto_hidden", set()).discard(col)    # der Tab entscheidet: nicht mehr automatisch
+        super().setColumnHidden(col, hide)
+
+    def _hide_empty(self):
+        """Ergebnisspalten ohne Inhalt in allen Zeilen verbergen (Entscheidung Sichtung: „Hinweise“ ohne Hinweis);
+        Eingabespalten (bearbeitbare Zellen) nie, CSV/Excel behalten sie (`screen_table`)."""
+        auto = self.__dict__.setdefault("_auto_hidden", set())
+        if not self.rowCount():
+            empty_cols = set()
+        else:
+            edit = self.editTriggers() != QAbstractItemView.NoEditTriggers   # dann nur Spalten ohne Eingabezellen (ε „Hinweise“)
+
+            def blank(r, c):
+                it = self.item(r, c)
+                if edit and (it is None or it.flags() & Qt.ItemIsEditable):
+                    return False
+                return self.cellWidget(r, c) is None and (it is None or not (it.text() or it.data(Qt.CheckStateRole)
+                                                                             is not None or it.data(Qt.DecorationRole)))
+            empty_cols = {c for c in range(self.columnCount())
+                          if self.horizontalHeaderItem(c) is not None and self.horizontalHeaderItem(c).text()
+                          and (not self.isColumnHidden(c) or c in auto)
+                          and all(blank(r, c) for r in range(self.rowCount()))}
+        for c in auto - empty_cols:
+            super().setColumnHidden(c, False)
+        for c in empty_cols - auto:
+            super().setColumnHidden(c, True)
+        self._auto_hidden = empty_cols
+
     def fit(self):
         rich_header(self)             # Köpfe, die erst nach `tidy` gesetzt werden („t [d]“): Größen trotzdem kursiv
+        self._hide_empty()
         hh = self.horizontalHeader()
+        if getattr(hh, "wrap", False):                   # jedes Mal erst einzeilig versuchen (Fenster breiter)
+            hh.wrap = False
+            hh.headerDataChanged(Qt.Horizontal, 0, hh.count() - 1)   # Größen neu messen
         hh.setHighlightSections(False)                   # nie fetter Kopf bei Auswahl (Nutzerwunsch, alle Ergebnistabellen)
         head = lambda i: self.horizontalHeaderItem(i).text() if self.horizontalHeaderItem(i) else ""   # noqa: E731
         shown = [i for i in range(self.columnCount()) if not self.isColumnHidden(i)]
@@ -402,19 +523,24 @@ class FitGrid(QTableWidget):
         cols = shown if hh.isHidden() else [i for i in shown if head(i)]
         if not cols:
             return hh.setSectionResizeMode(QHeaderView.Interactive)
-        need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}   # gilt auch unsichtbar
-        width, total = self.viewport().width() - CHECK_COL_W * (len(shown) - len(cols)), sum(need.values())
-        if max(need.values()) * len(cols) <= width:
-            hh.setSectionResizeMode(QHeaderView.Stretch)
-        else:
+        width = self.viewport().width() - CHECK_COL_W * (len(shown) - len(cols))
+
+        def place(hh):
+            """Breiten setzen; False, wenn auch die engste Stufe nicht passt. -> (ok, Summe)"""
+            need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}   # gilt auch unsichtbar
+            if max(need.values()) * len(cols) <= width:
+                hh.setSectionResizeMode(QHeaderView.Stretch)
+                return True, sum(need.values())
             # Passt es mit voller Luft nicht (auch nicht mit gekürztem Namen), dann mit weniger Luft in den Zellen, bevor
             # die Tabelle quer rollt: unter Linux (DejaVu Sans, breiter) rollten die CV-Ergebnisse bei 1200 px sonst quer.
             # Zellen mit Widget (Farbfeld) werden nie enger; je Seite bleiben 7 px (RichDelegate schneidet bei 6).
-            def tight(i, head_w):
+            def tight(i, head_w, cut=_CellDelegate.PAD - 2):
                 d = self.itemDelegateForColumn(i) or self.itemDelegate()
                 if not isinstance(d, _CellDelegate) or any(self.cellWidget(r, i) for r in range(self.rowCount())):
                     return max(head_w, self.sizeHintForColumn(i))
-                return max(head_w, self.sizeHintForColumn(i) - (_CellDelegate.PAD - 2))
+                if isinstance(d, RichDelegate):          # schneidet bei 6 px je Seite ab: nie enger als die 6-px-Stufe
+                    cut = min(cut, _CellDelegate.PAD)
+                return max(head_w, self.sizeHintForColumn(i) - cut)
             # Qt bemisst jeden Kopf in fetter Schrift (der Kopf der Spalte mit gewählter Zelle wird fett), gezeichnet wird
             # er normal: als letzte Stufe Köpfe in normaler Schrift (fett bei Auswahl ist oben für alle abgeschaltet).
             # Unter Linux ist DejaVu Sans Bold ~11 % breiter als normal: „Steigung [µA (V s⁻¹)^-½]“ 174 statt 156 px.
@@ -423,29 +549,54 @@ class FitGrid(QTableWidget):
             fb, fr = QFontMetrics(bold), hh.fontMetrics()
             plain = lambda i: max(hh.minimumSectionSize(), hh.sectionSizeHint(i) - fb.horizontalAdvance(head(i))   # noqa: E731
                                   + fr.horizontalAdvance(head(i)))
-            steps = (need, {i: tight(i, hh.sectionSizeHint(i)) for i in cols}, {i: tight(i, plain(i)) for i in cols})
-            for k, nd in enumerate(steps):
+            if getattr(hh, "wrap", False):               # zweizeilig misst RichHeader selbst (normale Schrift)
+                plain = hh.sectionSizeHint                # noqa: E731
+            steps = (need, {i: tight(i, hh.sectionSizeHint(i)) for i in cols}, {i: tight(i, plain(i)) for i in cols},
+                     {i: tight(i, plain(i), _CellDelegate.PAD) for i in cols},   # 6 px je Seite (Ziel 1200 px)
+                     {i: tight(i, plain(i), _CellDelegate.PAD + 4) for i in cols})   # zuletzt 4 px (H-Cell EN, zweizeilige Köpfe)
+            # Namensspalte vor Luft in den Zahlenspalten (Entscheidung Sichtung): erst alle Stufen ungekürzt, dann kürzt
+            # die Namensspalte (`elide_col`) auf der engsten Stufe
+            for nd, cut in [(nd, False) for nd in steps] + [(steps[-1], True)]:
                 total = sum(nd.values())
-                if total <= width:
+                if not cut and total <= width:
                     hh.setSectionResizeMode(QHeaderView.Fixed)
                     extra, rest = divmod(width - total, len(cols))
                     for k, i in enumerate(cols):
                         hh.resizeSection(i, nd[i] + extra + (k < rest))
-                    break
-                if self.elide_col in cols and total - nd[self.elide_col] + ELIDE_MIN_W <= width:
+                    return True, total
+                if cut and self.elide_col in cols and total - nd[self.elide_col] + ELIDE_MIN_W <= width:
                     # Namensspalte (Eigenschaft `elide_col`) gibt nach: gekürzt mit „…“, voller Name im Tooltip der
                     # Zelle, statt die ganze Tabelle quer rollen zu lassen (Zahlen werden nie gekürzt)
                     hh.setSectionResizeMode(QHeaderView.Fixed)
                     for i in cols:
                         hh.resizeSection(i, nd[i] if i != self.elide_col else width - (total - nd[i]))
-                    total = width
-                    break
-            else:
-                hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+                    return True, width
+            return False, total
+
+        ok, total = place(hh)
+        if not ok and not hh.isHidden() and isinstance(hh, RichHeader):   # dann Köpfe zweizeilig, bevor die Tabelle
+            hh.wrap = True                                                 # quer rollt (Sichtung: Ziel 1200 px, Kinetik/H-Cell)
+            hh.headerDataChanged(Qt.Horizontal, 0, hh.count() - 1)
+            ok, total = place(hh)
+        if not ok:
+            hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+        if hh.length() != sum(hh.sectionSize(i) for i in range(hh.count())):   # Qt: verborgene Spalte behielt ihre Breite
+            for i in range(hh.count()):                  # als Lücke (DFT HOMA nach zweizeiligem Kopf, Sichtung): neu verbergen
+                if hh.isSectionHidden(i):
+                    hh.showSection(i)
+                    hh.hideSection(i)
         if len(cols) < len(shown):
             check_columns(self)
+        if self.property("hug"):                           # Messwerte über einer zweiten Tabelle: nie höher als ihre
+            over = sum(hh.sectionSize(i) for i in shown) > self.viewport().width()   # Zeilen (Entscheidung Sichtung)
+            rows = sum(self.rowHeight(r) for r in range(self.rowCount()) if not self.isRowHidden(r)) or CHECK_ROW_H
+            hug = hh.sizeHint().height() + rows + 2 * self.frameWidth() \
+                + (self.horizontalScrollBar().sizeHint().height() if over else 0)
+            self.setMinimumHeight(min(self.minimumHeight(), hug))
+            self.setMaximumHeight(hug)
         rows_h = getattr(self, "_rows_h", None)            # summary_grid: so hoch wie die Zeilen, dazu die Laufleiste,
         if rows_h is not None:                             # wenn die Spalten nicht passen (sonst verdeckt sie die letzte Zeile)
+            rows_h = self._rows_h = hh.sizeHint().height() + self.rowCount() * CHECK_ROW_H + 2   # Kopf ggf. zweizeilig
             over = total > width
             self.setFixedHeight(rows_h + (self.horizontalScrollBar().sizeHint().height() if over else 0))
 
@@ -464,7 +615,8 @@ class FitGrid(QTableWidget):
         hh = self.horizontalHeader()
         cols = [hh.logicalIndex(v) for v in range(self.columnCount())]
         head = lambda c: self.horizontalHeaderItem(c).text() if self.horizontalHeaderItem(c) else ""   # noqa: E731
-        cols = [c for c in cols if not self.isColumnHidden(c) and head(c)]
+        auto = self.__dict__.get("_auto_hidden", set())
+        cols = [c for c in cols if (not self.isColumnHidden(c) or c in auto) and head(c)]
         rows = []
         for r in range(self.rowCount()):
             if self.isRowHidden(r):
@@ -705,7 +857,7 @@ def check_table(headers):
     t.setColumnWidth(0, CHECK_COL_W)
     t.setItemDelegate(_CellDelegate(t))
     t.setProperty("selgap", True)                    # erlaubt eine Tabelle Auswahl (Labels): Zellen mit Lücke markiert
-    return t
+    return round_frame(t)
 
 
 def check_row(table, data, texts, checked=True):
@@ -727,8 +879,10 @@ def check_row(table, data, texts, checked=True):
 
 
 def fit_check_table(table, rows=6):
-    """Höhe passend zum Inhalt, ab `rows` Zeilen scrollen."""
-    table.setFixedHeight(table.horizontalHeader().sizeHint().height() + min(table.rowCount(), rows) * CHECK_ROW_H + 2)
+    """Höhe passend zum Inhalt, ab `rows` Zeilen scrollen; leer mit Platzhalter (`empty_note`) eine Zeile hoch, sonst
+    stünde nur der Kopf da (Sichtung 2026-11-21)."""
+    n = min(table.rowCount(), rows) or (1 if table.__dict__.get("_empty_note") is not None else 0)
+    table.setFixedHeight(table.horizontalHeader().sizeHint().height() + n * CHECK_ROW_H + 2)
 
 
 class HintLabel(QLabel):
@@ -969,6 +1123,7 @@ def card(title):
 
 FIELD_W = 120                     # einheitliche Breite der Zahlenfelder (Raster der linken Spalte)
 CONTROL_H = 32                     # Höhe aller Felder und Knöpfe in den Spalten
+FIELD_RADIUS = 7                   # Eckenradius der Felder und Tabellen (Nutzerwunsch: Tabellen rund wie die Felder)
 TOOLBAR_H = 52                     # Werkzeugleiste (Entwurf: 9 + 34 + 9), unter macOS = Titelleiste
 BAR_H = 34                         # Knöpfe in Leisten (Werkzeugleiste, Fußleiste, Seitenkopf), Maß des Entwurfs
 LABEL_W = 128                      # Beschriftungsspalte in allen Tabs gleich: Texte und Felder stehen überall gleich
@@ -1233,9 +1388,12 @@ def _field_edge(root):
                     not any(x.property("accent") for x in cbs):   # Knopfreihe: gleich breit über die ganze Breite
                 _strip_stretch(lay)
                 lay.setSpacing(8)
-                lay.setContentsMargins(max(0, span - W), 0, 0, 0)   # in der Wertespalte wie die Häkchen darüber
+                # Listenknöpfe (mit „Entfernen“) über die ganze Karte wie in Karten ohne Formular (Sichtung), andere
+                # in der Wertespalte wie die Häkchen darüber
+                wide = span if any(x.text() == T("remove") for x in cbs) else W
+                lay.setContentsMargins(max(0, span - wide), 0, 0, 0)
                 for x in cbs:
-                    x.setFixedWidth((W - 8 * (len(cbs) - 1)) // len(cbs))
+                    x.setFixedWidth((wide - 8 * (len(cbs) - 1)) // len(cbs))
                     x.setStyleSheet("padding-left: 2px; padding-right: 2px;")   # langer Text wird nicht abgeschnitten
                 continue
             if len(cbs) == 3 and isinstance(cbs[0], QCheckBox) and isinstance(cbs[1], QLabel) and \
@@ -1274,6 +1432,8 @@ def _field_edge(root):
                     and not (x.wordWrap() and x.alignment() & Qt.AlignHCenter):
                 x.setIndent(13)
                 x.setMinimumHeight(CONTROL_H)
+                if x.wordWrap() and it.widget() is x:         # Fließwert: ganze Wertespalte, Umbruch nur, wenn er nicht
+                    _cell(x, W)                               # passt (Breite nach sizeHint brach schon kurze Werte um)
                 lab = item_at(fl, r, QFormLayout.LabelRole)   # Beschriftung auf dieselbe Höhe (sonst 3 px höher)
                 if lab is not None and isinstance(lab.widget(), QLabel):
                     lab.widget().setMinimumHeight(CONTROL_H)
@@ -1417,6 +1577,30 @@ def field_heights(root, buttons=True):
             x.setProperty("fieldh", True)                     # Umhängen setzt die Mindesthöhe zurück: _WheelGuard hält sie
             if guard is not None:
                 x.installEventFilter(guard)
+    round_frames(root)                                        # Tabellen rund wie die Felder (auch Seiten ohne tidy)
+    for t in root.findChildren(QTableWidget):
+        whole_rows(t)
+
+
+def whole_rows(t):
+    """Tabelle in der Höhe (Höchstmaß, sonst sizeHint: Qt 192 px) auf ganze Zeilen kürzen, keine halbe Zeile am unteren
+    Rand (Sichtung 2026-11-21); Tabellen mit fester Höhe, Ergebnisseite oder so hoch wie die Zeilen bleiben."""
+    if t.minimumHeight() == t.maximumHeight() or t.property("rows_snapped") or getattr(t, "_rows_h", None) is not None \
+            or t.property("hug"):
+        return
+    p = t.parentWidget()
+    while p is not None:                                     # Ergebnisseite: Tabelle füllt die Karte
+        if p.objectName() == "resultCard":
+            return
+        p = p.parentWidget()
+    t.setProperty("rows_snapped", True)
+    rh, fw = t.verticalHeader().defaultSectionSize(), 2 * t.frameWidth()
+    hdr = t.horizontalHeader().sizeHint().height() if not t.horizontalHeader().isHidden() else 0
+    top = t.maximumHeight() if t.maximumHeight() < 16777215 else max(t.minimumHeight(), t.sizeHint().height())
+    n = max(1, (top - hdr - fw) // rh)
+    while hdr + n * rh + fw < t.minimumHeight():
+        n += 1
+    t.setMaximumHeight(hdr + n * rh + fw)
 
 
 def guard_fields(root):
@@ -1434,6 +1618,7 @@ def _guard_dialog(*_):
     win = QApplication.activeWindow()
     if isinstance(win, QDialog):                               # Dialoge laufen nicht durch tidy
         guard_fields(win)
+        round_frames(win)
         QApplication.instance()._wheel_guard.eventFilter(win, QEvent(QEvent.Polish))   # Dialogränder
 
 
@@ -1663,7 +1848,8 @@ def _flow(widgets, width, apply, gap=6):
 # ein QLabel als Rich-Text zeigt (Rechenweg, Kacheln, Beschriftungen); Tabellenköpfe und Auswahllisten können das nicht.
 _SCI = [(r"χ²_red\b", "<i>χ</i>²<sub>red</sub>"),                 # Fluoreszenz (tabs/fluo_tau.py): τ_1, λ_abs, k_r
         (r"(?<![A-Za-z>])([λτΦ])_([A-Za-z0-9]+)", r"<i>\1</i><sub>\2</sub>"), (r"(?<![A-Za-z>])([τΦ])(?![a-zäöü_<])", r"<i>\1</i>"),
-        (r"Δ?E½", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<i>E</i><sub>1/2</sub>"),
+        (r"Δ?E(?:½|₁/₂)", lambda m: ("Δ" if m.group(0).startswith("Δ") else "") + "<i>E</i><sub>1/2</sub>"),   # E₁/₂: Labels im Bild (CV)
+        (r"NICS\((\d)\)zz", r"NICS(\1)<sub>zz</sub>"),                    # HOMA-Tabelle (DFT)
         (r"ΔE[pP]\b", "Δ<i>E</i><sub>p</sub>"), (r"\bE(pa|pc|p)\b", r"<i>E</i><sub>\1</sub>"),
         (r"\bip,([rfac])\b", r"<i>i</i><sub>p,\1</sub>"),      # Nicholson: i_p,r / i_p,f – Index samt Komma tief
         (r"\bi(pa|pc|p)\b", r"<i>i</i><sub>\1</sub>"), (r"λ(max|em|ex)\b", r"<i>λ</i><sub>\1</sub>"),
@@ -1699,7 +1885,7 @@ _SCI = [(r"χ²_red\b", "<i>χ</i>²<sub>red</sub>"),                 # Fluoresz
         # Größe ohne Zusammenhang (Tabellenkopf „H“, „G“ der Energietabelle; „H“ allein ist sonst die H-Zahl im NMR):
         # der Text trägt hinter dem Zeichen ein Leerzeichen ohne Breite (U+200B, `STYLE.QTY`), das hier verschwindet
         (r"([A-Za-z])\u200b", r"<i>\1</i>"), (r"−TS\b", "−<i>TS</i>"),
-        (r"ΔBpp\b", "Δ<i>B</i><sub>pp</sub>"), (r"\bisp\b", "<i>i</i><sub>sp</sub>"),                     # Methodentexte
+        (r"ΔB(?:pp\b|ₚₚ)", "Δ<i>B</i><sub>pp</sub>"), (r"\bisp\b", "<i>i</i><sub>sp</sub>"),                     # Methodentexte
         (r"\bv1/2\b", "<i>v</i><sup>1/2</sup>"), (r"\)0(?=[/\s,.;)])", ")<sub>0</sub>"),                 # v1/2, (i_sp)0
         (r"\^-½", "<sup>−½</sup>"), (r"\b(mV|V|mA|µA|mg|g) (s|mL|L|mol)-1\b", r"\1 \2<sup>−1</sup>"),    # mV s-1
         (r"(Δ?)([Ei])(?=[ₐₑₒₓₚ₁₂])", r"\1<i>\2</i>"),                                                 # ΔEₚ mit Unicode-Index
@@ -1848,7 +2034,8 @@ class SciLabel(QLabel):
         shown = text or self.empty
         # Platzhalter und kurze Hinweise einer Ergebnisseite stehen groß in der Mitte der Karte (Nutzerwunsch 2026-11-11:
         # oben links wirkten sie verloren); mehrzeilige Ergebnisse wie bisher oben links
-        short = bool(self.empty) and not plain and "\n" not in shown and len(shown) <= 180
+        short = bool(self.empty) and not plain and (("\n" not in shown and len(shown) <= 180)
+                                                    or shown.startswith(self.empty + "\n"))   # Platzhalter + Hinweis (SEC)
         if short != getattr(self, "_short", None):
             self._short = short
             self.setAlignment(Qt.AlignCenter if short else Qt.AlignLeft | Qt.AlignTop)
@@ -1863,25 +2050,54 @@ class SciLabel(QLabel):
 
 class RichHeader(QHeaderView):
     """Tabellenkopf, der Formelzeichen wie im Satz zeichnet (kursive Größen, tiefgestellte Indizes: Eₚₐ [V], R²).
-    Köpfe ohne solche Zeichen zeichnet Qt wie immer."""
+    Köpfe ohne solche Zeichen zeichnet Qt wie immer. `wrap`: Köpfe zweizeilig (FitGrid, wenn die Tabelle sonst quer rollte)."""
+    wrap = False
+
+    def _doc(self, h, width=None):
+        from PySide6.QtGui import QTextDocument, QTextOption
+        doc = QTextDocument()
+        doc.setDefaultFont(self.font())
+        doc.setDocumentMargin(0)
+        o = doc.defaultTextOption()
+        o.setAlignment(Qt.AlignHCenter)
+        o.setWrapMode(QTextOption.WordWrap)
+        doc.setDefaultTextOption(o)
+        doc.setHtml(f"<span style='color:{colors()['text2']}'>{h}</span>")
+        if width is not None:
+            doc.setTextWidth(width)
+        return doc
+
+    def _two_lines(self, h):
+        """Schmalste Breite, in der der Kopf in höchstens zwei Zeilen steht -> Dokument."""
+        doc = self._doc(h)
+        w = doc.idealWidth()
+        lo = max([self.fontMetrics().horizontalAdvance(x) for x in self._plain(h).split()] or [0])
+        for tw in range(int(max(lo, w / 2)), int(w) + 2, 2):
+            doc.setTextWidth(tw)
+            if doc.documentLayout().documentSize().height() <= 2.5 * self.fontMetrics().height():
+                break
+        doc.setTextWidth(doc.idealWidth())
+        return doc
+
+    @staticmethod
+    def _plain(h):
+        import re as _re
+        return _re.sub(r"<[^>]+>", "", h).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
 
     def paintSection(self, painter, rect, index):
-        from PySide6.QtGui import QTextDocument
         from PySide6.QtWidgets import QStyleOptionHeader
         text = str(self.model().headerData(index, self.orientation(), Qt.DisplayRole) or "")
         h = sci(text)
-        if h == text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"):
+        if h == text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") and not self.wrap:
             return super().paintSection(painter, rect, index)
         opt = QStyleOptionHeader()
         self.initStyleOption(opt)
         opt.rect, opt.section, opt.text = rect, index, ""
         painter.save()
         self.style().drawControl(QStyle.CE_Header, opt, painter, self)       # Hintergrund und Linien wie die anderen
-        doc = QTextDocument()
-        doc.setDefaultFont(self.font())
-        doc.setDocumentMargin(0)
-        doc.setHtml(f"<span style='color:{colors()['text2']}'>{h}</span>")
-        painter.translate(rect.x() + (rect.width() - doc.idealWidth()) / 2, rect.y() + (rect.height() - doc.size().height()) / 2)
+        doc = self._doc(h, rect.width() - 8 if self.wrap else None)
+        x = rect.x() + (4 if self.wrap else (rect.width() - doc.idealWidth()) / 2)
+        painter.translate(x, rect.y() + (rect.height() - doc.size().height()) / 2)
         doc.drawContents(painter)
         painter.restore()
 
@@ -1891,6 +2107,10 @@ class RichHeader(QHeaderView):
         s = super().sectionSizeFromContents(index)
         text = str(self.model().headerData(index, self.orientation(), Qt.DisplayRole) or "")
         h = sci(text)
+        if self.wrap:
+            doc = self._two_lines(h)
+            lines = self.fontMetrics().height()
+            return QSize(8 + int(doc.idealWidth()) + 1, s.height() + lines + 1)   # 4 px je Seite wie beim Zeichnen
         if h == text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"):
             return s
         from PySide6.QtGui import QTextDocument
@@ -1902,13 +2122,13 @@ class RichHeader(QHeaderView):
         return QSize(min(s.width(), pad + int(doc.idealWidth()) + 1), s.height())
 
 
-def rich_header(t):
-    """Kopf der Tabelle gegen einen RichHeader tauschen, wenn seine Texte Formelzeichen enthalten; Breiten, Modi und
-    verborgene Spalten bleiben."""
+def rich_header(t, force=False):
+    """Kopf der Tabelle gegen einen RichHeader tauschen, wenn seine Texte Formelzeichen enthalten (force: immer);
+    Breiten, Modi und verborgene Spalten bleiben."""
     old = t.horizontalHeader()
     n = old.count()
     texts = [str(t.model().headerData(i, Qt.Horizontal, Qt.DisplayRole) or "") for i in range(n)]
-    if isinstance(old, RichHeader) or not any(sci(x) != x.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    if isinstance(old, RichHeader) or not force and not any(sci(x) != x.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                                               for x in texts):
         return
     modes = [old.sectionResizeMode(i) for i in range(n)]
@@ -2835,7 +3055,7 @@ QLabel[formlabel="true"] {{ color: {c['text2']}; }}
 QLabel#valueStrong {{ font-weight: 600; }}                     /* Angabe aus der Verbindung (Summenformel, Molmasse): gut sichtbar */
 QGroupBox QLabel#valueStrong {{ font-weight: 600; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
-    background: {c['field']}; border: 1px solid {c['border']}; border-radius: 7px;
+    background: {c['field']}; border: 1px solid {c['border']}; border-radius: {FIELD_RADIUS}px;
     padding: 3px 10px; min-height: 18px; selection-background-color: {c['accent']}; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {c['accent']}; }}
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{
@@ -2881,10 +3101,11 @@ QPushButton#tabMore {{ background: transparent; color: {c['text2']}; border: 1px
     padding: 0 12px; min-height: 26px; max-height: 26px; font-weight: 500; }}   /* wie ein Reiter (ResultTabs) */
 QPushButton#tabMore:hover {{ background: {c['hover']}; color: {c['text']}; }}
 QTableWidget, QTableView, QListWidget, QTreeWidget, QPlainTextEdit, QTextEdit {{
-    background: {c['field']}; border: 1px solid {c['border']}; border-radius: 8px; gridline-color: {c['border']};
+    background: {c['field']}; border: 1px solid {c['border']}; border-radius: {FIELD_RADIUS}px; gridline-color: {c['border']};
     selection-background-color: {c['accent']}; selection-color: {c['on_accent']}; }}
 QHeaderView::section {{ background: {c['card']}; color: {c['text2']}; border: none;
     border-bottom: 1px solid {c['border']}; padding: 4px 6px; }}        /* kein Gitter, auch nicht im Kopf */
+QHeaderView {{ background: {c['card']}; }}                     /* Fläche rechts der letzten Spalte wie der Kopf */
 QTableCornerButton::section {{ background: {c['card']}; border: none; border-bottom: 1px solid {c['border']}; }}
 QPlainTextEdit, QTextEdit {{ padding: 2px 8px; }}             /* Text 13 px vom Rand wie in den einzeiligen Feldern */
 QGroupBox {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 12px;
@@ -2931,6 +3152,7 @@ QToolBar QToolButton:hover {{ background: {c['hover']}; border-color: {c['border
 QToolBar QToolButton:pressed {{ background: {c['border']}; }}
 QToolBar::separator {{ background: {c['border']}; width: 1px; margin: 5px 6px; }}
 QLabel#toast {{ background: {c['card']}; color: {c['text']}; border: 1px solid {c['border']}; border-radius: 8px; }}
+QLabel#toast[bar="true"] {{ background: {c['window']}; border: none; border-radius: 0; }}
 QWidget#recentRow {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 12px; }}
 QWidget#recentRow:hover {{ border-color: {c['border_strong']}; }}
 QLabel#recentMono {{ background: {c['alt']}; color: {c['text2']}; border: 1px solid {c['border']}; border-radius: 8px;
@@ -2964,6 +3186,8 @@ QFrame#navBar {{ background: {c['window']}; border-bottom: 1px solid {c['border'
 QLabel#navGroup {{ color: {c['text2']}; font-size: 10px; font-weight: 600; padding: 0 3px; }}
 QPushButton#navTab {{ background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 0 9px;
     color: {c['text2']}; min-height: 28px; max-height: 28px; font-weight: 500; }}
+QPushButton#navTab[tight="1"] {{ padding: 0 6px; }}              /* schmales Fenster: erst enger, dann schieben (NavScroll._fit) */
+QPushButton#navTab[tight="2"] {{ padding: 0 4px; }}
 QPushButton#navTab[hasData="true"] {{ color: {c['text']}; }}
 QPushButton#navTab:hover {{ background: {c['hover']}; color: {c['text']}; }}
 QPushButton#navTab:checked {{ background: {c['sel']}; color: {c['text']}; font-weight: 600; }}

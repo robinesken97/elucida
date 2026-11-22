@@ -9,7 +9,7 @@ import datetime as dt
 import re
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QSize, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy,
                                QVBoxLayout, QWidget)
@@ -231,6 +231,23 @@ class EndElided(ElidedLabel):
     MODE = Qt.ElideRight
 
 
+class CountElided(ElidedLabel):
+    """Liste „A · B · C“: nur ganze Einträge, die passen, der Rest als „+N“ (alle im Tooltip; Entscheidung Sichtung)."""
+    SEP = " · "
+
+    def resizeEvent(self, ev):
+        QLabel.resizeEvent(self, ev)
+        items, fm, room = self._full.split(self.SEP), self.fontMetrics(), max(10, self.width())
+        for k in range(len(items), 0, -1):
+            txt = self.SEP.join(items[:k]) + (f" +{len(items) - k}" if k < len(items) else "")
+            if fm.horizontalAdvance(txt) <= room:
+                break
+        else:
+            txt = fm.elidedText(items[0], Qt.ElideRight, room - fm.horizontalAdvance(f" +{len(items) - 1}")) \
+                + (f" +{len(items) - 1}" if len(items) > 1 else "")
+        self.setText(txt)
+
+
 class SideRow(QPushButton):
     """Zeile der Seitenleiste: Symbol, Text, rechts die Anzahl."""
 
@@ -302,15 +319,43 @@ class NavScroll(QScrollArea):
         sb = self.horizontalScrollBar()
         sb.valueChanged.connect(self._sync)
         sb.rangeChanged.connect(self._sync)
+        self._tight, self._fit_key = 0, None
+        inner.installEventFilter(self)                      # Inhalt ändert sich (Name der Verbindung): neu einpassen
 
     def sizeHint(self):
         return self.widget().sizeHint()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.LayoutRequest:
+            self._fit()
+        return False
+
+    def _fit(self):
+        """Passt die Leiste nicht, erst die Tabs enger setzen (Stylesheet `tight` 1/2, wie die Chips), dann erst
+        schieben (Sichtung 2026-11-21: bei 1200 px war „Fluoreszenz“/„Export“ abgeschnitten)."""
+        inner = self.widget()
+        key = (self.width(), inner.sizeHint().width(), self._tight)
+        if key == self._fit_key:
+            return
+        for level in (0, 1, 2):
+            if level != self._tight:
+                self._tight = level
+                for b in inner.findChildren(NavTab):
+                    b.setProperty("tight", level or None)
+                    b.style().unpolish(b)
+                    b.style().polish(b)
+                    b.updateGeometry()
+                inner.layout().activate()
+            if inner.sizeHint().width() <= self.width():
+                break
+        self._fit_key = (self.width(), inner.sizeHint().width(), self._tight)
 
     def minimumSizeHint(self):
         return QSize(240, self.widget().minimumSizeHint().height())
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
+        self._fit()
         self._sync()
 
     def _sync(self, *_):
@@ -711,7 +756,7 @@ class RecentRow(ClickCard):
             on = k in info["badges"]
             self.opt.append(CheckDot("on" if on else "none", T("check_have" if on else "check_none", item=badge_label(k))))
             h.addWidget(self.opt[-1])
-        self.more = EndElided(" · ".join(badge_label(k) for k in MORE if k in info["badges"]) or "–", objectName="recentSub")
+        self.more = CountElided(" · ".join(badge_label(k) for k in MORE if k in info["badges"]) or "–", objectName="recentSub")
         self.more.setFixedWidth(230)                     # „UV-Vis · Fluoreszenz · CV“ ungekürzt
         self.more.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)      # „Ignored“ bekäme neben Dehnfeldern 0 px
         self.more.setToolTip(self.more._full)

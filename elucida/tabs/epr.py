@@ -1285,7 +1285,7 @@ class EPRTab(TABS.FigureTab):
         STYLE.name_table(self.tbl_spin, "spin_counting", "Spin counting")   # Rohwerte: _intensity.csv
         rv.addWidget(self.tbl_spin)
         # S = ½-Fits: dieselben Werte wie in der Bildunterschrift (Filter und Formate aus si_caption)
-        self.tbl_fit = STYLE.summary_grid([T("ov_name"), "g", "ΔBₚₚ [mT]", T("epr_col_hfc"), T("col_r2")])
+        self.tbl_fit = STYLE.summary_grid([T("ov_name"), "g", "ΔBₚₚ [mT]", T("epr_col_hfc"), T("col_r2")], rich=(0,))   # S = ½ kursiv
         STYLE.name_table(self.tbl_fit, "fit", "EPR fits", csv=True)
         rv.addWidget(self.tbl_fit)
         rv.addWidget(self.lbl_info)                      # „SI-Text kopieren“ steht im Reiter SI-Text

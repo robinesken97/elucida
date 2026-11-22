@@ -109,6 +109,14 @@ class OtherTab(TABS.FigureTab):
     def build_controls(self):
         g = QGroupBox(T("other_group"))
         v = QVBoxLayout(g)
+        row = QHBoxLayout()                                 # Knopfreihe über der Liste wie in allen Tabs (Sichtung)
+        for txt, fn in ((T("other_add"), self.add_files), ("↑", self.move_up), ("↓", self.move_down),
+                        (T("remove"), self.remove)):
+            b = QPushButton(txt)
+            b.clicked.connect(fn)
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
         self.lst = QTableWidget(0, 2)                       # Tabelle wie überall (vorher eine schlichte Textliste)
         self.lst.setHorizontalHeaderLabels([T("nmr_file"), T("other_cap")])
         self.lst.verticalHeader().setVisible(False)
@@ -121,13 +129,6 @@ class OtherTab(TABS.FigureTab):
         v.addWidget(self.lst)
         TABS.RowDrag(self.lst, self.move_row)
         STYLE.hide_when_empty(self.lst)
-        row = QHBoxLayout()
-        for txt, fn in ((T("other_add"), self.add_files), (T("other_up"), self.move_up), (T("remove"), self.remove)):
-            b = QPushButton(txt)
-            b.clicked.connect(fn)
-            row.addWidget(b)
-        row.addStretch(1)
-        v.addLayout(row)
         self.lv.addWidget(g)
         self.det = QGroupBox(T("other_details"))
         f = make_form(self.det)
@@ -183,6 +184,11 @@ class OtherTab(TABS.FigureTab):
         es, e = self.entries(), self.entry()
         if e in es:
             self.move_row(es.index(e), es.index(e) - 1)
+
+    def move_down(self):
+        es, e = self.entries(), self.entry()
+        if e in es:
+            self.move_row(es.index(e), es.index(e) + 1)
 
     def move_row(self, src, dst):
         es = self.entries()

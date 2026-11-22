@@ -254,6 +254,7 @@ class HCellTab(TABS.FigureTab):
         self.tbl_res.verticalHeader().setVisible(False)
         self.tbl_res.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tbl_res.setMinimumHeight(140)
+        self.tbl_res.setProperty("hug", True)            # so hoch wie die Zeilen, die Zusammenfassung folgt direkt
         v.addWidget(self.tbl_res)
         self.tbl_sum = STYLE.summary_grid([T("hcell_meas"), "Q_theo [mAh]", T("hcell_col_first"), T("hcell_col_last"),
                                            T("hcell_col_ret"), T("hcell_col_ce"), T("hcell_col_n"), T("hcell_col_h")])

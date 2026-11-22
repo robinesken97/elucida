@@ -3779,6 +3779,8 @@ class MeasureAlign:
         v = QVBoxLayout(g)
         self.lbl_meas = QLabel(T("xr_select_hint"))
         self.lbl_meas.setWordWrap(True)
+        self.lbl_meas.setStyleSheet(HINT_CSS)              # Hinweis grau und mittig, der Messwert schwarz links
+        self.lbl_meas.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         self.lbl_meas.setTextInteractionFlags(Qt.TextSelectableByMouse)
         v.addWidget(self.lbl_meas)
         row = QHBoxLayout()
@@ -3926,7 +3928,8 @@ class MeasureAlign:
         self._meas = None
         if mol is None or not self.sel:
             self.lbl_meas.setText(T("xr_select_hint"))
-            self.lbl_meas.setStyleSheet("")
+            self.lbl_meas.setStyleSheet(HINT_CSS)
+            self.lbl_meas.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
             self._take_enabled(False)
             return
         names = param_name(mol, self.sel)
@@ -3936,6 +3939,7 @@ class MeasureAlign:
         if m is None:
             self.lbl_meas.setText(names)
             self.lbl_meas.setStyleSheet("")
+            self.lbl_meas.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             return
         unit = " Å" if m["kind"] == "bond" else "°"
         txt = f"{T('xr_kind_' + m['kind'])}  {names} = {minus(m['text'])}{unit}"
@@ -3946,6 +3950,7 @@ class MeasureAlign:
             txt += "\n" + T("xr_cif_no_esd")
         self.lbl_meas.setText(txt)
         self.lbl_meas.setStyleSheet(WARN_CSS if warn else "")
+        self.lbl_meas.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     # -- Ausrichten -----------------------------------------------------------------------
     def _set_view(self, R, msg="", warn=False):

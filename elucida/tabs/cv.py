@@ -681,17 +681,20 @@ class CVTab(TABS.FigureTab):
         self.tbl_couples.setMaximumHeight(110)
         self.tbl_couples.setToolTip(T("cv_couples_tip"))
         self.tbl_couples.itemChanged.connect(self.couples_edited)
-        f.addRow(T("cv_couples"), self.tbl_couples)
-        row = QHBoxLayout()
-        for txt, fn, tip in (("+", self.add_couple, ""), ("−", self.remove_couple, ""),
+        row = QHBoxLayout()                                  # Knopfreihe über der Liste wie in allen Tabs (Sichtung)
+        for txt, fn, tip in ((T("cv_couple_add"), self.add_couple, ""), (T("remove"), self.remove_couple, ""),
                              (T("cv_suggest"), self.suggest, T("cv_suggest_tip"))):
             b = STYLE.list_button(txt)
+            if fn == self.add_couple:
+                b.setIcon(STYLE.icon("add"))
             if tip:
                 b.setToolTip(tip)
             b.clicked.connect(fn)
             row.addWidget(b)
         row.addStretch(1)
-        f.addRow("", row)
+        f.addRow(QLabel(T("cv_couples")))
+        f.addRow(row)
+        f.addRow(self.tbl_couples)
         self.cmb_ref = QComboBox()
         for key in ("none", "internal", "manual"):
             self.cmb_ref.addItem(T("cv_ref_" + key), key)

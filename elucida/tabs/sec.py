@@ -18,7 +18,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator, NullLocator
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
-                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox)
+                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSizePolicy, QSpinBox,
+                               QVBoxLayout, QWidget)
 
 from elucida.tabs import cv as CV
 from elucida.tabs import base as TABS
@@ -267,7 +268,7 @@ class SECTab(TABS.FigureTab):
     def arrange(self):
         super().arrange()
         # Fit-Ergebnis + „SI-Text kopieren“ als Reiter neben der Abbildung wie in CV (nicht mitten in „Darstellung“)
-        self.to_right(STYLE.split_group(self.group_titled("sec_display"), self.lbl_info, None, T("tab_results"), n=1),
+        self.to_right(STYLE.split_group(self.group_titled("sec_display"), self.info_box, None, T("tab_results"), n=1),
                       T("tab_results"))
         g = STYLE.split_group(self.group_titled("sec_display"), self.cb_highlight, self.ed_bands, T("grp_highlight"))
         self.fold(g, "highlight", ("highlight", "mid", "gradient", "diff", "baseline", "bands"))
@@ -402,7 +403,19 @@ class SECTab(TABS.FigureTab):
         self.lbl_info = STYLE.SciLabel("", T("results_none_plain"))      # SEC hat keinen Schritt „Auswertung“
         self.lbl_info.setWordWrap(True)
         self.lbl_info.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        f.addRow(self.lbl_info)                          # „SI-Text kopieren“ steht im Reiter SI-Text
+        self.btn_go_display = QPushButton(T("sec_go_display"))   # leere Ergebnisse: Ansicht steht in Schritt 2 (Sichtung)
+        self.btn_go_display.clicked.connect(lambda: self.steps.set_step(1))
+        # Text und Knopf in einem Block: leer mittig untereinander, mit Ergebnissen füllt der Text die Karte von oben
+        self.info_box = QWidget()
+        self.info_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        iv = QVBoxLayout(self.info_box)
+        iv.setContentsMargins(0, 0, 0, 0)
+        iv.setSpacing(12)
+        iv.addStretch(1)
+        iv.addWidget(self.lbl_info)
+        iv.addWidget(self.btn_go_display, 0, Qt.AlignHCenter)
+        iv.addStretch(1)
+        f.addRow(self.info_box)                          # „SI-Text kopieren“ steht im Reiter SI-Text
         self.lv.addWidget(g)
         self.lv.addWidget(self.caption_box())            # Bildunterschrift für den SI-Export
         for w_ in (self.sp_offset_s, self.sp_shift):
@@ -682,6 +695,7 @@ class SECTab(TABS.FigureTab):
         self._sync_shift()
         if not sp:
             self.lbl_info.setText("")
+            self._show_go(True)
             return None
         sel = self.selection(len(sp))
         i0, i1 = sel[0], sel[-1]
@@ -803,7 +817,15 @@ class SECTab(TABS.FigureTab):
         if info == [self.ref_note]:                        # nur der Referenzhinweis: Platzhalter bleibt sichtbar
             info.insert(0, T("results_none_plain"))
         self.lbl_info.setText("\n".join(info))
+        self._show_go(self.lbl_info.text().startswith(T("results_none_plain")))
         return cfg, curves, labels, []
+
+    def _show_go(self, on):
+        """Leere Ergebnisse: Text und Knopf mittig; mit Ergebnissen füllt der Text die Karte von oben."""
+        self.btn_go_display.setVisible(on)
+        iv = self.info_box.layout()
+        for i, k in enumerate((1, 0, 0, 1) if on else (0, 1, 0, 0)):
+            iv.setStretch(i, k)
 
     def _heatmap(self, sp, sel, Eax, ref_label, lam0, ys, x0, x1):
         """Heatmap: Zeilen = gezeigte Spektren in Messreihenfolge (erstes unten), Spalten = λ. Das Bild liegt genau im

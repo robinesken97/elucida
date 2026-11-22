@@ -312,6 +312,13 @@ class HRMSTab(TABS.FigureTab):
         self._ms_head = TABS.STYLE.table_head(T("tbl_head_check"), self.tbl_ms)
         f.addRow(self._ms_head)
         f.addRow(self.tbl_ms)
+        # Rohdaten und Isotope als Tabellen statt Textblock (Sichtung 2026-11-21)
+        self.tbl_raw = TABS.STYLE.summary_grid([T("ms_raw_col_n"), "RT [min]", T("ms_raw_col_scans"), T("ms_raw_col_sd")])
+        self.tbl_raw.setToolTip(T("ms_raw_note"))
+        self.tbl_iso = TABS.STYLE.summary_grid([T("ms_iso_col"), T("ms_iso_meas"), T("ms_iso_calc")])
+        self.tbl_iso.setToolTip(T("ms_iso_tip"))
+        f.addRow(self.tbl_raw)
+        f.addRow(self.tbl_iso)
         self.lbl_ms_info = WrapHint("")
         self.lbl_ms_info.setWordWrap(True)
         self.lbl_ms_info.setStyleSheet(HINT_CSS)
@@ -536,9 +543,10 @@ class HRMSTab(TABS.FigureTab):
         tag = (T("ms_pdf_kind_" + rep["kind"]) if rep.get("kind") else rep.get("sample")) if rep else ""
         self.lbl_ms.set_full(Path(st["ms_file"]).name if st.get("ms_file") else "–", tag if st.get("ms_file") else "")
         imgs = (rep or {}).get("images") or []
+        raw = self.ms_raw()
         self.cmb_img.blockSignals(True)
         self.cmb_img.clear()
-        self.cmb_img.addItem(T("ms_img_none"), 0)
+        self.cmb_img.addItem(T("ms_img_none" if raw is not None else "ms_img_none_plain"), 0)   # Rohdaten nur mit .d
         for k, im in enumerate(imgs, 1):
             self.cmb_img.addItem(T("ms_img_item", k=k, page=im["page"], w=im["w"], h=im["h"]), k)
         self.cmb_img.setCurrentIndex(max(0, self.cmb_img.findData(int(st.get("ms_img") or 0))))
@@ -547,7 +555,6 @@ class HRMSTab(TABS.FigureTab):
         self.sp_manual.blockSignals(True)
         self.sp_manual.setValue(float(st.get("found_manual") or 0.0))
         self.sp_manual.blockSignals(False)
-        raw = self.ms_raw()
         self.lbl_raw.set_full((Path(st["ms_raw"]).name + (f"  ({raw['instrument']})" if raw and raw.get("instrument")
                                                            else "")) if st.get("ms_raw") else "–")
         self._form.setRowVisible(self.rt_row, raw is not None)     # LC-Bereich nur mit .d (wie das Chromatogramm)
@@ -873,6 +880,8 @@ class HRMSTab(TABS.FigureTab):
         self._ms_line = ("", "")
         self._ms_vals = None
         TABS.STYLE.fill_summary(self.tbl_ms, [])
+        TABS.STYLE.fill_summary(self.tbl_raw, [])
+        TABS.STYLE.fill_summary(self.tbl_iso, [])
         self._form.setRowVisible(self._ms_head, False)        # Kopf „Prüfung“ nur mit Tabelle
         self._flags = {}
         self.tbl_flags.setRowCount(0)
@@ -906,7 +915,7 @@ class HRMSTab(TABS.FigureTab):
         lc = self.raw_found(calc) if raw else None
         self._lc = lc
         rep_found = None
-        info = []                                    # Hinweise ohne Warnung
+        info, raw_row = [], None                     # Hinweise ohne Warnung; Zeile der Rohdaten-Tabelle
         kind = (rep or {}).get("kind", "docx")
         f_ion = ion(formula, self.adduct())[0]
         if rep:
@@ -965,9 +974,9 @@ class HRMSTab(TABS.FigureTab):
                 self.cmb_found.addItem(T("ms_raw_entry", mz=f"{lc['mz']:.4f}", n=lc["n"],
                                          ppm=dev_text(ppm(lc["mz"], calc))), "raw")
                 sd_ppm = lc["std_mda"] / 1000 / calc * 1e6
-                info.append(T("ms_raw_info", n=lc["n"], rt0=f"{lc['rt_lo'] / 60:.2f}", rt1=f"{lc['rt_hi'] / 60:.2f}",
-                              lo=f"{lc['lo']:.4f}", hi=f"{lc['hi']:.4f}", sd=f"{lc['std_mda']:.2f}",
-                              sdp=f"{sd_ppm:.1f}"))
+                raw_row = [str(lc["n"]), f"{lc['rt_lo'] / 60:.2f}–{lc['rt_hi'] / 60:.2f}", f"{lc['lo']:.4f}–{lc['hi']:.4f}",
+                           f"± {lc['std_mda']:.2f} mDa (± {sd_ppm:.1f} ppm)"]
+                info.append(T("ms_raw_note"))
                 if lc["n"] < 3:
                     notes.append(T("ms_raw_few", n=lc["n"]))
                 if rep_found is not None and abs(lc["mz"] - rep_found) * 1000 > max(2 * lc["std_mda"], 0.5):
@@ -1027,6 +1036,8 @@ class HRMSTab(TABS.FigureTab):
         except Exception as ex:                       # Hinweise dürfen die Auswertung nie stören
             self.main.log_signal.emit(f"HRMS hints: {ex}")
         head = notes[:1] if found is not None else []    # „Abweichung found − calc“: Information, keine Warnung
+        TABS.STYLE.fill_summary(self.tbl_raw, [raw_row] if raw_row else [])
+        TABS.STYLE.fill_summary(self.tbl_iso, [])            # Isotope trägt das Zeichnen nach (isotope_info)
         self.lbl_ms_info.setText("\n".join(head + info))
         self.lbl_ms_warn.setText("\n".join(notes[len(head):]))
 
@@ -1244,10 +1255,9 @@ class HRMSTab(TABS.FigureTab):
                 mono = (rel[j], r)
                 continue
             if mono:
-                items.append(f"M+{i} {100 * rel[j] / mono[0]:.0f} % / {100 * r / mono[1]:.0f} %")
+                items.append([f"M+{i}", f"{100 * rel[j] / mono[0]:.0f}", f"{100 * r / mono[1]:.0f}"])
         if items:
-            txt = self.lbl_ms_info.text()
-            self.lbl_ms_info.setText((txt + "\n" if txt else "") + T("ms_iso_info", items=", ".join(items)))
+            TABS.STYLE.fill_summary(self.tbl_iso, items)
             QTimer.singleShot(0, self._form, self._form.invalidate)
 
     def fill_ms_table(self, adduct, calc, found, dev):

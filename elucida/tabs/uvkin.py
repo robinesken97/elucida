@@ -245,6 +245,7 @@ class UVKinTab(TABS.FigureTab):
         self.grp_results = QGroupBox(T("tab_results"))
         rv = QVBoxLayout(self.grp_results)
         self.res_table = STYLE.name_table(STYLE.FitGrid(0, 5), "results", "Measurements")   # CSV: _results/_titration
+        self.res_table.setProperty("hug", True)          # so hoch wie die Zeilen, die Zusammenfassung folgt direkt
         self.res_table.verticalHeader().setVisible(False)
         self.res_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         STYLE.empty_note(self.res_table, T("uvkin_results_none"))

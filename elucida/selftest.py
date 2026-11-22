@@ -2604,8 +2604,8 @@ def _g_electrochem(ctx):
             fg_.show()
             hh_ = fg_.horizontalHeader()
             need_ = sum(max(hh_.sectionSizeHint(c_), fg_.sizeHintForColumn(c_)) for c_ in range(5))
-            tight_ = need_ - 5 * (STYLE._CellDelegate.PAD - 2)
-            assert all(fg_.sizeHintForColumn(c_) - STYLE._CellDelegate.PAD > hh_.sectionSizeHint(c_) for c_ in range(5))
+            tight_ = need_ - 5 * (STYLE._CellDelegate.PAD + 4)        # engste Stufe: 4 px je Seite (Sichtung, Ziel 1200 px)
+            assert all(fg_.sizeHintForColumn(c_) - STYLE._CellDelegate.PAD - 4 > hh_.sectionSizeHint(c_) for c_ in range(5))
             for vw_ in range(300, 801):
                 fg_.setFixedWidth(vw_ + 2 * fg_.frameWidth())
                 QApplication.processEvents()
@@ -6035,7 +6035,8 @@ def _g_ir_hrms(ctx):
             t_ms.load_raw(str(ddir))
             t_ms.render()
             assert w.hrms_state["ms_raw"] and t_ms._ms_line[0].endswith(f"found {exp_:.4f}."), t_ms._ms_line[0]
-            assert "mDa" in t_ms.lbl_ms_info.text() and t_ms.cmb_found.currentData() == "raw", t_ms.lbl_ms_info.text()
+            raw_tbl_ = t_ms.tbl_raw.screen_table()[1]                 # Rohdaten als Tabelle (Sichtung), nicht im Text
+            assert raw_tbl_ and "mDa" in raw_tbl_[0][3] and t_ms.cmb_found.currentData() == "raw", raw_tbl_
             assert abs(t_ms.sp_rt_lo.value() - 50 / 60) < 0.01 and abs(t_ms.sp_rt_hi.value() - 70 / 60) < 0.01
             if w.project_dir:                                  # aus dem .d nur Rohdaten + Index übernommen
                 assert sorted(x.name for x in Path(w.hrms_state["ms_raw"]).iterdir()) == ["analysis.baf", "analysis.sqlite"]
@@ -6045,7 +6046,7 @@ def _g_ir_hrms(ctx):
             assert t_ms.F is not None and len(t_ms._sticks[0]) >= 2, t_ms._sticks
             lo_, hi_ = t_ms.view_range()
             assert lo_ < calc_ < hi_ and hi_ - lo_ < 6, (lo_, hi_)
-            assert "M+1" in t_ms.lbl_ms_info.text(), t_ms.lbl_ms_info.text()
+            assert t_ms.tbl_iso.screen_table()[1][0][0] == "M+1", t_ms.tbl_iso.screen_table()
             mzs_, rel_ = t_ms._sticks
             j_ = int(np.argmin(np.abs(mzs_ - calc_)))
             px_, py_ = t_ms.F.ax.transData.transform((mzs_[j_], rel_[j_] / 2))
@@ -17848,7 +17849,14 @@ def _g_lanes(ctx):
                     assert w._notice is None and not t_m2.isVisible()
                 w.exported([out_m2], [out_m2 / "x.pdf"], ["used line"])     # ohne Auslassungen: volle Meldung wie bisher
                 pump_m2()
-                assert "used line" in w._toast.text() and T("notice_details") not in w._toast.text()
+                if w._toast_slot() is None:
+                    assert "used line" in w._toast.text() and T("notice_details") not in w._toast.text()
+                else:                                                     # Fußleiste (Sichtung r2): eine Zeile mit allen
+                    assert T("notice_details") in w._toast.text() and T("open_folder") in w._toast.text()   # Klick-Zielen,
+                    assert w._toast.geometry().top() >= w._toast_slot().top() - 1                     # nie über Inhalt
+                    w._notice_clicked("details")                          # volle Meldung erst nach Klick
+                    pump_m2()
+                    assert "used line" in w._toast.text()
                 w._notice_done()
             w.log_signal.disconnect(log_m2.append)
             w.resize(keep_size_m2)
@@ -18180,7 +18188,7 @@ def _g_lanes(ctx):
             t0_ = ep_z.grid.groups[0][1][0]
             xs_z = {lab0_.mapTo(ep_z, lab0_.rect().topLeft()).x(), t0_.pic.mapTo(ep_z, t0_.pic.rect().topLeft()).x(),
                     t0_.name.mapTo(ep_z, t0_.name.rect().topLeft()).x(),
-                    (lg0_ := STYLE.item_at(ep_z.legend.layout(), 0).widget()).mapTo(ep_z, lg0_.rect().topLeft()).x()}
+                    (lg0_ := ep_z.legend.items[0]).mapTo(ep_z, lg0_.rect().topLeft()).x()}   # Legende zweizeilig (Sichtung r2)
             assert len(xs_z) == 1, xs_z
             from PySide6.QtWidgets import QDialog as QD_z
             assert not [d_ for d_ in QApplication.topLevelWidgets() if isinstance(d_, QD_z) and d_.isVisible()]
@@ -22965,6 +22973,166 @@ def _g_nmr_own(ctx):
             report.append("Own structure drawing: ChemDraw's double bond sides (Right = left of B->E as drawn), older "
                           "Octet files in Octet's old sense, a charge at the end of formula text raised (count only "
                           "for a monatomic ion or after a space), minus as U+2212: OK")
+        with section:
+            # Sichtung 2026-11-21: Tabellen und Listen rund wie die Felder (Schicht _RoundFrame über Kopf und Zeilen)
+            from PySide6.QtWidgets import QListWidget as _QLW_si, QTableView as _QTV_si, QTreeWidget as _QTW_si
+            d_si = w.open_demo_publication()
+            assert w.open_project(d_si / "S3", ask=False, recent=False)
+            w.resize(1200, 900)
+            pump(0.3)
+            for k_si in w._TAB_ORDER:
+                w.main_tabs.setCurrentIndex(w._tab_keys.index(k_si))
+                pump(0.05)
+            pump(0.2)
+            views_si = [v_ for v_ in w.findChildren(QAbstractItemView) if isinstance(v_, (_QTV_si, _QLW_si, _QTW_si))
+                        and v_.frameShape() != QFrame.NoFrame]
+            bare_si = [(type(v_).__name__, type(v_.parentWidget()).__name__) for v_ in views_si
+                       if not isinstance(v_.__dict__.get("_round"), STYLE._RoundFrame)]
+            assert len(views_si) > 40 and not bare_si, (len(views_si), bare_si[:8])
+            for v_ in views_si:
+                r_si = v_._round
+                kids_si = [c_ for c_ in v_.children() if isinstance(c_, QWidget) and c_.isVisible()]   # Kopf, Zeilen, Leisten
+                assert not r_si.isHidden() and (not kids_si or kids_si[-1] is r_si), (
+                    type(v_.parentWidget()), type(kids_si[-1]).__name__, kids_si[-1].objectName())
+                assert r_si.geometry() == v_.rect() or not v_.isVisible(), (
+                    type(v_.parentWidget()), r_si.geometry(), v_.rect())              # verborgen: beim Zeigen
+            report.append(f"Sichtung: {len(views_si)} tables/lists in all tabs and the project page rounded like the "
+                          "fields (overlay on top of header, rows and scroll bars, full size): OK")
+        with section:
+            # Sichtung 2026-11-21: Tab-Leiste bei 1200 px ohne Schieben, HRMS-Text ohne .d, verborgene Projekt-Exportseite
+            # treibt die Fensterbreite nicht hoch
+            if not w.project_dir:
+                assert w.open_project(w.open_demo_publication() / "S3", ask=False, recent=False)
+            ns_si = w.nav_scroll
+            for lang_si in ("en", "de"):
+                w.switch_lang(lang_si)
+                ns_si = w.nav_scroll
+                for wid_si in (1600, 1200):
+                    w.resize(wid_si, 900)
+                    pump(0.2)
+                    fits_si = ns_si.widget().sizeHint().width() <= ns_si.width()
+                    assert fits_si or ns_si._tight == 2, (lang_si, wid_si, ns_si._tight)   # erst enger, dann schieben
+                    assert (ns_si.horizontalScrollBar().maximum() == 0) == fits_si, (lang_si, wid_si)
+                if sys.platform != "win32":
+                    w.resize(1600, 900)
+                    pump(0.2)
+                    assert ns_si._tight == 0, lang_si                   # breites Fenster: Maße des Entwurfs
+            h_si = w.hrms_tab                                           # „(Spektrum aus den Rohdaten)“ nur mit .d
+            real_raw_si = h_si.ms_raw
+            try:
+                for raw_si, key_si in ((None, "ms_img_none_plain"), ({}, "ms_img_none")):
+                    h_si.ms_raw = lambda r_=raw_si: r_
+                    h_si.sync_widgets()
+                    assert h_si.cmb_img.itemText(0) == T(key_si), (key_si, h_si.cmb_img.itemText(0))
+            finally:
+                h_si.ms_raw = real_raw_si
+                h_si.sync_widgets()
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("hrms"))    # Summenformel passt: eine Zeile über die Wertespalte
+            pump(0.3)
+            lf_si = h_si.lbl_formula
+            assert lf_si.width() == lf_si.property("fieldw") and lf_si.height() <= STYLE.CONTROL_H + 1, (lf_si.width(), lf_si.height())
+            pe_si = w.pub_page.export_page                              # langer Zähltext macht die Seite nicht breiter
+            msh_si, txt_si = pe_si.minimumSizeHint().width(), pe_si.lbl_count._full
+            pe_si.lbl_count.set_full("x" * 400)
+            assert pe_si.minimumSizeHint().width() == msh_si, (msh_si, pe_si.minimumSizeHint().width())
+            pe_si.lbl_count.set_full(txt_si)
+            # leere Häkchen-Tabelle mit Platzhalter (Beschriftungen im Bild) eine Zeile hoch statt nur Kopf; E₁/₂, ΔBₚₚ gesetzt
+            lt_si = STYLE.check_table(["x"])
+            STYLE.empty_note(lt_si, "empty")
+            STYLE.fit_check_table(lt_si)
+            assert lt_si.height() == lt_si.horizontalHeader().sizeHint().height() + STYLE.CHECK_ROW_H + 2
+            lt_si.deleteLater()
+            assert STYLE.sci("E₁/₂ = 0.1 V").startswith("<i>E</i><sub>1/2</sub>") and "<sub>pp</sub>" in STYLE.sci("ΔBₚₚ [mT]")
+            w.close_project()
+            w.resize(1440, 900)
+            report.append("Sichtung: tab bar tightens before it scrolls (EN/DE, 1200/1600 px), HRMS 'none' names raw data "
+                          "only with .d, hidden project export page never widens the window, empty check tables one row high with their note, E1/2 and dBpp typeset: OK")
+        with section:
+            # Sichtung Runde 2 (2026-11-21): Meldung in der Fußleiste, Legende umbrechend, „+N“, leere Ergebnisspalten,
+            # Messwerttabelle so hoch wie ihre Zeilen, ganze Zeilen links, NICS(1)zz, SEC-Leerzustand mit Knopf
+            from PySide6.QtWidgets import QFormLayout as _QFL_r2, QTableWidget as _QTW_r2, QWidget as _QW_r2
+            from elucida.app import tiles as TILES_r2, welcome as WEL_r2
+            if not w.project_dir:
+                assert w.open_project(w.open_demo_publication() / "S3", ask=False, recent=False)
+            w.resize(1200, 900)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            pump(0.4)
+            w.statusBar().showMessage("selftest r2", 5000)
+            slot_r2 = w._toast_slot()
+            assert slot_r2 is not None and w._toast.isVisible() and slot_r2.contains(w._toast.geometry().center()), \
+                (slot_r2, w._toast.geometry())
+            assert w._toast.geometry().top() >= slot_r2.top() - 1, (slot_r2, w._toast.geometry())   # nie über dem Inhalt
+            w.statusBar().clearMessage()
+            w.notify("first line\nsecond line\nthird line", [("Go", lambda: None)], ms=5000)
+            pump(0.1)
+            assert w._toast.geometry().top() >= slot_r2.top() - 1 and "Go" in w._toast.text() \
+                and T("notice_details") in w._toast.text(), (w._toast.geometry(), w._toast.text())   # mehrzeilig: zugeklappt
+            w._notice_done()
+            leg_r2 = TILES_r2.Legend([(f"Entry {i}", "nmr") for i in range(12)])
+            leg_r2.resize(300, 60)
+            leg_r2.show()
+            pump(0.1)
+            assert leg_r2._split == 6, leg_r2._split                       # zwei Zeilen statt abgeschnitten
+            leg_r2.resize(2000, 60)
+            pump(0.1)
+            assert leg_r2._split == 12, leg_r2._split
+            leg_r2.deleteLater()
+            ce_r2 = WEL_r2.CountElided("UV-Vis · Fluorescence · CV · EPR")
+            ce_r2.resize(ce_r2.fontMetrics().horizontalAdvance("UV-Vis · Fluorescence +2") + 2, 20)
+            ce_r2.show()
+            pump(0.1)
+            assert ce_r2.text() == "UV-Vis · Fluorescence +2", ce_r2.text()
+            ce_r2.deleteLater()
+            fg_r2 = STYLE.summary_grid(["a", "b"])
+            STYLE.fill_summary(fg_r2, [["1", ""], ["2", ""]])
+            assert fg_r2.isColumnHidden(1) and fg_r2.screen_table() == (["a", "b"], [["1", ""], ["2", ""]]), \
+                fg_r2.screen_table()                                      # leer: verborgen, Datei behält sie
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))           # ε „Hinweise“ (Tabelle mit Eingabespalte)
+            w.render()
+            pump(0.3)
+            w.table.fit()
+            notes_r2 = [w.table.item(r_, 6).text() if w.table.item(r_, 6) else "" for r_ in range(w.table.rowCount())]
+            assert w.table.rowCount() and w.table.isColumnHidden(6) == (not any(notes_r2)), notes_r2
+            assert not w.table.isColumnHidden(5)                             # Cutoff: Eingabe, bleibt
+            STYLE.fill_summary(fg_r2, [["1", "x"]])
+            assert not fg_r2.isColumnHidden(1)
+            fg_r2.deleteLater()
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("uvkin"))
+            w.uvkin_tab.ensure_rendered()
+            pump(0.3)
+            hug_r2 = w.uvkin_tab.res_table
+            hug_r2.fit()
+            assert hug_r2.property("hug") and hug_r2.maximumHeight() < 16777215, hug_r2.maximumHeight()
+            box_r2 = _QW_r2()
+            fl_r2 = _QFL_r2(box_r2)
+            tw_r2 = _QTW_r2(9, 1)
+            tw_r2.setHorizontalHeaderLabels(["x"])
+            tw_r2.verticalHeader().setDefaultSectionSize(STYLE.CHECK_ROW_H)
+            fl_r2.addRow(tw_r2)
+            STYLE.field_heights(box_r2)
+            rest_r2 = tw_r2.maximumHeight() - tw_r2.horizontalHeader().sizeHint().height() - 2 * tw_r2.frameWidth()
+            assert rest_r2 > 0 and rest_r2 % STYLE.CHECK_ROW_H == 0, rest_r2   # keine halbe Zeile
+            box_r2.deleteLater()
+            assert STYLE.sci("NICS(1)zz [ppm]") == "NICS(1)<sub>zz</sub> [ppm]"
+            sec_r2 = w.sec_tab
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("sec"))
+            sec_r2.ensure_rendered()
+            pump(0.3)
+            if sec_r2.lbl_info.text().startswith(T("results_none_plain")):
+                assert not sec_r2.btn_go_display.isHidden()
+                assert sec_r2.info_box.parentWidget().objectName() == "resultCard"   # Knopf auf der Ergebnisseite
+                sec_r2.btn_go_display.click()
+                assert sec_r2.steps.step == 1, sec_r2.steps.step
+                sec_r2.steps.set_step(0, remember=False)
+            gaps_r2 = [g_.objectName() or g_.export_name or "?" for g_ in w.findChildren(STYLE.FitGrid)
+                       if g_.horizontalHeader().length() != sum(g_.horizontalHeader().sectionSize(i_)
+                                                                for i_ in range(g_.horizontalHeader().count()))]
+            assert not gaps_r2, gaps_r2                                  # keine Lücke an verborgenen Spalten
+            w.close_project()
+            w.resize(1440, 900)
+            report.append("Sichtung r2: notices in the footer slot, legend wraps, '+N' list, empty result columns hidden "
+                          "(kept in files), measurement table hugs its rows, whole rows in left tables, NICS(1)zz, "
+                          "SEC empty state opens step 2: OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

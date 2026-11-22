@@ -5684,7 +5684,7 @@ class MainWindow(QMainWindow):
     def _notice_clicked(self, href):
         note = self._notice
         if note and href == "details":                   # aufklappen: dieselbe Meldung wie ohne `brief`, nichts neu melden
-            self._notice = (note[0], note[1], None)
+            self._notice = (note[0], note[1], False)    # False: vom Nutzer aufgeklappt (darf über die Fußleiste wachsen)
             return self._place_toast()
         self._notice_done()
         if note and href.isdigit() and int(href) < len(note[1]):
@@ -5696,21 +5696,37 @@ class MainWindow(QMainWindow):
         self._place_toast()
 
     def _place_toast(self, msg=None):
-        """Meldung unten rechts über der Abbildung (nimmt keinen Platz im Layout ein)."""
+        """Meldung in der rechten Fußleiste anstelle der Bildunterschrift (nimmt keinen Platz im Layout ein)."""
         t = self._toast
         msg = self._status.currentMessage() if msg is None else msg
         note = self.__dict__.get("_notice")
         if not msg and not note:
             t.hide()
             return
+        slot = self._toast_slot()
+        inline = auto = False
+        if note and note[2] is None and slot is not None:   # Fußleiste: eine Zeile, nie über Inhalt (Sichtung r2); passt
+            fm = t.fontMetrics()                         # sie nicht, zugeklappt mit „Details“ (Aufklappen wächst nach oben)
+            if "\n" in note[0] or fm.horizontalAdvance(note[0] + "   " + " · ".join(x for x, _ in note[1])) \
+                    > slot.width() - 8:
+                note, auto = (note[0], note[1], note[0].split("\n")[0]), True
+            else:
+                inline = True
         brief = bool(note and note[2])
         if note:                                         # Einblendung mit Klick-Zielen, mehrzeilig, anklickbar
             acc = STYLE.colors()["accent"]
             link = lambda i, txt: (f'<a href="{i}" style="color:{acc}; text-decoration:none">'     # noqa: E731
                                    f'{html.escape(txt)}</a>')
             if note[2]:                                  # zugeklappt: eine Zeile, Links dahinter
-                body = (html.escape(note[2]) + "&nbsp;&nbsp;&nbsp;" + link("details", T("notice_details"))
-                        + " · " + link(len(note[1]) - 1, note[1][-1][0]))
+                keep = list(enumerate(note[1])) if auto else [(len(note[1]) - 1, note[1][-1])]   # auto: alle Klick-Ziele
+                text = note[2]
+                if slot is not None:                     # in der Fußleiste: Text kürzen, die Links bleiben ganz
+                    fm = t.fontMetrics()
+                    room = slot.width() - 8 - fm.horizontalAdvance(
+                        "   " + " · ".join([T("notice_details")] + [x for _, (x, _f) in keep]))
+                    text = fm.elidedText(text, Qt.TextElideMode.ElideRight, max(40, room))
+                body = (html.escape(text) + "&nbsp;&nbsp;&nbsp;" + link("details", T("notice_details"))
+                        + "".join(" · " + link(i, x) for i, (x, _f) in keep))
                 t.setTextFormat(Qt.RichText)
                 t.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
                 t.setAttribute(Qt.WA_TransparentForMouseEvents, False)
@@ -5723,7 +5739,7 @@ class MainWindow(QMainWindow):
         if note:
             body = html.escape(note[0]).replace("\n", "<br>")
             if note[1]:
-                body += "<br>" + " · ".join(link(i, txt) for i, (txt, _) in enumerate(note[1]))
+                body += ("&nbsp;&nbsp;&nbsp;" if inline else "<br>") + " · ".join(link(i, txt) for i, (txt, _) in enumerate(note[1]))
             t.setTextFormat(Qt.RichText)
             t.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             t.setAttribute(Qt.WA_TransparentForMouseEvents, False)
@@ -5746,11 +5762,44 @@ class MainWindow(QMainWindow):
             t.ensurePolished()
             w = min(t.fontMetrics().horizontalAdvance(msg) + 32, self.width() - 40)
             h = t.fontMetrics().height() + 14
-        # in einer Verbindung über der Fußleiste, in der Ecke der Abbildung: der Hauptknopf bleibt frei
-        lift = TABS.BAR_MIN_H if self.project_dir else 0
-        t.setGeometry(self.width() - w - 24, self.height() - h - 24 - lift, w, h)
+        if t.property("bar") != (slot is not None):
+            t.setProperty("bar", slot is not None)
+            t.style().unpolish(t)
+            t.style().polish(t)
+        if slot is None:                                 # ohne Fußleiste (Startbildschirm): unten rechts im Fenster
+            t.setGeometry(self.width() - w - 24, self.height() - h - 24, w, h)
+        else:                                            # in der Fußleiste anstelle der Bildunterschrift, nie über
+            t.setContentsMargins(0, 0, 0, 0)             # Inhalt (Entscheidung Sichtung 2026-11-21)
+            t.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            if t.textFormat() != Qt.RichText:
+                t.setText(t.fontMetrics().elidedText(msg, Qt.TextElideMode.ElideRight, slot.width()))
+                t.setToolTip(msg if t.text() != msg else "")
+            w = slot.width()
+            if t.textFormat() == Qt.RichText and t.sizeHint().width() > w:
+                t.setWordWrap(True)                      # Klick-Ziele lassen sich nicht kürzen: umbrechen
+            if t.wordWrap():                             # aufgeklappte Meldung: so hoch wie nötig, ab der Fußleiste
+                t.setContentsMargins(0, 6, 0, 6)
+                h = max(t.heightForWidth(w), t.sizeHint().height() if not t.text() else 0)
+            if h <= slot.height():
+                t.setGeometry(slot.x(), slot.center().y() - h // 2, w, h)
+            else:                                        # länger als eine Zeile (nur nach Klick auf „Details“ oder bei
+                t.setGeometry(slot.x(), slot.bottom() - h, w, h)   # Meldungen mit Klick-Zielen): wächst nach oben
         t.show()
         t.raise_()
+
+    def _toast_slot(self):
+        """Platz für Meldungen: rechte Fußleiste der sichtbaren Seite, links der Knöpfe (dort steht sonst die
+        Bildunterschrift); None ohne Fußleiste."""
+        from PySide6.QtCore import QPoint, QRect
+        bars = [b for b in self.findChildren(QFrame, "bottomBar") if b.isVisible() and b.width() > 0]
+        if not bars:
+            return None
+        bar = max(bars, key=lambda b: b.mapTo(self, QPoint(0, 0)).x())
+        m = bar.layout().contentsMargins()
+        btns = [b.mapTo(bar, QPoint(0, 0)).x() for b in bar.findChildren(QPushButton) if b.isVisible()]
+        right = min(btns) - 12 if btns else bar.width() - m.right()
+        o = bar.mapTo(self, QPoint(0, 0))
+        return QRect(o.x() + m.left(), o.y() + 1, max(40, right - m.left()), bar.height() - 1)
 
     def resizeEvent(self, ev):
         side = self.__dict__.get("side")                 # schmale Fenster: Seitenleiste schmaler, Inhalt behält Platz

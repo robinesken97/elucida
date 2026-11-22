@@ -209,21 +209,51 @@ class SlotBar(QWidget):
 
 
 class Legend(QWidget):
-    """Eine Zeile über dem Raster: kleines Quadrat + Kürzel je Platz des Farbstreifens."""
+    """Über dem Raster: kleines Quadrat + Kürzel je Platz des Farbstreifens; eine Zeile, bei schmalem Fenster zwei
+    (Entscheidung Sichtung 2026-11-21: umbrechen statt abschneiden)."""
 
     def __init__(self, slots):
         super().__init__()
-        h = QHBoxLayout(self)
-        h.setContentsMargins(EDGE, 0, 0, 0)
-        h.setSpacing(4)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(EDGE, 0, 0, 0)
+        v.setSpacing(4)
+        self.rows = [QHBoxLayout(), QHBoxLayout()]
+        self.items = []
+        for r in self.rows:
+            r.setSpacing(4)
+            v.addLayout(r)
         for text, key in slots:
+            it = QWidget()
+            h = QHBoxLayout(it)
+            h.setContentsMargins(0, 0, 6, 0)
+            h.setSpacing(4)
             sq = QLabel(objectName="tileDot")
             sq.setFixedSize(8, 8)
             sq.setStyleSheet(f"background: {STYLE.method_color(key)};")
             h.addWidget(sq)
             h.addWidget(QLabel(text, objectName="tileLegend"))
-            h.addSpacing(6)
-        h.addStretch(1)
+            self.items.append(it)
+        self._split = None
+        self._arrange(len(self.items))
+
+    def _arrange(self, k):
+        """Erste k Einträge in Zeile 1, der Rest in Zeile 2."""
+        if k == self._split:
+            return
+        self._split = k
+        for r in self.rows:
+            while r.count():
+                r.takeAt(0)
+        for i, it in enumerate(self.items):
+            self.rows[i >= k].addWidget(it)
+        for r in self.rows:
+            r.addStretch(1)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        room = self.width() - EDGE
+        total = sum(it.sizeHint().width() + 4 for it in self.items)
+        self._arrange(len(self.items) if total <= room else (len(self.items) + 1) // 2)
 
 
 PRESS = 0.92                                              # gewählte Kachel: Vorschau eingedrückt auf 92 % (Entwurf A)

@@ -383,6 +383,29 @@ SLOTS = (("nmr", "nmr"), ("ir", "irms"), ("ms", "hrms"), ("uvvis", "eps"), ("uvk
 # feste Reihenfolge der Spalten der Verbindungsmatrix
 
 
+class _WholeOrNone(QLabel):
+    """Zähltext in der Fußleiste: ganz oder gar nicht (nie „Gesa…“, steht auch über den Kacheln), ganz im Tooltip;
+    gibt nie eine Mindestbreite vor (verborgene Seite im Stapel, ui.md)."""
+
+    def __init__(self):
+        super().__init__(objectName="recentSub")
+        self._full = ""
+        from PySide6.QtWidgets import QSizePolicy
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+
+    def set_full(self, text):
+        self._full = text
+        self.setToolTip(text)
+        self._sync()
+
+    def _sync(self):
+        QLabel.setText(self, self._full if self.fontMetrics().horizontalAdvance(self._full) <= self.width() else "")
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._sync()
+
+
 class PublicationExportPage(QWidget):
     """Reiter „Export“ der Projektseite (Entscheidungen 96–97): links „Gesamt-SI“ und „Datensätze“, rechts dasselbe
     Kachelraster wie Verbindung › Export – Kopfzeilen der Gruppen, je Verbindung eine Kachel (Strukturbild, Nummer +
@@ -438,7 +461,8 @@ class PublicationExportPage(QWidget):
         iv.addWidget(self.grid)
         iv.addStretch(1)
         rv.addWidget(scrolled(inner), 1)
-        self.lbl_count = QLabel(objectName="recentSub")
+        self.lbl_count = _WholeOrNone()                           # eine Zeile, ganz oder gar nicht (steht auch oben):
+                                                                  # verborgene Seite macht das Fenster nie breiter (ui.md)
         self.btn_dp = QPushButton(T("pub_exp_dp_btn"))
         self.btn_dp.setToolTip(T("pub_datapack_tip"))
         self.btn_dp.clicked.connect(lambda: self.dp_card.export())
@@ -446,7 +470,8 @@ class PublicationExportPage(QWidget):
         self.btn_si.setProperty("accent", True)                  # Hauptknopf dieser Ansicht
         self.btn_si.setToolTip(T("pub_si_tip"))
         self.btn_si.clicked.connect(lambda: self.si_card.export())
-        bar = TABS.side_bar(self.lbl_count, self.btn_dp, self.btn_si, stretch_at=1)
+        bar = TABS.side_bar(self.lbl_count, self.btn_dp, self.btn_si)
+        bar.layout().setStretchFactor(self.lbl_count, 1)         # Text nimmt den freien Platz, Knöpfe rechts
         bar.setContentsMargins(0, 0, 0, 0)
         rv.addWidget(bar)
         lay = QHBoxLayout(self)
@@ -516,7 +541,7 @@ class PublicationExportPage(QWidget):
         self.lbl_zip.setVisible(bool(rows) and rows[0][0] is None)   # Gruppen haben ihre eigenen Verweise
         self.sync_dp_button()
         self.lbl_n.setText(T("pub_exp_n", n=n))
-        self.lbl_count.setText(T("pub_exp_count", n=n))
+        self.lbl_count.set_full(T("pub_exp_count", n=n))
         self.btn_si.setEnabled(bool(n))
 
     def set_pack(self, dirs, on):

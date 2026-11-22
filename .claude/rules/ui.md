@@ -268,6 +268,7 @@ paths:
     sie darf schmaler sein als ihr Inhalt, zeigt am abgeschnittenen Rand einen Pfeil, folgt Mausrad/Trackpad und hält den
     gewählten Tab sichtbar (`reveal`). Zeilen der Verbindungsliste melden `ROW_MIN_W`, nie die Breite der Matrix. Der
     Selbsttest verlangt: Fenster nimmt 1440 px an, Leiste bestimmt die Mindestbreite nicht.
+  - Tabellen, Listen und Bäume mit Rahmen haben runde Ecken wie die Felder (`FIELD_RADIUS`, `_RoundFrame` via `field_heights`; sonst `STYLE.round_frame`). Tab-Leiste: passt sie nicht, erst enger (`tight` 1/2), dann schieben.
   - Kein Tab darf die Mindestbreite des Fensters hochtreiben (alle Tabs teilen einen Stapel, auch verborgene Seiten
     zählen): Bilder in QLabel mit `setMinimumWidth(1)`, nicht gebrauchte Seiten herausnehmen statt verbergen. Sonst wächst
     das Fenster beim Wechsel der Seite („Fensterverhältnisse ändern sich“).

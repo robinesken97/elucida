@@ -860,6 +860,7 @@ class SpinPages:
         f.addRow(self.lbl_calc)
         self.btn_remove = QPushButton(STYLE.icon("trash"), T("epr_calc_remove"))
         self.btn_remove.clicked.connect(self.remove)
+        self.btn_remove.setFixedWidth(STYLE.VALUE_W)        # wie die Dateizeilen darüber: ganze Wertespalte (Sichtung)
         f.addRow("", self.btn_remove)
         return g
 
@@ -896,11 +897,8 @@ class SpinPages:
         self.btn_es.setToolTip(T("epr_calc_es_tip"))
         self.btn_es.clicked.connect(lambda _=False: self.save_easyspin())
         f.addRow("", self.btn_es)
-        for b in (self.btn_clear, self.btn_es):            # zwei Knöpfe untereinander: gleich breit
-            b.ensurePolished()
-        w = max(b.sizeHint().width() for b in (self.btn_clear, self.btn_es))
-        for b in (self.btn_clear, self.btn_es):
-            b.setMinimumWidth(w)
+        for b in (self.btn_clear, self.btn_es):            # zwei Knöpfe untereinander: ganze Wertespalte (Sichtung)
+            b.setFixedWidth(STYLE.VALUE_W)
         return g
 
     def _display_card(self):
