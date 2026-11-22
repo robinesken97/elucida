@@ -5722,8 +5722,14 @@ class MainWindow(QMainWindow):
                 text = note[2]
                 if slot is not None:                     # in der Fußleiste: Text kürzen, die Links bleiben ganz
                     fm = t.fontMetrics()
-                    room = slot.width() - 8 - fm.horizontalAdvance(
-                        "   " + " · ".join([T("notice_details")] + [x for _, (x, _f) in keep]))
+
+                    def room_left():
+                        return slot.width() - 8 - fm.horizontalAdvance(
+                            "   " + " · ".join([T("notice_details")] + [x for _, (x, _f) in keep]))
+                    if room_left() < fm.horizontalAdvance(text) and keep[-1][1][0] == T("notice_close"):
+                        # erst „Schließen“ als ×, dann den Kern kürzen (breitere Schrift, Windows-CI: „SI gespeichert – 2 …“)
+                        keep[-1] = (keep[-1][0], ("×", keep[-1][1][1]))
+                    room = room_left()
                     text = fm.elidedText(text, Qt.TextElideMode.ElideRight, max(40, room))
                 body = (html.escape(text) + "&nbsp;&nbsp;&nbsp;" + link("details", T("notice_details"))
                         + "".join(" · " + link(i, x) for i, (x, _f) in keep))

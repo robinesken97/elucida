@@ -1410,6 +1410,7 @@ class NMRTab(QWidget):
         self.tbl_par = STYLE.summary_grid([T("xr_par_head"), T("xr_par_value")])
         self.tbl_par.setItemDelegateForColumn(1, STYLE.RichDelegate(
             self.tbl_par, lambda s: self._par_html.get(s) or _h.escape(s)))
+        self.tbl_par.elide_col = 1                         # langer Probenkopf: Wert gekürzt (Tooltip), statt quer zu rollen
         f.addRow(self.tbl_par)
         row = QHBoxLayout()
         self.cb_struct = QCheckBox(T("nmr_struct_on"))
@@ -1795,6 +1796,8 @@ class NMRTab(QWidget):
         rows = params_rows(p) if p else []
         self._par_html = {txt: html for _, txt, html in rows}
         STYLE.fill_summary(self.tbl_par, [[lab, txt] for lab, txt, _ in rows])
+        for r_ in range(self.tbl_par.rowCount()):
+            self.tbl_par.item(r_, 1).setToolTip(self.tbl_par.item(r_, 1).text())
         self.lbl_par.setText("" if p else T("nmr_no_bruker"))
         self.lbl_par.setStyleSheet(HINT_CSS)
 

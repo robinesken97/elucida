@@ -835,6 +835,13 @@ class RichDelegate(_CellDelegate):
         doc = self._doc(o, index, col.name())
         w, h = doc.idealWidth(), doc.size().height()
         r = option.rect
+        if w > r.width() - self.PAD:          # gekürzte Spalte (`elide_col`): Text mit „…“ statt hart abgeschnitten
+            painter.save()
+            painter.setPen(col)
+            painter.drawText(r.adjusted(self.PAD // 2, 0, -self.PAD // 2, 0), Qt.AlignLeft | Qt.AlignVCenter,
+                             o.fontMetrics.elidedText(str(index.data(Qt.DisplayRole) or ""), Qt.ElideRight,
+                                                      r.width() - self.PAD))
+            return painter.restore()
         painter.save()
         painter.setClipRect(r.adjusted(self.PAD // 2, 0, -self.PAD // 2, 0))
         painter.translate(r.x() + max(self.PAD // 2, (r.width() - w) / 2), r.y() + (r.height() - h) / 2)

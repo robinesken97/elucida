@@ -12725,7 +12725,9 @@ def _g_publication(ctx):
                             continue
                         for r_ in range(t31_.rowCount()):
                             it_ = t31_.item(r_, c_)
-                            if it_ is not None and t31_.fontMetrics().horizontalAdvance(it_.text()) + 24 > t31_.columnWidth(c_):
+                            # mindestens 6 px je Seite (fit_columns, wenn der Name sonst nicht passt; Windows-CI mit
+                            # breiter Schrift); Qt kürzt erst unter Text + 8 px
+                            if it_ is not None and t31_.fontMetrics().horizontalAdvance(it_.text()) + 12 > t31_.columnWidth(c_):
                                 bad31_.append((k_, "column", it_.text(), t31_.columnWidth(c_)))
             head_ = it_ = None  # keine Wrapper Qt-eigener Zellen behalten (_held_qt_items)
             assert not bad31_, bad31_
