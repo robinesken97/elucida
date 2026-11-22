@@ -92,7 +92,7 @@
 - Linke Spalte behält ihre Scrollposition nach dem Neuaufbau auch bei langsamem ersten Zeichnen.
 - Absturz beim Zeichnen von Strukturen, die RDKit nicht bereinigen kann; Import scheiterte, wenn die Verbindung über einen Symlink geöffnet war.
 - Breite Schriften (Windows): Fußleistenmeldung, NMR-Parameterspalte und gesetzte Zellen kürzen sauber.
-- CV-Methodentext war in seiner Karte abgeschnitten; 3D-Atomlabels im Reaktionspfad überlappten; Namen der Export-Kacheln liefen unter Linux über ihre Karte.
+- CV-Methodentext war in seiner Karte abgeschnitten; 3D-Atomlabels im Reaktionspfad überlappten.
 
 ## 1.3.0 – 2026-11-17
 

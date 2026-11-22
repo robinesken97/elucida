@@ -87,7 +87,7 @@
 - Left column keeps its scroll position after a rebuild even when the first render is slow.
 - Crash when drawing structures RDKit cannot sanitize; importing files failed when the compound was opened through a symlink.
 - Wide fonts (Windows): footer notice, NMR parameter column and typeset cells shorten cleanly.
-- CV methods text was cut off in its card; 3D atom labels in the reaction path overlapped; export tile names ran over their card on Linux.
+- CV methods text was cut off in its card; 3D atom labels in the reaction path overlapped.
 
 ## 1.3.0 – 2026-11-17
 
