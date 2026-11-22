@@ -23590,6 +23590,61 @@ def _g_nmr_own(ctx):
                           "through a symlink imports a file and saves it relative"
                           + (": OK" if link_f5 is not None else " (symlink not permitted here, skipped): OK"))
         with section:
+            # lane-octetring (Entscheidungen 197/198): Kettendoppelbindungen bleiben seitlich; eine Doppelbindung in einem
+            # Ring jeder Größe (auch > 9 Atome) liegt innen; mittige Linien (C=O am Ring) laufen bis zur Achse der
+            # Nachbarbindung wie in Octet. Octet prüft den Makrocyclus in render.check.ts. Erfundene Moleküle.
+            import math as math_or
+            from elucida.formats import cdxml as CDXD_or
+            def lines_or(atoms, bonds, name):
+                """Linien entlang der Doppelbindung: (Abstand von der Achse, Anfang, Ende) in Bindungslängen, Anfang/Ende
+                entlang B->E ab dem Atom B gemessen."""
+                n_ = "".join(f'<n id="{i + 2}" p="{100 + x * 14.4:.2f} {100 + y * 14.4:.2f}"'
+                             + (f' Element="8"><t p="{96 + x * 14.4:.2f} {104 + y * 14.4:.2f}"><s font="3" size="10" '
+                                'face="96">O</s></t></n>' if lab == "O" else "/>") for i, (lab, x, y) in enumerate(atoms))
+                b_ = "".join(f'<b id="{100 + j}" B="{a + 2}" E="{e + 2}"' + (' Order="2"' if t == 2 else "") + "/>"
+                             for j, (a, e, t) in enumerate(bonds))
+                f_ = out / f"octetring_{name}.cdxml"
+                f_.write_text(f'<CDXML BondLength="14.40"><page BoundingBox="0 0 540 720"><fragment id="1">{n_}{b_}'
+                              "</fragment></page></CDXML>", encoding="utf-8")
+                svg_or = CDXD_or.render_svg(f_)[0]
+                f_.unlink()
+                a_, e_ = next((a, e) for a, e, t in bonds if t == 2)
+                (_, ax, ay), (_, ex, ey) = atoms[a_], atoms[e_]
+                L_ = math_or.hypot(ex - ax, ey - ay)
+                ux, uy = (ex - ax) / L_, (ey - ay) / L_
+                found = []
+                for m_ in re.findall(r'<line x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"', svg_or):
+                    x1, y1, x2, y2 = ((float(v) - 100) / 14.4 for v in m_)
+                    dx, dy = x2 - x1, y2 - y1
+                    if abs(dx * uy - dy * ux) > 1e-3 * math_or.hypot(dx, dy):
+                        continue                                            # nicht parallel zur Doppelbindung
+                    t1, t2 = sorted(((x1 - ax) * ux + (y1 - ay) * uy, (x2 - ax) * ux + (y2 - ay) * uy))
+                    o_ = round(-((x1 + x2) / 2 - ax) * uy + ((y1 + y2) / 2 - ay) * ux, 3)    # + = nx/ny in cdxml.py
+                    if t2 > -0.1 and t1 < L_ + 0.1 and abs(o_) < 0.5:
+                        found.append((o_, t1, t2))
+                return sorted(found)
+            c30_or = math_or.cos(math_or.pi / 6)
+            chain_or = lines_or([("C", i * c30_or, -0.5 if i % 2 else 0.0) for i in range(5)],
+                                [(0, 1, 1), (1, 2, 2), (2, 3, 1), (3, 4, 1)], "chain")
+            assert len(chain_or) == 2 and chain_or[0][0] * chain_or[1][0] == 0 and chain_or[0][0] + chain_or[1][0] != 0, \
+                chain_or                                                    # Achse plus seitliche Linie, nicht mittig
+            # Zwölfring mit Methylgruppen außen an beiden Enden (Substituentenregel zeigte nach außen): Linie innen
+            r12_or = 1 / (2 * math_or.sin(math_or.pi / 12))
+            ring12_or = [("C", r12_or * math_or.cos(math_or.pi / 6 * i), r12_or * math_or.sin(math_or.pi / 6 * i)) for i in range(12)]
+            ring12_or += [("C", (r12_or + 1) * math_or.cos(math_or.pi / 6 * i), (r12_or + 1) * math_or.sin(math_or.pi / 6 * i))
+                          for i in (0, 1)]
+            big_or = lines_or(ring12_or, [(0, 12, 1), (1, 13, 1)] + [(i, (i + 1) % 12, 2 if i == 0 else 1) for i in range(12)],
+                              "ring12")
+            assert [o_ for o_, _, _ in big_or][:1] == [0] and len(big_or) == 2 and big_or[1][0] > 0, big_or   # Ringmitte: +
+            # Cyclohexanon: C=O mittig, beide Linien beginnen hinter dem Ring-C (bis zur Achse der Ringbindungen,
+            # h/tan 120 Grad = -0.052 Bindungslängen)
+            hex_or = [("C", math_or.cos(math_or.pi / 3 * i), math_or.sin(math_or.pi / 3 * i)) for i in range(6)]
+            co_or = lines_or(hex_or + [("O", 2.0, 0.0)], [(i, (i + 1) % 6, 1) for i in range(6)] + [(0, 6, 2)], "ketone")
+            assert len(co_or) == 2 and abs(co_or[0][0] + co_or[1][0]) < 1e-3 and co_or[0][0] != 0, co_or
+            assert all(-0.07 < t1 < -0.035 for _, t1, _ in co_or), co_or
+            report.append("Own structure drawing: chain double bond keeps its side, a double bond in a 12-ring lies "
+                          "inside (rings of any size), a centred C=O runs on to the neighbouring bonds' axes: OK")
+        with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
             import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-

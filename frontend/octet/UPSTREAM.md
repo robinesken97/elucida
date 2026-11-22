@@ -72,3 +72,8 @@ its files `sides: 1` at the top; files without the mark (older Octet) keep Octet
 minus (en dash) until its ink's middle is level with a plus's, and draws a free written label's trailing sign (BF4-) as a
 charge sign (bonded labels such as SO3- keep the sign in the text, since labelOf measures it there); a count before the sign is a charge only for a monatomic ion
 (metal cation Fe2+, chalcogenide O2-) or after a space (SO4 2-), else a count (NH4+, SO42-, I3-) (writtenCharge); signAt in cdxml.ts follows. Upstream has neither; offer them upstream.
+
+Local change on November 22: a double bond in a ring of more than nine atoms still counts as a ring bond. When
+ringsThrough (which stops at nine atoms) finds no ring, render.ts takes the smallest ring found breadth first
+(shortestRing), so a macrocycle's double bond goes inside it instead of taking a chain's side. The own drawer
+(elucida/formats/cdxml.py) searches rings of any size too.

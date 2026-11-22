@@ -771,3 +771,23 @@ console.log("render.check: written labels ok");
   assert.deepEqual([corner(), corner(0.25)], [40 - 3, 40 - 2.5]);
   console.log("render.check: a rounded box's own corner ok");
 }
+
+// Elucida: a double bond in a ring of any size goes inside it; ringsThrough stops at nine atoms, so a twelve-membered
+// ring's bond would otherwise take a chain's side. A chain double bond keeps its side (toward more substituents).
+{
+  const c30 = Math.cos(Math.PI / 6);
+  const mol = (atoms: [string, number, number][], bonds: [number, number, number][]): Mol => ({
+    atoms: atoms.map(([label, x, y]) => ({ label, location: [x, y, 0] as [number, number, number] })),
+    bonds: bonds.map(([a, b, type]) => ({ type, atoms: [a, b] as [number, number] })) });
+  const doubles = (m: Mol) => render(m, S, ink).sides!.filter((_, k) => m.bonds[k].type === 2);
+  const chain = mol([...Array(5)].map((_, i): [string, number, number] => ["C", i * c30, i % 2 ? 0.5 : 0]), [[0, 1, 1], [1, 2, 2], [2, 3, 1], [3, 4, 1]]);
+  assert.notEqual(doubles(chain)[0], 0, "a chain double bond keeps its side");
+  const r12 = 1 / (2 * Math.sin(Math.PI / 12));
+  // Methyls outward on both ends of the double bond (listed first), so the chain rule would point out of the ring.
+  const big = mol([...[...Array(12)].map((_, i): [string, number, number] => ["C", r12 * Math.cos((Math.PI / 6) * i), r12 * Math.sin((Math.PI / 6) * i)]),
+    ...[0, 1].map((i): [string, number, number] => ["C", (r12 + 1) * Math.cos((Math.PI / 6) * i), (r12 + 1) * Math.sin((Math.PI / 6) * i)])],
+    [[0, 12, 1], [1, 13, 1], ...[...Array(12)].map((_, i): [number, number, number] => [i, (i + 1) % 12, i ? 1 : 2])]);
+  assert.notEqual(doubles(big)[0], 0, "a macrocycle's double bond is not centred");
+  assert.equal(render(big, S, ink).polygons.filter((poly) => Math.hypot(...centroid(poly)) < r12 * L * Math.cos(Math.PI / 12) - 1).length, 1, "inside the twelve-membered ring");
+  console.log("render.check: a macrocycle's double bond inside ok");
+}

@@ -333,7 +333,7 @@ class _Doc:
             if pos in ("Right", "Left"):                # ChemDraw: „Right“ = links von B→E im Bild (y nach unten)
                 side = (1 if pos == "Right" else -1) * (1 if self.old_sides else -1)
             elif pos != "Center":
-                rc_ = self.ring_center(u, v, nodes, adj)
+                rc_ = self.ring_center(u, v, nodes, adj, max_len=len(nodes))   # auch Makrocyclen: Ring, nicht Kette
                 if rc_ is not None:
                     side = 1 if (rc_[0] - a[0]) * nx + (rc_[1] - a[1]) * ny > 0 else -1
                 elif len(adj[u]) > 1 and len(adj[v]) > 1:
@@ -341,8 +341,24 @@ class _Doc:
                              for k in (adj[u] | adj[v]) - {u, v})
                     side = 1 if w_ > 0 else -1
             if side == 0:                              # mittig (z. B. C=O am Rand)
-                seg(off(a, s / 2), off(c, s / 2))
-                seg(off(a, -s / 2), off(c, -s / 2), dash="1.5,1.5" if order == "1.5" else None)
+                ux, uy = dx / L, dy / L
+
+                def reach(x, y, p, q, k):
+                    """Wie Octet: an einem unbeschrifteten Ende läuft die Linie bis zur Achse der nächsten
+                    Nachbarbindung auf ihrer Seite (negativ = über das Atom hinaus)."""
+                    if labels.get(x):
+                        return 0.0
+                    ang = [math.acos(max(-1.0, min(1.0, ((q[0] - p[0]) * (nodes[j][0] - p[0]) + (q[1] - p[1]) * (nodes[j][1] - p[1]))
+                                                   / ((math.hypot(nodes[j][0] - p[0], nodes[j][1] - p[1]) or 1.0) * L))))
+                           for j in adj[x] - {y}
+                           if ((nodes[j][0] - a[0]) * nx + (nodes[j][1] - a[1]) * ny) * k > 0]
+                    if not ang or math.sin(min(ang)) < 0.05:
+                        return 0.0
+                    return abs(k) / math.tan(min(ang))
+                for k in (s / 2, -s / 2):
+                    t0, t1 = reach(u, v, a, c, k), reach(v, u, c, a, k)
+                    seg(off((a[0] + ux * t0, a[1] + uy * t0), k), off((c[0] - ux * t1, c[1] - uy * t1), k),
+                        dash="1.5,1.5" if order == "1.5" and k < 0 else None)
                 return
             seg(a, c, dash="1.5,1.5" if disp == "Dash" else None)
             ins = s * 0.577                            # innere Linie wie im Sechsring eingerückt
