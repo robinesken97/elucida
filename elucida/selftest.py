@@ -24018,7 +24018,8 @@ def _g_nmr_own(ctx):
                 ws_f7 = pg_f7.path_workspace
                 figs_f7.clear()
                 ws_f7.tabs.setCurrentIndex(next(j_ for j_ in range(ws_f7.tabs.count()) if "3D" in ws_f7.tabs.tabText(j_)))
-                pump_f7(2.5)
+                _until(lambda: figs_f7, pump_f7, limit=20.0)          # CI langsamer: auf das 3D-Bild warten, nicht fest
+                pump_f7(0.5)
             finally:
                 XR_f7.XrayFigure._labels = lab_f7
             assert figs_f7, "no 3D figure"
