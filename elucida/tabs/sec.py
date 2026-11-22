@@ -752,7 +752,7 @@ class SECTab(TABS.FigureTab):
             cfg["ylim"] = [ymin - 0.08 * span, st["ymax"] if st["ymax"] > 0 else ymin + 1.15 * span]
             cfg["xlabel"] = f"E [V vs. {CV.axis_ref(ref_label)}]" if Eax is not None else T("sec_index")
             cfg["ylabel"] = (("Δ raw signal" if st["diff"] else "raw signal") if st["quantity"] == "raw"
-                             else ("ΔA" if st["diff"] else "A")) + " [a.u.]"
+                             else ("ΔA" if st["diff"] else "A")) + " [arb. u.]"
         elif st["mode"] == "heatmap":
             curves, labels = [], []
             cfg["heatmap"] = self._heatmap(sp, sel, Eax, ref_label, lam0, ys, x0, x1)
@@ -804,7 +804,7 @@ class SECTab(TABS.FigureTab):
             cfg["ylim"] = [ymin - 0.03 * span, st["ymax"] if st["ymax"] > 0 else float(vals.max()) + 0.1 * span]
             cfg["xlabel"] = "wavelength [nm]"
             cfg["ylabel"] = (("Δ raw signal" if st["diff"] else "raw signal") if st["quantity"] == "raw"
-                             else ("ΔA" if st["diff"] else "absorbance")) + " [a.u.]"
+                             else ("ΔA" if st["diff"] else "absorbance")) + " [arb. u.]"
         if self.gone:
             info.append(T("sec_gone", n=self.gone))
         if sp[0].get("merged"):
@@ -873,7 +873,7 @@ class SECTab(TABS.FigureTab):
         self._heat = dict(kind=kind, lam=lam_w, Z=Z, yv=yv, hover=hover, q=q, m=m, x0=x0, x1=x1, ylabel=ylabel,
                           nums=[i + 1 for i in sel])
         return dict(img=img, extent=(float(x0), float(x1), 0.5, n + 0.5), cmap=cmap, vmin=vmin, vmax=vmax,
-                    clabel=q + " [a.u.]", yticks=ticks, yticklabels=[ylab[k - 1] for k in ticks])
+                    clabel=q + " [arb. u.]", yticks=ticks, yticklabels=[ylab[k - 1] for k in ticks])
 
     def build(self, fig):
         quiet = TABS.core.LOG

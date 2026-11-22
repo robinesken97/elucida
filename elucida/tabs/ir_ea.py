@@ -630,8 +630,8 @@ STACK_GAP = 0.12                               # Abstand der gestapelten Spektre
 
 
 def exc_text(nm):
-    """Anregungswellenlänge ohne überflüssige Stellen: 785, 632.8."""
-    return f"{nm:.1f}".rstrip("0").rstrip(".")
+    """Anregungswellenlänge ganzzahlig wie jedes λ (785, 632.8 -> 633; x.5 aufgerundet); der Zustand behält den Wert."""
+    return wn_text(nm)
 
 
 def raman_line(peaks, exc=None):
@@ -1263,7 +1263,7 @@ class IRMSTab(TABS.FigureTab):
         row.addWidget(b2)
         f.addRow(T("raman_file"), row)
         # 0 = nicht angegeben: ohne Eingabe steht keine Anregung in SI und Unterschrift (nie eine Vorgabe)
-        self.sp_ram_exc = QDoubleSpinBox(decimals=1, minimum=0.0, maximum=1600.0, singleStep=1.0, suffix=" nm",
+        self.sp_ram_exc = QDoubleSpinBox(decimals=0, minimum=0.0, maximum=1600.0, singleStep=1.0, suffix=" nm",
                                          value=st["ram_exc"] or 0.0)
         self.sp_ram_exc.setSpecialValueText(T("fixt_raman_exc_none"))
         self.sp_ram_exc.setToolTip(T("raman_exc_tip"))
@@ -1885,7 +1885,7 @@ class IRMSTab(TABS.FigureTab):
         self.sp_struct_w.setValue(st.get("struct_w", 20.0))
         c_ = st.get("ir_color") or IR_COLOR
         self.btn_ircolor.setProperty("color", c_)
-        self.btn_ircolor.setStyleSheet(f"background-color: {c_}; border: 1px solid {TABS.STYLE.swatch_border()};")
+        self.btn_ircolor.setStyleSheet(TABS.STYLE.swatch_css(c_))
         self.sp_prom.setValue(st.get("prominence", 5.0))
         self.sp_ir_lw.setValue(st.get("ir_lw", 1.0))
         if getattr(self, "lbl_irc", None) is not None:      # berechnetes IR
@@ -1898,7 +1898,7 @@ class IRMSTab(TABS.FigureTab):
             self.cb_irc_si.setChecked(bool(st.get("irc_si", True)))
             c2_ = st.get("irc_color") or IRC_COLOR
             self.btn_irc_color.setProperty("color", c2_)
-            self.btn_irc_color.setStyleSheet(f"background-color: {c2_}; border: 1px solid {TABS.STYLE.swatch_border()};")
+            self.btn_irc_color.setStyleSheet(TABS.STYLE.swatch_css(c2_))
         if getattr(self, "lbl_ram", None) is not None:      # Raman
             self.lbl_ram.setText(Path(st["ram_file"]).name if st.get("ram_file") else "–")
             self.sp_ram_exc.setValue(st.get("ram_exc") or 0.0)
@@ -1907,11 +1907,16 @@ class IRMSTab(TABS.FigureTab):
             self.cmb_ram_view.setCurrentIndex(max(0, self.cmb_ram_view.findData(st.get("ram_view", "ir"))))
             c3_ = st.get("ram_color") or RAMAN_COLOR
             self.btn_ram_color.setProperty("color", c3_)
-            self.btn_ram_color.setStyleSheet(f"background-color: {c3_}; border: 1px solid {TABS.STYLE.swatch_border()};")
+            self.btn_ram_color.setStyleSheet(TABS.STYLE.swatch_css(c3_))
         self.cmb_mode.setCurrentIndex(self.cmb_mode.findData(self.mode()))
         self.sync_yrange()
         self.fill_doc()
         self._loading = False
+
+    def _ram_exc_value(self):
+        """Feld zeigt λ ganzzahlig; ein gespeicherter Wert mit Nachkommastelle (632.8) bleibt, solange das Feld ihn zeigt."""
+        v, old = self.sp_ram_exc.value(), self.st.get("ram_exc")
+        return old if old and v and float(wn_text(old)) == v else (v or None)
 
     def collect(self):
         st = self.st
@@ -1930,7 +1935,7 @@ class IRMSTab(TABS.FigureTab):
                   irc_scale=self.sp_irc_scale.value(), irc_fwhm_on=self.cb_irc_fwhm.isChecked(),
                   irc_fwhm=self.sp_irc_fwhm.value(), irc_tol_on=self.cb_irc_tol.isChecked(),
                   irc_tol=self.sp_irc_tol.value(), irc_si=self.cb_irc_si.isChecked(),
-                  ram_exc=self.sp_ram_exc.value() or None, ram_prom=self.sp_ram_prom.value(),
+                  ram_exc=self._ram_exc_value(), ram_prom=self.sp_ram_prom.value(),
                   ram_calc=self.cb_ram_calc.isChecked())
         if getattr(self, "sp_ymin", None) is not None:
             lo, hi = self.sp_ymin.value(), self.sp_ymax2.value()

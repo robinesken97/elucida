@@ -952,7 +952,8 @@ class DftPages:
                 text = html.unescape(re.sub(r"<[^>]+>", "", cap))
             except Exception:
                 text = ""
-        self.lbl_cap_bar.set_full(f"{T('caption_bar')} · Figure Sn: {text}" if text else "")
+        self.lbl_cap_bar.set_full(f"{T('caption_bar')} · Figure Sn: {text}" if text else "",
+                                  rich=f"{html.escape(T('caption_bar'))} · Figure Sn: {cap}" if text else None)
 
     def sync_style(self):
         from elucida.tabs import diagram_layout as DL
@@ -1174,7 +1175,7 @@ class DftPages:
             color = node.get("color") or self._level_auto_color(row, paths)
             b = self.btn_level_color
             b.setProperty("color", color)
-            b.setStyleSheet(f"{b.property('cellcss')}background-color: {color}; border: 1px solid {TABS.STYLE.swatch_border()};")
+            b.setStyleSheet(TABS.STYLE.swatch_css(color, b.property('cellcss')))
         mr_calc = self._level_mr_calc(uid) if uid else None
         if mr_calc is not None:
             from elucida.formats.multireference import result_label

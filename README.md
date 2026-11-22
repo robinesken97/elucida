@@ -34,14 +34,14 @@
 
 ## Why Elucida
 
-Characterising a new compound means a dozen instruments, a dozen file formats and, at the end, one Supporting
+Characterizing a new compound means a dozen instruments, a dozen file formats and, at the end, one Supporting
 Information that has to be consistent. Elucida keeps all of it in one place.
 
 - **One folder per compound.** Spectra, structures and calculations live together; a project groups the compounds of a
   paper and shows what is still missing.
 - **Figures ready for the paper.** One consistent style, PDF and SVG as vectors, sized for half an A4 page. The preview
   is true to scale.
-- **The SI writes itself.** Characterisation paragraph, captions, data-processing text and crystal data go straight to
+- **The SI writes itself.** Characterization paragraph, captions, data-processing text and crystal data go straight to
   Word, with templates for Wiley, ACS, RSC and Nature.
 - **Numbers you can trace.** Every fit is described in a methods text, and the UV-Vis report recalculates ε with plain
   Excel formulas.

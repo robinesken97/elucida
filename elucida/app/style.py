@@ -136,6 +136,15 @@ def swatch_border():
     return SWATCH_BORDER[_mode]
 
 
+def swatch_css(color, css=""):
+    """Stylesheet eines Farbfelds; gesperrt (Karte oder Feld aus) blass wie die ausgegrauten Farbrollen (`sync_roles`:
+    30 % Farbe im Grau deaktivierter Texte), sonst wirkte ein gesperrtes Feld bedienbar (Sichtung 1.4.0)."""
+    q, grey = QColor(color), QColor(colors()["disabled"])
+    pale = QColor(*(round(0.3 * a + 0.7 * b) for a, b in zip(q.getRgb()[:3], grey.getRgb()[:3]))).name()
+    return (f"QPushButton {{ {css or ''}background-color: {color}; border: 1px solid {swatch_border()}; }} "
+            f"QPushButton:disabled {{ background-color: {pale}; border-color: {colors()['border_strong']}; }}")
+
+
 ICON_PX, BUTTON_ICON_PX = 16, 20       # Symbol; Feld des Symbols in Knöpfen (Stylesheet `icon-size`)
 _ICON_SCALES = (1, 1.25, 1.5, 1.75, 2, 2.5, 3)
 _LONE = set()                          # cacheKey der Symbole für Knöpfe ohne Text (Selbsttest)
@@ -257,12 +266,44 @@ def empty_note(view, text):
 
 
 def hide_when_empty(table):
-    """Dateiliste ohne Einträge ausblenden (Leer-Zustand: die Anleitung rechts nennt Dateien und ersten Schritt)."""
-    upd = lambda *_: shiboken6.isValid(table) and table.setVisible(table.model().rowCount() > 0)   # Neuaufbau: gelöscht
+    """Dateiliste ohne Einträge ausblenden (Leer-Zustand: die Anleitung rechts nennt Dateien und ersten Schritt); mit
+    Einträgen so hoch wie ihre Zeilen (ui.md: Tabellen der linken Spalte), höchstens so hoch wie vorgesehen, darüber
+    scrollen – vorher standen unter ein, zwei Dateien 90–120 px leer (Sichtung 1.4.0)."""
+    def upd(*_):
+        if not shiboken6.isValid(table):                     # Neuaufbau: gelöscht
+            return
+        n = table.model().rowCount()
+        table.setVisible(n > 0)
+        if not n:
+            return
+        rh, fw = table.verticalHeader().defaultSectionSize(), 2 * table.frameWidth()
+        hdr = table.horizontalHeader().sizeHint().height() if not table.horizontalHeader().isHidden() else 0
+        if getattr(table, "_hug_top", None) is None:         # vorgesehene Höhe: Höchstmaß, sonst Wunschgröße/Mindestmaß
+            mx = table.maximumHeight()
+            table._hug_top = max(mx if mx < 16777215 else table.sizeHint().height(), table.minimumHeight())
+        h = hdr + min(n, max(1, (table._hug_top - hdr - fw) // rh)) * rh + fw
+        table.setMinimumHeight(h)
+        table.setMaximumHeight(h)
+    table._hug_upd = upd                                     # tidy (whole_rows) und Anzeigen rechnen neu: Zeilenhöhe/Kopf
+    _OnShow(table, upd)                                      # stehen erst nach Stylesheet und tidy fest
     m = table.model()
     for sig in (m.rowsInserted, m.rowsRemoved, m.modelReset):
         sig.connect(upd)
     upd()
+
+
+class _OnShow(QObject):
+    """Ruft `cb`, wenn `w` gezeigt wird oder Schrift/Stil wechselt."""
+
+    def __init__(self, w, cb):
+        super().__init__(w)
+        self.cb = cb
+        w.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (QEvent.Show, QEvent.FontChange, QEvent.StyleChange):
+            self.cb()
+        return False
 
 
 class _CellDelegate(QStyledItemDelegate):
@@ -592,6 +633,11 @@ class FitGrid(QTableWidget):
             ok, total = place(hh)
         if not ok:
             hh.setSectionResizeMode(QHeaderView.ResizeToContents)
+        elif getattr(self, "lead_peer", None) is not None and len(cols) > 1:
+            self._lead_align(hh, cols, width)
+        f_ = getattr(self, "lead_follower", None)            # führende Tabelle: die folgende neu ausrichten
+        if f_ is not None and shiboken6.isValid(f_) and not f_.isHidden():
+            f_.fit()
         if hh.length() != sum(hh.sectionSize(i) for i in range(hh.count())):   # Qt: verborgene Spalte behielt ihre Breite
             for i in range(hh.count()):                  # als Lücke (DFT HOMA nach zweizeiligem Kopf, Sichtung): neu verbergen
                 if hh.isSectionHidden(i):
@@ -611,6 +657,28 @@ class FitGrid(QTableWidget):
             rows_h = self._rows_h = hh.sizeHint().height() + self.rowCount() * CHECK_ROW_H + 2   # Kopf ggf. zweizeilig
             over = total > width
             self.setFixedHeight(rows_h + (self.horizontalScrollBar().sizeHint().height() if over else 0))
+
+    def _lead_align(self, hh, cols, width):
+        """Zwei Tabellen untereinander (DFT-Energietabelle): diese Tabelle übernimmt die Breite der ersten Spalte der
+        führenden (`lead_peer`), die übrigen Spalten teilen sich den Rest – sonst fluchtete „Struktur“ nicht (Sichtung
+        1.4.0). Nur wenn die übrigen Spalten ungekürzt passen, sonst bleibt die eigene Verteilung."""
+        p = self.lead_peer
+        if not shiboken6.isValid(p) or p.isHidden():
+            return
+        p0 = next((i for i in range(p.columnCount()) if not p.isColumnHidden(i)), None)
+        if p0 is None:
+            return
+        w0 = p.columnWidth(p0)
+        need = {i: max(hh.sectionSizeHint(i), self.sizeHintForColumn(i)) for i in cols}
+        rest = cols[1:]
+        if w0 < need[cols[0]] and self.elide_col != cols[0] or sum(need[i] for i in rest) > width - w0:
+            return
+        hh.setSectionResizeMode(QHeaderView.Fixed)
+        hh.resizeSection(cols[0], w0)
+        even = max(need[i] for i in rest) * len(rest) <= width - w0      # gleich breit wie bei Stretch, sonst nach Inhalt
+        extra, left = divmod(width - w0 - (0 if even else sum(need[i] for i in rest)), len(rest))
+        for k, i in enumerate(rest):
+            hh.resizeSection(i, (0 if even else need[i]) + extra + (k < left))
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
@@ -766,6 +834,7 @@ def summary_grid(headers, rich=()):
         t.setItemDelegateForColumn(c, RichDelegate(t, sci))
     t.verticalHeader().setVisible(False)
     t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    t.setProperty("rows_fit", True)                          # result_page: wächst nie mit der Karte
     t.hide()
     return t
 
@@ -991,7 +1060,19 @@ class SiText(HintLabel):
         if hold != getattr(self, "_hold", None):
             self._hold = hold
             self.setAlignment(Qt.AlignCenter if hold else Qt.AlignLeft | Qt.AlignTop)
+        self._fit_height()
         self.sync()
+
+    def _fit_height(self):
+        """Mindesthöhe = Höhe des umbrochenen Texts bei der eigenen Breite: QFormLayout gab der Zeile mit dem Text weniger
+        Höhe als heightForWidth (CV Messbedingungen DE: letzte Zeile fehlte ohne Rollleiste, Sichtung 1.4.0)."""
+        h = self.heightForWidth(self.width()) if self.width() > 0 and not self._hold else 0
+        if h > 0 and h != self.minimumHeight():
+            self.setMinimumHeight(h)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._fit_height()
 
 
 _SUB_DIGITS = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
@@ -1610,6 +1691,9 @@ def field_heights(root, buttons=True):
 def whole_rows(t):
     """Tabelle in der Höhe (Höchstmaß, sonst sizeHint: Qt 192 px) auf ganze Zeilen kürzen, keine halbe Zeile am unteren
     Rand (Sichtung 2026-11-21); Tabellen mit fester Höhe, Ergebnisseite oder so hoch wie die Zeilen bleiben."""
+    if getattr(t, "_hug_upd", None) is not None:             # Dateiliste (hide_when_empty): so hoch wie ihre Zeilen
+        t._hug_upd()
+        return
     if t.minimumHeight() == t.maximumHeight() or t.property("rows_snapped") or getattr(t, "_rows_h", None) is not None \
             or t.property("hug"):
         return
@@ -2294,10 +2378,11 @@ class ChipRow(QWidget):
             b.setVisible(not hidden)
             b.installEventFilter(self)
 
-    PADS = {"": 11, "1": 7, "2": 4}                          # Innenrand je Dichtestufe (wie im Stylesheet)
+    PADS = {"": 11, "1": 7}                                  # Innenrand je Dichtestufe (wie im Stylesheet); 4 px lag
+                                                              # der Text in der Rundung (Sichtung 1.4.0, IR/Datenarten)
 
     def _fit(self, width):
-        """Chips bleiben in einer Zeile (Nutzerwunsch 2026-11-11): reicht die Breite nicht, rücken sie in zwei Stufen
+        """Chips bleiben in einer Zeile (Nutzerwunsch 2026-11-11): reicht die Breite nicht, rücken sie eine Stufe
         zusammen (weniger Innenrand und Abstand). Passen sie auch dann nicht in eine Zeile, gilt die Stufe mit den
         wenigsten Zeilen, bei Gleichstand die lockerste. -> Abstand"""
         vis = [b for b in self.boxes if not b.isHidden()]
@@ -2316,7 +2401,7 @@ class ChipRow(QWidget):
                     n, x = n + 1, 0
                 x += w + gap
             return n
-        level, gap = min(((lv, g) for lv, g in (("", self.GAP), ("1", 5), ("2", 4))), key=lambda p: rows(*p))
+        level, gap = min(((lv, g) for lv, g in (("", self.GAP), ("1", 5))), key=lambda p: rows(*p))
         if level != now:
             for b in self.boxes:
                 b.setProperty("tight", level)
@@ -3309,7 +3394,6 @@ QCheckBox::indicator {{ background: {c['button']}; border: 1px solid {c['border_
 QCheckBox[chip="true"] {{ spacing: 0; padding: 0 11px; min-height: 24px; max-height: 24px; min-width: 20px; border-radius: 13px;
     border: 1px solid {c['border_strong']}; color: {c['text2']}; background: transparent; }}
 QCheckBox[chip="true"][tight="1"] {{ padding: 0 7px; }}
-QCheckBox[chip="true"][tight="2"] {{ padding: 0 4px; }}
 QCheckBox[chip="true"]::indicator {{ width: 0; height: 0; border: none; margin: 0; background: transparent; image: none; }}
 QCheckBox[chip="true"]:hover {{ border-color: {c['accent']}; color: {c['text']}; }}
 QCheckBox[chip="true"]:checked {{ background: {_mix(c['accent'], c['card'], 0.16)}; border-color: {c['accent']}; color: {c['text']}; }}

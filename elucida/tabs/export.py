@@ -244,13 +244,26 @@ def off_names(main, feed="si"):
 
 def two_lines(text, fm, width):
     """Teilname auf höchstens zwei Zeilen: Umbruch am letzten Leerzeichen, das passt, sonst mitten im Wort (Dateinamen);
-    Zeile 2 am Ende gekürzt."""
+    Zeile 2 in der Mitte gekürzt: das Ende eines Dateinamens unterscheidet die Rechnungen (Sichtung 1.4.0, 1500 px)."""
     if fm.horizontalAdvance(text) <= width:
         return [text]
     k = max([i for i in range(1, len(text) + 1) if fm.horizontalAdvance(text[:i]) <= width] or [1])
     sp = text.rfind(" ", 0, k + 1)
     cut = sp if sp > 0 else k
-    return [text[:cut].rstrip(), fm.elidedText(text[cut:].lstrip(), Qt.ElideRight, width)]
+    return [text[:cut].rstrip(), _elide_middle(text[cut:].lstrip(), fm, width)]
+
+
+def _elide_middle(s, fm, width):
+    """Wie elidedText(ElideMiddle), aber jede Probe als ganze Zeile mit `fm` gemessen: elidedText rechnet die Laufweite
+    nicht mit ein, die Zeile war breiter als das Label (CI Linux, 130 % Laufweite; Arial 150 % auch unter macOS)."""
+    if fm.horizontalAdvance(s) <= width:
+        return s
+    for keep in range(len(s) - 1, 0, -1):
+        head = keep // 2
+        c = s[:head] + "…" + s[len(s) - (keep - head):]
+        if fm.horizontalAdvance(c) <= width:
+            return c
+    return "…"
 
 
 class TwoLineName(QLabel):

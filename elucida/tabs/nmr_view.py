@@ -571,7 +571,7 @@ class NMRView(QWidget):
                 w.blockSignals(False)
             elif isinstance(w, QPushButton):                 # Farbfeld (TABS.color_button)
                 w.setProperty("color", v)
-                w.setStyleSheet(f"{w.property('cellcss') or ''}background-color: {v}; border: 1px solid {STYLE.swatch_border()};")
+                w.setStyleSheet(STYLE.swatch_css(v, w.property('cellcss') or ''))
         if "insets" in d:
             self.insets = [dict(i) for i in d["insets"]]
         if "mult_label" in d and hasattr(self, "cmb_mult"):

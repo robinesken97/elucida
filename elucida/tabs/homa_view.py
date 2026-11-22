@@ -190,17 +190,16 @@ class HomaView:
         self.lbl_hint.setText(T("homa_hint", n=len(rows), ok=n_ok) if e is not None else "")
 
     def method_sentence(self, markup=False):
-        """Satz unter der Tabelle (markup=False, Formelzeichen über SciLabel) bzw. Fußnote der SI-Tabelle (Markup);
-        englisch, ohne Programmnamen, mit Zitat."""
+        """Satz unter der Tabelle (markup=False: in der Sprache der Oberfläche, Formelzeichen über SciLabel) bzw.
+        Fußnote der SI-Tabelle (Markup, englisch); ohne Programmnamen, mit Zitat."""
         p = H.PARAMS[self.tab.st.get("homa_var", "homa")]
+        if not markup:                                        # Oberfläche: in der Sprache der Oberfläche
+            return T("homa_method", name=p["name"], cite=p["cite"], engeo=H.EN_GEO_CITE,
+                     src=T("homa_src_calc" if self.nics else "homa_src_xray"))
         src = "calculated geometry" if self.nics else "atomic coordinates"
-        if markup:
-            f = (f"{p['name']} = 1 − (1/*n*) Σ *α*(*R*_{{opt}} − *R*_{{i}})^{{2}} with *R*_{{opt}} and *α* per bond "
-                 f"type from {XRAY.esc_markup(p['cite'])}")
-            ri = "*R*_{i}"
-        else:
-            f = f"{p['name']} = 1 − (1/n) Σ α (R_opt − R_i)² with R_opt and α per bond type from {p['cite']}"
-            ri = "R_i"
+        f = (f"{p['name']} = 1 − (1/*n*) Σ *α*(*R*_{{opt}} − *R*_{{i}})^{{2}} with *R*_{{opt}} and *α* per bond "
+             f"type from {XRAY.esc_markup(p['cite'])}")
+        ri = "*R*_{i}"
         return (f"{f}; bond lengths {ri} from the {src}. EN and GEO (HOMA = 1 − EN − GEO; {H.EN_GEO_CITE}) are given "
                 "only for rings with a single bond type; rings with a bond type without parameters have no value.")
 

@@ -79,7 +79,7 @@ DEFAULTS = {
     "xlim": None,
     "ylim": None,                            # default: [0, max_abs_fit]
     "xlabel": "wavelength [nm]",
-    "ylabel": "absorbance [a.u.]",
+    "ylabel": "absorbance [arb. u.]",
     "frame": False,                          # Rahmen oben/rechts
     "tick_direction": "out",
     "line_color": "black",

@@ -17,8 +17,20 @@ def si_extra(calc, entry):
     r = selected_result(calc, entry)
     if not entry.get("mr_si") or r is None:
         return []
-    lines = [re.sub(r"(?<!\w)-(?=\d)", "−", t) for t in display_lines(r, entry)]
-    return [(t, html.escape(t)) for t in lines]
+    lines = [_minus(t) for t in display_lines(r, entry)]
+    return [(t, line_html(t)) for t in lines]
+
+
+def _minus(t):
+    return re.sub(r"(?<!\w)-(?=\d)", "−", t)
+
+
+def line_html(t):
+    """Eine Textzeile als HTML wie im Satz (Vorschau und Word): ΔE_ST, E(S), kcal mol−1, Eh; der Klartext bleibt."""
+    h = html.escape(_minus(t))
+    h = h.replace("ΔE_ST", "Δ<i>E</i><sub>ST</sub>").replace("mol−1", "mol<sup>−1</sup>")
+    h = re.sub(r"\bE\((S|T)\)", r"<i>E</i>(\1)", h)
+    return re.sub(r"\bEh\b", "E<sub>h</sub>", h)
 
 
 def _kcal_text(kcal):
@@ -110,12 +122,13 @@ class MultireferencePage(QGroupBox):
                           T('rp_select_triplet'), None)
             for j, s in enumerate((r or {}).get("states", [])):
                 if s["multiplicity"] == mult:
-                    combo.addItem(f"root {s['root']} {s.get('irrep', '')} · {s['energy']} Eh", j)
+                    combo.addItem(T("mr_root_item", root=s["root"], irrep=f" {s['irrep']}" if s.get("irrep") else "",
+                                    energy=_minus(str(s["energy"]))), j)
             combo.setCurrentIndex(max(0, combo.findData(e.get(key))))
         self.sign.setCurrentIndex(max(0, self.sign.findData(e.get("mr_gap_sign", "S-T"))))
         self.si.setEnabled(r is not None)
         self.card.setVisible(self.enabled and self.choice.count() > 1)   # ohne Multireferenz-Ergebnis keine Karte (wie der Reiter)
-        self.text.setPlainText("\n\n".join(display_lines(r, e)) if r else "")
+        self.text.setHtml("".join(f"<p>{line_html(t)}</p>" for t in display_lines(r, e)) if r else "")
         self.stack.setCurrentIndex(1 if r else 0)
         self.loading = False
 

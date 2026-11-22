@@ -71,7 +71,7 @@ project folder.
    without a figure (tables, SI text) and a withheld NMR spectrum only show a notice. NMR copies the range from the
    field, not the preview zoom.
 6. **Create the SI:** **File → Export SI section (Word) …** collects everything that is ready in one Word file: synthesis,
-   characterisation paragraph (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis), figures two per page, crystal data
+   characterization paragraph (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis), figures two per page, crystal data
    and DFT coordinates. Afterwards the program lists what is still missing.
 
 ## Quick start: a project with several compounds
@@ -85,7 +85,7 @@ project folder.
    compound to open it and work as in the quick start above. The path at the top in the toolbar,
    **Overview › <project> › <compound> ▾**, leads back to the project or the overview and switches directly to another
    compound of the project (also File → Back to project, Ctrl+Shift+P; File → Back to overview, Ctrl+Shift+H).
-   **New group …** organises the compounds (e.g. precursors, salts, NHOs; right-click a compound → Group, or drag it
+   **New group …** organizes the compounds (e.g. precursors, salts, NHOs; right-click a compound → Group, or drag it
    into a group); in the complete SI the groups become sub-chapters of synthesis and NMR (2.1, 2.2 …).
    Drag the rows or use **Sort by name** to change the order – it is the order in the SI and in the dataset. The
    search field at the top of the welcome page finds compounds in all your projects (name/number, lab code such as
@@ -102,13 +102,13 @@ project folder.
    datasets** or **Data packages (zip)** at the top: one zip per compound, `CompChem.zip`, `README.txt` and license text in
    `datapack/`, ready for the upload (e.g. TUDOdata).
 
-To try it: **Help → Open example project** creates a project with two invented compounds: a precursor with the usual characterisation and its product with matching data for all tabs. The first time per program version it is created (progress at the bottom right), afterwards it opens at once; changes to the example are replaced when it is opened again.
+To try it: **Help → Open example project** creates a project with two invented compounds: a precursor with the usual characterization and its product with matching data for all tabs. The first time per program version it is created (progress at the bottom right), afterwards it opens at once; changes to the example are replaced when it is opened again.
 
 ## Guides
 
 Step by step through one workflow, with pictures:
 
-- [Synthesis and characterisation to the SI](anleitungen/synthese-bis-si.en.md) – scheme, procedure, NMR, IR,
+- [Synthesis and characterization to the SI](anleitungen/synthese-bis-si.en.md) – scheme, procedure, NMR, IR,
   HRMS, elemental analysis, SI section
 - [UV-Vis: ε from a dilution series](anleitungen/uvvis-epsilon.en.md)
 - [Electrochemistry: CV, SEC and H-cell](anleitungen/elektrochemie.en.md)
@@ -329,7 +329,7 @@ opens these compounds briefly one after another, writes the snapshot again and r
   overlaid or stacked, one legend entry per compound. **Structures** shows the structure of each compound, by default
   in the colour of its curve (**Structure in curve colour** off: black), at the highest point of its own curve or, when
   stacked, on the right above its own baseline; draggable, all at one scale (**Size** = width of the widest).
-  **Normalisation [nm]** (for normalized absorption): the maximum within this range becomes 1, e.g. the band above
+  **Normalization [nm]** (for normalized absorption): the maximum within this range becomes 1, e.g. the band above
   400 nm instead of the UV band; clear the field = auto (maximum of the whole measurement). A compound without a band
   in the range is not shown (note below the figure); the caption states the range. With several ε series, choose the series per compound.
   **IR:** transmittance or absorbance as in the IR tab, wavenumber falling to the right; a compound whose IR tab shows the
@@ -385,12 +385,12 @@ empty; if the charges do not sum to zero, a hint asks for the counter-ion. By ha
 mass), the fluorescence tab, IR + EA and HRMS always follow: changing the compound also replaces values entered there; a
 replaced molar mass is shown as a message and undo restores it. Nothing is entered for this in the UV-Vis tab any more: the
 **Compound** card shows formula and molar mass, **Edit …** opens the compound, **Structure in figure** hides the structure
-for one series. The name appears in the window title. The melting point entered there starts the characterisation paragraph
+for one series. The name appears in the window title. The melting point entered there starts the characterization paragraph
 of the SI section. The molar mass is kept with two decimals everywhere. The **Lab notebook no.** sits next to the number
 used in the SI: it is shown in the overview and found by the search, but never appears in the SI, Word or the data package.
 
 **Purity:** the card **Purity** records how the purity of the compound is shown (¹H NMR, ¹³C NMR, qNMR, elemental
-analysis, HPLC, GC, plus free text). The characterisation paragraph of the SI then ends with "Purity was established by
+analysis, HPLC, GC, plus free text). The characterization paragraph of the SI then ends with "Purity was established by
 ¹H and ¹³C NMR spectroscopy and elemental analysis." (ACS, Angewandte). Without an entry there is no such sentence. A
 suggestion from the data (elemental analysis within 0.4 %, otherwise the nuclei of the NMR line) is only offered with
 **Use suggestion**; nothing is entered without that click.
@@ -403,11 +403,11 @@ mass, pictures) or the scheme by itself.
 ## SI section (Word)
 
 **SI (Word)** in the tab **Export** (or **File → Export SI section (Word) …**) exports right away with the selection
-there: parts as chips in the card **SI (Word)** (characterisation, NMR spectra, figures, methods, crystal structure,
+there: parts as chips in the card **SI (Word)** (characterization, NMR spectra, figures, methods, crystal structure,
 DFT) and the font – both remembered on this computer –, the figures via the column **SI** of the table; these ticks are
 saved with the compound (undo works) and also apply to the complete SI. A compound without its own selection takes the
 earlier selection of this computer. Selected parts without data are left out (note at the bottom right). The export collects everything that is ready for the compound into
-`SI/<compound>_SI.docx`, in the style of the SI: one characterisation paragraph **m.p. …; IR …; HR-MS …;
+`SI/<compound>_SI.docx`, in the style of the SI: one characterization paragraph **m.p. …; IR …; HR-MS …;
 UV-Vis …; Elemental analysis …** (melting point from the **Compound** tab, UV-Vis line from the **SI line** page of the
 UV-Vis (ε) tab: *λ*_max: 350 nm (*ε* = 12000 cm⁻¹ M⁻¹), … with bands as in the figure, ascending, ε as an integer), followed by the crystal-data table, the selected parameters and the captions of the
 X-Ray tab and the DFT calculations (two columns). Parts that are still missing are listed after the export. Numbers
@@ -502,7 +502,7 @@ to Word or as part of the SI section.
   carbons bearing H match. If the solvent signal is labelled in the ¹³C SVG ("77.00 CDCl3"), the comparison is shifted
   by its difference to the table (a sentence below the table names it; more than 0.5 ppm: no comparison); without such
   a label there is no shift. Solvent names such as CDCl3, Chloroform-d, DMSO-d6, (CD3)2SO, C6D6, CD3CN, CD3OD, D2O,
-  THF-d8, Toluene-d8, C6D5Cl, TFE-d3 are recognised; other names give no note. ¹H: only free peaks are compared, i.e.
+  THF-d8, Toluene-d8, C6D5Cl, TFE-d3 are recognized; other names give no note. ¹H: only free peaks are compared, i.e.
   peaks outside every multiplet of the ¹H line (centre ± half the first-order width from multiplicity and J, or the
   range of an "m", plus 0.01 ppm); the signals of the line are never marked. The peaks come only from MNova's peak report
   (exported document); an own spectrum has no ¹H comparison (automatic peaks hit the right and a wrong solvent column
@@ -528,7 +528,7 @@ to Word or as part of the SI section.
   suggested (ACME, only a suggestion) or drag it (Shift+P: left button zero order, right button first order, click =
   pivot). Experiments whose processing is not checked (e.g. a window other than EM, linear prediction) appear as
   TopSpin's 1r with a message. Display (step 3) like the MNova template, everything switchable.
-  **Evaluation** (step 2): drag integrals in mode I, select an integral or a signal and set the **normalisation** (only
+  **Evaluation** (step 2): drag integrals in mode I, select an integral or a signal and set the **normalization** (only
   then are there nuclei). **Suggest multiplets** or drag a range in mode J; for a selected signal enter class and J and
   **Fit pattern** – the found lines are drawn as ticks above the spectrum (orange suggestion, green confirmed).
   **Confirm** every signal on its own; only confirmed δ and J go into the SI line, otherwise range + m. If a J is not
@@ -608,7 +608,7 @@ to Word or as part of the SI section.
   full width at half maximum of 120 cm⁻¹). Output: **IR** [cm⁻¹]: ṽ = 2961, 2866, … (integers, descending).
   **Correct baseline (as in OPUS)** subtracts the baseline like OPUS (figure and peak search only); **Set threshold**:
   click points into the figure, peaks beyond the line. With only the OPUS PDF the spectrum is read from the PDF.
-  Elucida recognises the OPUS print-out by its layout (axis titles "Wavenumber cm-1" and "Transmittance"/"Absorbance",
+  Elucida recognizes the OPUS print-out by its layout (axis titles "Wavenumber cm-1" and "Transmittance"/"Absorbance",
   peak values vertical at the peaks). Any other PDF or image (e.g. a table with "1713.5") gives a **candidate list**:
   integers (x.5 rounded up) with line and detail in the tooltip, nothing preselected; only ticked values go into the IR line.
 - **HRMS:** load the **Word report** of the mass-spectrometry department; formula, ionisation, polarity and the measured
@@ -654,7 +654,7 @@ to Word or as part of the SI section.
   intensity (`.txt`, `.csv`, `.dat`, `.xy`; header lines are skipped; tab, semicolon, comma or decimal comma). Binary
   instrument formats are not read – export the spectrum as text. Elucida picks the maxima (threshold relative to the
   strongest peak in the range); untick peaks in the table. Enter the **excitation** wavelength; the SI line reads
-  **Raman** (λexc = 785 nm): ṽ = 2217, 1608, … cm⁻¹ and follows the IR line in the characterisation paragraph.
+  **Raman** (λexc = 785 nm): ṽ = 2217, 1608, … cm⁻¹ and follows the IR line in the characterization paragraph.
   **Figure** chooses what the tab's figure shows: IR, Raman (axis "Raman shift [cm⁻¹]", intensity in arbitrary units
   without numbers, labels with "Wavenumbers in figure") or **IR and Raman stacked** (IR above, Raman below, common
   wavenumber axis, both scaled to their range). If the IR calculation contains **Raman activities** (ORCA
@@ -696,7 +696,7 @@ regressions and R², the structure and a photo of the cuvette with the backgroun
    instrument's own **.DSW/.BSW** files are supported. **Several files at once** (e.g. each
    concentration measured separately) are combined into one data set.
 2. **Concentrations:** Concentrations are read from the sample names, e.g.
-   `ABC-1-0p5mgml_THF` → series `ABC-1`, 0.5 mg/mL. Recognised units are
+   `ABC-1-0p5mgml_THF` → series `ABC-1`, 0.5 mg/mL. Recognized units are
    `mgml`/`mg_ml`/`mg/ml`, `mM`, `uM`/`µM`; `p` stands for the decimal point.
    - If the names contain no concentrations (e.g. `c0` … `c4`) or the number is unclear (leading zero as in `05mgml`), the **Enter concentrations** section opens in the **Data** card (no separate window).
      Choose the **unit** explicitly (mM, µM, mg mL⁻¹, M) – nothing is pre-selected.
@@ -794,25 +794,25 @@ The cells hold the full value; only the number format rounds as in the app.
 
 Compare the measured spectra of one compound with its calculation (TD-DFT, ESD) in one figure; several
 measurements of the same compound (another solvent, another concentration, before and after a reaction) are fine.
-Spectra of **different compounds** are compared in the project (project page → **Comparison**: normalised to one band,
+Spectra of **different compounds** are compared in the project (project page → **Comparison**: normalized to one band,
 structures in curve colour, also in the combined SI); the row “Comparison” in step Data leads there. Up to 1.1 the
 tab was called “UV-Vis overlay”; older figures with a structure per spectrum stay as they are (note in the tab), but
 this can no longer be set up here. Stacking stays (spectra of the same compound one above the other).
 
 - **Measurement…** adds spectra from CSV/TXT/DSW/BSW files (one entry per sample);
-  **TD-DFT…** adds ORCA (4–6) or Gaussian output files; **ESD…** adds ORCA ESD(ABS) spectra (`.spectrum`, normalised
+  **TD-DFT…** adds ORCA (4–6) or Gaussian output files; **ESD…** adds ORCA ESD(ABS) spectra (`.spectrum`, normalized
   only; x unit from `%ESD UNIT` of the input next to it or from the value range, changeable).
 - **From tabs ▾** takes ε series of the ε tab (linked, measurement selectable) and TD-DFT calculations of the DFT tab.
 - **SEC…** takes spectra from the SEC tab, e.g. to compare a reduction or oxidation with the isolated UV-Vis
   spectrum and TD-DFT. As a **series** (all spectra or only start and end, range by potential) everything is
-  normalised with **one common factor** to the start spectrum, so intensity ratios and isosbestic points are kept;
-  intermediate spectra grey, start blue, end red, legend with the potentials. **Single spectra** are normalised each on
+  normalized with **one common factor** to the start spectrum, so intensity ratios and isosbestic points are kept;
+  intermediate spectra grey, start blue, end red, legend with the potentials. **Single spectra** are normalized each on
   their own (shape comparison). SEC is never shown as ε: path length and converted concentration in the thin-layer
   cell are not known exactly.
 - TD-DFT transitions are broadened with Gaussians in energy (FWHM and an empirical energy shift
   can be set per calculation, default 0.3 eV); ε follows from the oscillator strengths
   (ε(ν̃) = 1.306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), as in GaussView). Transitions can be shown as sticks.
-- **y quantity**: *normalised* – every spectrum is scaled to its maximum within the normalisation range (globally,
+- **y quantity**: *normalized* – every spectrum is scaled to its maximum within the normalization range (globally,
   or per spectrum with its own range, e.g. if the calculated band is shifted), **ε [10³ M⁻¹ cm⁻¹]** – measured
   spectra then need concentration (and molar mass for mg/mL) and path length, or **absorbance** as measured
   (measurements and SEC, without TD-DFT). The automatic y range always contains every curve.
@@ -827,7 +827,7 @@ this can no longer be set up here. Stacking stays (spectra of the same compound 
   transitions are merged and then broadened together; one weight per calculation (default 1 = sum,
   e.g. 0.7/0.3 for conformers). Calculations should be at the same level of theory; identical states in
   both calculations trigger a warning (they would be counted twice).
-- **TD-DFT normalisation:** curve and sticks always share one scale factor (each stick is the height
+- **TD-DFT normalization:** curve and sticks always share one scale factor (each stick is the height
   of its own Gaussian, the curve is their sum). Reference: "Curve maximum = 1" or "Strongest
   transition = 1"; "Curve maximum = 1, f on the right axis" adds the oscillator strength as a second scale for
   the same sticks (left out with a note if the calculations use different scales).
@@ -905,7 +905,7 @@ Spectra against the equivalents of an added reagent (e.g. an oxidant), in the sa
 
 Absorption and emission in one figure, as commonly shown in papers:
 
-- Absorption (any UV-Vis file) and emission (Cary Eclipse CSV or .FBSW), both normalised to 1;
+- Absorption (any UV-Vis file) and emission (Cary Eclipse CSV or .FBSW), both normalized to 1;
   λex is filled in automatically from the emission file;
   the absorption to the maximum within the "band of interest".
 - Labels with λabs of the absorption maximum (plus ε, if entered) and λem of the emission maximum.
@@ -917,7 +917,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - Two cuvette photos (daylight and under UV) are combined with an arrow and the excitation
   wavelength; for the UV photo background removal is off by default (dark background stays).
 - Structure as in the ε tab.
-- **Excitation spectrum** (Cary Eclipse CSV or .FBSW) in addition, normalised to 1 and dash-dotted in its own colour;
+- **Excitation spectrum** (Cary Eclipse CSV or .FBSW) in addition, normalized to 1 and dash-dotted in its own colour;
   enter the detection wavelength λem (caption only).
 
 ### Lifetime and photophysical properties
@@ -1140,7 +1140,7 @@ Absorption and emission in one figure, as commonly shown in papers:
   'Delimiter', '\t')`; scaled by least squares to a measurement (or by hand) and shifted in field; drawn dashed on
   the same level. A **parameter file** (the MATLAB lines `Sys.D = [D E]; …`) is shown with D and |E| converted to
   cm⁻¹ and can be written into the figure.
-- Display in mT or G, overlaid or stacked, normalised, y axis without numbers by default, free labels such as
+- Display in mT or G, overlaid or stacked, normalized, y axis without numbers by default, free labels such as
   `Z⁻@122, Y⁺@400`. Hover shows B, the g-factor and the intensity.
 - **Series (time, temperature):** when stacked, the name stands to the right of each trace instead of in a legend;
   double-click a name in the list to rename it. **Trace labels** shows time or temperature from the measurement file,
@@ -1168,7 +1168,7 @@ Absorption and emission in one figure, as commonly shown in papers:
   other measurements, whose fits then give calibrated g-factors.
 - **Intensity vs. time or temperature** (e.g. illumination kinetics, thermal decay): double integral or
   peak-to-peak in a field window for every visible measurement (after dark spectrum and baseline), optionally
-  × T (Curie), normalised; time counts from the earliest spectrum in the tab (e.g. the dark spectrum). "Use this
+  × T (Curie), normalized; time counts from the earliest spectrum in the tab (e.g. the dark spectrum). "Use this
   dark spectrum for all measurements" sets the background for a whole series at once and hides the dark spectrum
   itself in the figure (its check box in the list shows it again).
 - **Thermal decay at constant heating rate** (port of the group's MATLAB script): intensity per spectrum as
@@ -1176,7 +1176,7 @@ Absorption and emission in one figure, as commonly shown in papers:
   field scaled to a reference frequency (e.g. 9.3 GHz) and a temperature correction (e.g. −1.5 K); then
   **E_a and A** from I(T) = exp(−A·∫exp(−E_a/RT)/β dT) with β from the mean temperature and time steps.
   Objective least squares (default; reliable 95 % interval with t quantile) or "as script" (√|r|, for comparison
-  with old numbers – sensitive to the optimiser, its interval strongly underestimates the uncertainty). E_a and ln A are almost fully correlated.
+  with old numbers – sensitive to the optimizer, its interval strongly underestimates the uncertainty). E_a and ln A are almost fully correlated.
 - **Where:** step **Evaluation**, card **Intensity and Kinetics**. The field **View** chooses what the figure
   shows: spectra, intensity against time, against temperature, Arrhenius or against the number. The fields below
   belong to the chosen view; the others are hidden.
@@ -1197,10 +1197,10 @@ Absorption and emission in one figure, as commonly shown in papers:
   against 1000/T and gives E_a and ln A from an unweighted straight-line fit, one point per temperature; a 95 %
   interval exists only from three temperatures on. The bars at the points are the intervals of k. Peak-to-peak
   underestimates k once the signal disappears in the noise; use the double integral or "Fit up to loss" then.
-  The caption of these views says what is plotted (quantity, field window, normalisation, temperatures) and gives only
+  The caption of these views says what is plotted (quantity, field window, normalization, temperatures) and gives only
   values of fits shown in the figure (k and half-life per temperature, E_a and A of a ramp, the Arrhenius line).
 - **Export for EasySpin:** besides the figure, every measurement is written as a two-column text file (B in mT,
-  intensity) in full resolution after dark spectrum, baseline and smoothing – without normalisation or hidden
+  intensity) in full resolution after dark spectrum, baseline and smoothing – without normalization or hidden
   ranges – with `%` header lines documenting frequency, temperature and processing (`load(...)` in MATLAB, ready
   for `esfit`). The intensity series is saved as `…_intensity.csv` (column `role`: reference, sample or measurement; x and y with units; the calibration line and the decay/Arrhenius fits as rows with parameter, value and interval).
 - **Spin density and hyperfine couplings from a calculation:** step **Data**, card **Calculation (DFT)**: choose a
@@ -1270,7 +1270,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - The molecule is **completed by symmetry** (e.g. a molecule on an inversion centre); generated atoms carry a
   superscript (C1ⁱ) and the operation is given as a footnote. **Disorder:** major part only (default), all parts or
   the minor part. Separate fragments (solvent, counter-ions) and H atoms can be hidden; **Hide solvent** / **Hide
-  counterions** recognise common ones from the formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
+  counterions** recognize common ones from the formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …).
 - **Wireframe** for bulky groups (e.g. Dipp): click the bond to the substituent (core atom first, e.g. N then
   C_ipso) and press **As wireframe** – everything behind it is drawn as thin lines in the element colours, without
   H atoms and labels. If the bond is part of a ring (spiro atom), the ring system behind the first atom is used. The
@@ -1320,7 +1320,7 @@ Absorption and emission in one figure, as commonly shown in papers:
   |F|²·Lp of every single reflection (so the multiplicity is included), F from all atoms of the unit cell (symmetry
   operations of the CIF, occupancies of disordered parts, isotropic or anisotropic displacement parameters), atomic
   scattering factors from the International Tables Vol. C (Cromer–Mann coefficients), no anomalous dispersion;
-  Lorentz-polarisation factor for Bragg–Brentano without monochromator. **Radiation** Cu (default), Mo, Co, Fe, Cr or Ag
+  Lorentz-polarization factor for Bragg–Brentano without monochromator. **Radiation** Cu (default), Mo, Co, Fe, Cr or Ag
   Kα; **Kα2** (half intensity) on/off; profile **pseudo-Voigt** with the given **FWHM** (° 2θ) and Lorentz fraction η;
   **range** 2θ (auto = range of the measurement). Load a **measured** pattern as `.xy`/`.xye` or another text file
   (first column 2θ in degrees, second intensity). Nothing is fitted: the calculated pattern is scaled to its strongest
@@ -1342,7 +1342,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 ## DFT tab
 
 - Load **xyz** files (also trajectories; the last frame is shown) or outputs of **ORCA 6** (`.out`) and **Gaussian**
-  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognised. Styles: Mercury, Olex2, **ball and stick like the ORCA
+  (`.log`). Files written by a PowerShell redirect (UTF-16) are recognized. Styles: Mercury, Olex2, **ball and stick like the ORCA
   manual**, **IboView** and a **line drawing** (white balls, hollow sticks, as in classic journal figures); mouse as in the X-Ray tab.
 - **Measure and align** as in the X-Ray tab: click 2/3/4 atoms for distance, angle or dihedral (values from the
   geometry, 3 or 1 decimals); bond pointing down/up/left/right, plane face-on, step rotation, flip, ChemDraw template.
@@ -1362,7 +1362,7 @@ Absorption and emission in one figure, as commonly shown in papers:
 - **SI Text** (card "Calculation for the SI"; ORCA 6, Gaussian): name, figure, charge/multiplicity/point group, Cartesian coordinates
   and E_el/H/G (ZPE column optional), optionally the input line (per structure or once as "Computational details"),
   the convergence table of the last cycle and the frequency result. All values exactly as in the output. The program
-  warns about aborted runs, non-converged optimisations and imaginary frequencies; with CPCM only the dielectric
+  warns about aborted runs, non-converged optimizations and imaginary frequencies; with CPCM only the dielectric
   contribution is given (a solvation energy needs the gas-phase calculation). **Copy**, **Save Word** (two
   columns) or via the SI section.
 - **Energy Table** (page; data required by ACS, Org. Lett. and Angew. Chem.): per calculation N_imag, E_el, nuclear

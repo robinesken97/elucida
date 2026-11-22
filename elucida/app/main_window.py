@@ -991,7 +991,7 @@ class MainWindow(QMainWindow):
         old_log = self.log.toPlainText() if hasattr(self, "log") else ""
         self.log = QPlainTextEdit(readOnly=True)
         self.log.setPlainText(old_log)
-        g_res = QGroupBox()
+        g_res = QGroupBox(T("tab_results"))              # Titelzeile mit „Kopieren“ oben rechts wie in den anderen Tabs
         QVBoxLayout(g_res).addWidget(self.table)
         # Reiter „SI-Text“ wie in den anderen Tabs: je Text eine Karte mit „Kopieren“ (SI-Zeile, Bildunterschrift,
         # Methodentext) statt eines großen leeren Textfelds
@@ -4323,7 +4323,8 @@ class MainWindow(QMainWindow):
         self.txt_si.setText(self._uv_line[1] or T("si_uv_none"))
         cap = "<b>Figure Sn:</b> " + self.eps_caption(self.current, cfg["path_length_cm"], self.export_name())
         self.lbl_eps_cap.setText(cap)
-        self.lbl_cap_bar.set_full(T("caption_bar") + " · " + html.unescape(re.sub(r"<[^>]+>", "", cap)))
+        self.lbl_cap_bar.set_full(T("caption_bar") + " · " + html.unescape(re.sub(r"<[^>]+>", "", cap)),
+                                  rich=html.escape(T("caption_bar")) + " · " + cap)
         try:
             txt = self.eps_methods_text(marked=True)        # Anzeige wie Word (Größen kursiv), kopiert wird Klartext
         except Exception:                                    # der Text ist Zugabe: nie das Zeichnen stören

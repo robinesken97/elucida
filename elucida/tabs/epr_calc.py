@@ -812,7 +812,7 @@ class SpinPages:
             rows.append([self.atom_name(d, k), iso_text(f[0]), num(calc_value(f, unit), UNITS[unit])]
                         + (([num(calc_value(("", x[0], x[1]), unit), UNITS[unit]) for x in b] if b else ["", "", ""])
                            if dip else [])
-                        + [f"{g[0]} × {iso_text(g[1])}" if g else ""])
+                        + [f"{g[0]}\u2009×\u2009{iso_text(g[1])}" if g else ""])
         return rows
 
     def headers(self, kind):
@@ -1088,10 +1088,10 @@ class SpinPages:
         for i, (n, name, exp) in enumerate(groups):
             ats = [k for k in assign.get(str(i), []) if d is not None and k in d["fermi"]]
             if str(i) in bad:                              # Atome zeigen, Mittel nicht: Zuordnung gilt nicht
-                notes.append(T("fixt_epr_assign_bad", group=f"{n} × {iso_text(name)}"))
+                notes.append(T("fixt_epr_assign_bad", group=f"{n}\u2009×\u2009{iso_text(name)}"))
             mean = (num(float(np.mean([calc_value(d['fermi'][k], unit) for k in ats])), UNITS[unit])
                     if ats and str(i) not in bad else "")
-            cells = (f"{n} × {iso_text(name)}", exp, ", ".join(self.atom_name(d, k) for k in ats), mean)
+            cells = (f"{n}\u2009×\u2009{iso_text(name)}", exp, ", ".join(self.atom_name(d, k) for k in ats), mean)
             for j, v in enumerate(cells):
                 t.setItem(i, j, QTableWidgetItem(v))
                 t.item(i, j).setToolTip(v)                 # lange Atomlisten: ganz im Tooltip

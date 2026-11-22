@@ -1,9 +1,9 @@
 **English** | [Deutsch](synthese-bis-si.de.md) · [back to the overview](../../README.md#workflows)
 
-# Synthesis and characterisation to the SI
+# Synthesis and characterization to the SI
 
 **What you get:** the SI section of one compound as a Word file – "Synthesis of **X**" with an editable ChemDraw scheme
-and the procedure, the characterisation paragraph (m.p.; NMR; IR; HR-MS; UV-Vis; elemental analysis) and the spectra
+and the procedure, the characterization paragraph (m.p.; NMR; IR; HR-MS; UV-Vis; elemental analysis) and the spectra
 two per page.
 
 **What you need:** the reaction scheme as CDXML (plus a `.cdx` with the same name from ChemDraw so it stays editable
@@ -27,7 +27,7 @@ rounding of the given digits are marked.
 ## 3. NMR
 
 In the **NMR** tab add the SVG exports from MestReNova or drag them into the window. Nucleus and order (¹H, ¹³C, …,
-2D) are recognised. The structure comes from the Compound tab and is placed at a free spot; you can drag it in
+2D) are recognized. The structure comes from the Compound tab and is placed at a free spot; you can drag it in
 the preview. Paste the MNova multiplet report under **NMR line** (all nuclei in one field); the ¹³C line can also be
 built with **Line from peak labels**.
 

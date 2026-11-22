@@ -832,7 +832,7 @@ def calc_geometry_note(c, level):
         return "Calculated values (calc.) refer to the supplied calculated geometry; the level of theory is not stated."
     s = c.get("solvation") or {}
     env = ("solvated (" + s["model"] + (", " + s["solvent"] if s.get("solvent") else "") + ")") if s else "gas-phase"
-    geo = "optimised " if c.get("opt_converged") else ""
+    geo = "optimized " if c.get("opt_converged") else ""
     return f"Calculated values refer to the {geo}{env} geometry" + (f" at the {level} level of theory." if level else ".")
 
 
@@ -3060,7 +3060,8 @@ class XrayFigure:
                 if ox > 0 and oy > 0:
                     c += 3.0 * ox * oy
                 if ox > -clear and oy > -clear:          # näher als `clear`: las sich als ein Label („C1 C2“,
-                    c += 6.0 * (clear + min(ox, oy))     # Windows-Bericht 2026-11-20); je näher, desto teurer
+                    c += 60.0 + 6.0 * (clear + min(ox, oy))   # Windows-Bericht 2026-11-20); teurer als ein Ring weiter
+                                                         # außen (Pfad 3D: C6/H36 knapp unter `clear`, Sichtung 1.4.0)
             fw, fh = W, H
             if x0 < 0 or y0 < 0 or x1 > fw or y1 > fh:
                 c += 1e4
@@ -3505,11 +3506,31 @@ import uuid  # noqa: E402
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure as MplFigure  # noqa: E402
-from PySide6.QtCore import Qt, QTimer  # noqa: E402
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox,  # noqa: E402
                                QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QListWidget, QListWidgetItem, QPushButton, QSpinBox, QTableWidget,
                                QTableWidgetItem, QTextBrowser, QVBoxLayout, QWidget)
+
+
+class _WideFlip(QObject):
+    """Ruft `cb` bei jeder Größenänderung von `view` (Tabellen nebeneinander oder untereinander neu setzen)."""
+
+    def __init__(self, view, cb):
+        super().__init__(view)
+        self.cb, self.pending = cb, False
+        view.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Resize and not self.pending:   # später: setHtml während des Zeichnens (Effekt der
+            self.pending = True                                # Zeichenfläche, CanvasInvert) stürzte ab
+            QTimer.singleShot(0, self, self._run)
+        return False
+
+    def _run(self):
+        self.pending = False
+        self.cb()
+
 
 from elucida.core import uvvis as core  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
@@ -4295,6 +4316,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         self.txt_tab.document().setDocumentMargin(14)     # Text nicht am Rahmen
         self.txt_tab.setMinimumHeight(200)
         STYLE.empty_note(self.txt_tab, T("tbl_empty_tables"))
+        _WideFlip(self.txt_tab, lambda: self._tables_wide() != getattr(self, "_wide", None) and self.update_tables())
         v.addWidget(self.txt_tab)
         acts = []                                          # Aktionen oben rechts auf der Titelzeile wie in jeder Karte
         for txt, fn, ic in ((T("xr_excel"), self.save_excel, None),
@@ -4899,6 +4921,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
                    "solvent": T("xr_kind_solvent"), "ion": T("xr_kind_ion")}.get(kind, "")
             if fr.get("name") and kind in ("solvent", "ion"):
                 tag = f"{fr['name']}, {tag}"
+            tag = tag[:1].upper() + tag[1:]                # Zellwert groß (Entscheidung 199/200), „Name, solvent“ bleibt
             self.lst_frag.blockSignals(True)
             STYLE.check_row(self.lst_frag, i, (str(i + 1), fr["formula"], tag or "–"), i not in hidden)
             self.lst_frag.blockSignals(False)
@@ -5229,7 +5252,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.sp_pack_cg.setValue(float(pk["cg"]))
             self.sp_pack_ang.setValue(float(pk["ang"]))
             self.btn_pack_color.setProperty("color", pk["color"])
-            self.btn_pack_color.setStyleSheet(f"background-color: {pk['color']}; border: 1px solid {STYLE.swatch_border()};")
+            self.btn_pack_color.setStyleSheet(STYLE.swatch_css(pk['color']))
         finally:
             for w_ in ws:
                 w_.blockSignals(False)
@@ -5665,7 +5688,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.cb_pxrd_si.setChecked(bool(px["si"]))
             for btn, key in ((self.btn_pxrd_meas, "c_meas"), (self.btn_pxrd_calc, "c_calc")):
                 btn.setProperty("color", px[key])
-                btn.setStyleSheet(f"background-color: {px[key]}; border: 1px solid {STYLE.swatch_border()};")
+                btn.setStyleSheet(STYLE.swatch_css(px[key]))
         finally:
             for w_ in ws:
                 w_.blockSignals(False)
@@ -6420,11 +6443,27 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         h, r = self.crystal_table()
         html = table_view_html(h, r, "Crystal data and structure refinement")
         h2, r2, notes = self.params_table()
-        if len(r2):                                       # beide Tabellen nebeneinander: die Seite ist breit
+        self._wide = self._tables_wide()
+        p_ = table_view_html(h2, r2, "Selected bond lengths [Å], angles and torsion angles [°]", notes)
+        if len(r2) and self._wide:                        # beide Tabellen nebeneinander: die Seite ist breit
             html = ('<table width="99%"><tr><td valign="top" width="50%">' + html + '</td><td width="28"></td>'
-                    '<td valign="top">' + table_view_html(h2, r2, "Selected bond lengths [Å], angles and torsion "
-                                                          "angles [°]", notes) + "</td></tr></table>")
+                    '<td valign="top">' + p_ + "</td></tr></table>")
+        elif len(r2):                                     # schmal (1200 px): untereinander, sonst brechen die Zellen um
+            html += '<p style="margin:0"></p>' + p_
         self.txt_tab.setHtml(html)
+
+    def _tables_wide(self):
+        """Passen beide Tabellen nebeneinander, ohne dass eine Zelle umbricht? Breite je Spalte = längster Text + 24 px."""
+        if not self.st.get("entries"):                   # Tab im Pfad-Arbeitsbereich: Zustand ohne Einträge
+            return getattr(self, "_wide", None)
+        fm = self.txt_tab.fontMetrics()
+
+        def need(h_, r_):
+            cols = list(zip(*([h_] + [list(x) for x in r_]))) if r_ else []
+            return sum(max(fm.horizontalAdvance(to_plain(str(x))) for x in c) + 24 for c in cols)
+        h, r = self.crystal_table()
+        h2, r2, _ = self.params_table()
+        return need(h, r) + need(h2, r2) + 28 + 2 * 14 <= self.txt_tab.viewport().width()
 
     def write_excel(self, path):
         from openpyxl import Workbook

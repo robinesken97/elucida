@@ -335,7 +335,7 @@ class TauPart:
         m = float(np.nanmax(np.abs(r["resid"]))) or 1.0
         axr.set_ylim(-1.15 * m, 1.15 * m)
         ax.set_xlim(float(d["t"][0]), float(d["t"][-1]))
-        ax.set_ylabel(core.fmt_text("counts" if r["weighted"] else "intensity [a.u.]", cfg), fontsize=fs * 1.3)
+        ax.set_ylabel(core.fmt_text("counts" if r["weighted"] else "intensity [arb. u.]", cfg), fontsize=fs * 1.3)
         axr.set_ylabel(core.fmt_text("res.", cfg), fontsize=fs * 1.3)
         axr.set_xlabel(core.fmt_text("t [ns]", cfg), fontsize=fs * 1.3)
         for a in (ax, axr):

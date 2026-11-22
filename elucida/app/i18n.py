@@ -83,7 +83,7 @@ TEXTS = {
     "nbo_col_lewis": ("Anteil", "Part"),
     "nbo_col_occ": ("Besetzung", "Occupancy"),
     "nbo_col_energy": ("Energie", "Energy"),
-    "nbo_col_hyb": ("Hybride (Polarisation)", "Hybrids (polarisation)"),
+    "nbo_col_hyb": ("Hybride (Polarisation)", "Hybrids (polarization)"),
     "nbo_col_acceptor": ("Akzeptor", "Acceptor"),
     "nbo_col_weight": ("Gewicht", "Weight"),
     "nbo_col_change": ("Hinzu (entfernt) gegenüber RS 1", "Added (removed) vs. RS 1"),
@@ -94,7 +94,7 @@ TEXTS = {
     "nbo_lewis_total": ("Lewis gesamt", "Total Lewis"),
     "nbo_lewis_valence": ("Valenz, Nicht-Lewis", "Valence non-Lewis"),
     "nbo_lewis_rydberg": ("Rydberg, Nicht-Lewis", "Rydberg non-Lewis"),
-    "nbo_others": ("übrige", "others"),
+    "nbo_others": ("Übrige", "Others"),
     "nbo_npa_note": ("Natürliche Ladungen und Populationen wie in der Ausgabe (Summary of Natural Population Analysis).",
                      "Natural charges and populations as printed (Summary of Natural Population Analysis)."),
     "nbo_list_note": ("Ohne Rumpf- (CR) und Rydberg-Orbitale (RY); alle stehen in der CSV. Hybride wie gedruckt (sp^λ "
@@ -250,7 +250,7 @@ TEXTS = {
     'rp_profile_orbital_view': ('Orbitalansicht im Profil', 'Profile Orbital View'),
     'rp_the_orbital_file_changed_please_capture_a_new_view': ('Die Orbitaldatei wurde geändert. Ansicht bitte neu übernehmen.', 'The orbital file changed. Please capture a new view.'),
     'rp_include_selected_result_in_si': ('Gewähltes Ergebnis in SI', 'Include selected result in SI'),
-    'rp_no_multireference_result_selected_supported_orca_6_casscf_sc_nevpt2_an': ('Kein Multireferenzergebnis gewählt. Unterstützt: ORCA 6 CASSCF, SC-NEVPT2, QD-SC-NEVPT2 und SORCI.', 'No multireference result selected. Supported: ORCA 6 CASSCF, SC-NEVPT2, QD-SC-NEVPT2 and SORCI.'),
+    'rp_no_multireference_result_selected_supported_orca_6_casscf_sc_nevpt2_an': ('Kein Multireferenzergebnis gewählt. Unterstützt: ORCA 6 CASSCF, SC-\u2060NEVPT2, QD-\u2060SC-\u2060NEVPT2 und SORCI.', 'No multireference result selected. Supported: ORCA 6 CASSCF, SC-\u2060NEVPT2, QD-\u2060SC-\u2060NEVPT2 and SORCI.'),
     'rp_select_a_method_and_result_block_explicitly_energies_and_weights_retai': ('Methode und Ergebnisblock explizit wählen. Energien und Gewichte bleiben wie in der Ausgabe. Orbitalbesetzungen ohne eindeutige Zustandszuordnung werden nicht als Diradikalcharakter ausgegeben.', 'Select a method and result block explicitly. Energies and weights retain output precision. Occupations without an unambiguous state assignment are not reported as diradical character.'),
     'rp_select_result': ('Ergebnis wählen …', 'Select result …'),
     'rp_select_singlet': ('Singulett wählen …', 'Select singlet …'),
@@ -574,7 +574,7 @@ TEXTS = {
     "bl_manual": ("Manuelles Fenster", "Manual window"),
     "bl_off": ("Aus", "Off"),
     "grp_plot": ("Darstellung", "Plot"),
-    "ymax": ("y-Achse max", "y-axis max"),
+    "ymax": ("y-Achse max", "y axis max"),
     "r2_mode": ("R² anzeigen", "Show R²"),
     "r2_legend": ("In Inset-Legende (wenn keine Tabelle)", "In inset legend (if no table)"),
     "r2_label": ("Im Bandenlabel", "In band label"),
@@ -900,7 +900,7 @@ TEXTS = {
     "guide_nmr_steps": ("SVG hinzufügen – Kern und Reihenfolge erkennt das Programm\nStruktur kommt aus dem Tab "
                         "Verbindung; Lage automatisch oder in der Vorschau ziehen\nMultiplettbericht aus MNova unter "
                         "„NMR-Zeile“ einfügen (¹³C auch „Zeile aus Peaklabels“)\nSI (Word) im Tab „Export“ (zwei Spektren je Seite)",
-                        "Add the SVG – nucleus and order are recognised\nThe structure comes from the Compound tab; placed "
+                        "Add the SVG – nucleus and order are recognized\nThe structure comes from the Compound tab; placed "
                         "automatically or dragged in the preview\nPaste the MNova multiplet report under “NMR line” (¹³C also "
                         "“line from peak labels”)\nSI (Word) in the Export tab (two spectra per page)"),
     "guide_irms_title": ('IR + EA: IR-Peakliste und Elementaranalyse als SI-Zeilen', 'IR + EA: IR peak list and elemental analysis as SI lines'),
@@ -925,10 +925,10 @@ TEXTS = {
     "guide_eps_steps": ('Messdaten öffnen, Konzentrationen und Einheit prüfen\nVerbindung: Struktur (CDXML) und bei mg mL⁻¹ die Molmasse, optional Küvettenfoto\nSchichtdicke und Cutoff prüfen; Banden in der Ergebnistabelle an- oder abwählen\nExportieren (Strg+E oder Tab „Export“); die UV-Vis-Zeile für die SI steht unter „SI-Zeile“', 'Open the measurement data, check concentrations and unit\nCompound: structure (CDXML) and, for mg mL⁻¹, the molar mass; optionally a cuvette photo\nCheck path length and cutoff; tick or untick bands in the results table\nExport (Ctrl+E or the Export tab); the UV-Vis line for the SI is under “SI line”'),
     "guide_overlay_title": ('TD-DFT: gemessene Spektren und Rechnung einer Verbindung in einer Abbildung', 'TD-DFT: measured spectra and calculation of one compound in one figure'),
     "guide_overlay_files": ('Dateien: Messungen (CSV/TXT/DSW/BSW), TD-DFT-Ausgaben von ORCA oder Gaussian, Spektren aus dem SEC-Tab', 'Files: measurements (CSV/TXT/DSW/BSW), TD-DFT outputs from ORCA or Gaussian, spectra from the SEC tab'),
-    "guide_overlay_steps": ('Spektren mit „Messung …“, „TD-DFT …“ oder „SEC …“ hinzufügen\nNormiert (auf die Bande im Normierungsbereich) oder als ε – für ε je Messung Konzentration und Schichtdicke eintragen\nTD-DFT: Bandenbreite (FWHM) und Verschiebung je Rechnung, Übergänge optional als Striche\nReihenfolge, Farben, Stapeln – dann exportieren (Strg+E oder Tab „Export“); Verbindungen vergleicht das Projekt (Reiter Vergleich)', 'Add spectra with “Measurement …”, “TD-DFT …” or “SEC …”\nNormalised (to the band in the normalisation range) or as ε – for ε enter concentration and path length per measurement\nTD-DFT: band width (FWHM) and shift per calculation, transitions optionally as sticks\nOrder, colours, stacking – then export (Ctrl+E or the Export tab); compounds are compared in the project (Comparison tab)'),
+    "guide_overlay_steps": ('Spektren mit „Messung …“, „TD-DFT …“ oder „SEC …“ hinzufügen\nNormiert (auf die Bande im Normierungsbereich) oder als ε – für ε je Messung Konzentration und Schichtdicke eintragen\nTD-DFT: Bandenbreite (FWHM) und Verschiebung je Rechnung, Übergänge optional als Striche\nReihenfolge, Farben, Stapeln – dann exportieren (Strg+E oder Tab „Export“); Verbindungen vergleicht das Projekt (Reiter Vergleich)', 'Add spectra with “Measurement …”, “TD-DFT …” or “SEC …”\nNormalized (to the band in the normalization range) or as ε – for ε enter concentration and path length per measurement\nTD-DFT: band width (FWHM) and shift per calculation, transitions optionally as sticks\nOrder, colours, stacking – then export (Ctrl+E or the Export tab); compounds are compared in the project (Comparison tab)'),
     "guide_fluo_title": ('Fluoreszenz: Absorption und Emission mit Stokes-Verschiebung', 'Fluorescence: absorption and emission with Stokes shift'),
     "guide_fluo_files": ('Dateien: Absorption als beliebige UV-Vis-Datei, Emission (und Anregung) als Cary-Eclipse-CSV oder .FBSW; optional Abklingkurve und IRF als Textdatei (Zeit, Zählrate) und zwei Küvettenfotos (Tageslicht und UV)', 'Files: absorption as any UV-Vis file, emission (and excitation) as Cary Eclipse CSV or .FBSW; optionally a decay and IRF as text file (time, counts) and two cuvette photos (daylight and UV)'),
-    "guide_fluo_steps": ('Links Absorptions- und Emissionsdatei wählen (λex kommt aus der Emissionsdatei)\n„Bande von Interesse“ für die Normierung der Absorption prüfen\nStokes-Verschiebung und Absorbanz bei λex ablesen (Warnung ab A = 0,1)\nFotos und Struktur, dann exportieren (Strg+E oder Tab „Export“)', 'Choose the absorption and emission files on the left (λex comes from the emission file)\nCheck the “band of interest” used to normalise the absorption\nRead the Stokes shift and the absorbance at λex (warning from A = 0.1)\nPhotos and structure, then export (Ctrl+E or the Export tab)'),
+    "guide_fluo_steps": ('Links Absorptions- und Emissionsdatei wählen (λex kommt aus der Emissionsdatei)\n„Bande von Interesse“ für die Normierung der Absorption prüfen\nStokes-Verschiebung und Absorbanz bei λex ablesen (Warnung ab A = 0,1)\nFotos und Struktur, dann exportieren (Strg+E oder Tab „Export“)', 'Choose the absorption and emission files on the left (λex comes from the emission file)\nCheck the “band of interest” used to normalize the absorption\nRead the Stokes shift and the absorbance at λex (warning from A = 0.1)\nPhotos and structure, then export (Ctrl+E or the Export tab)'),
     "guide_cv_title": ('CV: Cyclovoltammogramme mit E½, ΔEₚ, Nicholson und Scanraten-Auswertung', 'CV: cyclic voltammograms with E½, ΔEₚ, Nicholson and scan-rate analysis'),
     "guide_cv_files": ('Dateien: Gamry-.DTA (Scanrate und Elektrodenfläche kommen aus der Datei)', 'Files: Gamry .DTA (scan rate and electrode area come from the file)'),
     "guide_cv_steps": ('Eine oder mehrere Messungen hinzufügen, z. B. eine Scanraten-Serie\nRedoxpaare: „Vorschlagen“ oder Fenster von Hand (von–bis)\nReferenz: wie gemessen, intern (Fc oder Ac₂Fc) oder feste Verschiebung\nAuftragung wählen, SI-Text kopieren, exportieren (Strg+E oder Tab „Export“)', 'Add one or more measurements, e.g. a scan-rate series\nRedox couples: “Suggest” or windows by hand (from–to)\nReference: as measured, internal (Fc or Ac₂Fc) or a fixed shift\nChoose the plot, copy the SI text, export (Ctrl+E or the Export tab)'),
@@ -1172,10 +1172,10 @@ TEXTS = {
     "si_written": ("SI-Abschnitt gespeichert: {p}", "SI section saved: {p}"),
     "act_si_short": ("SI (Word)", "SI (Word)"),
     "act_si_tip": ("SI-Abschnitt der Verbindung als Word-Datei; Teile auswählbar (Charakterisierung, X-Ray, DFT)",
-                   "SI section of the compound as a Word file; parts selectable (characterisation, X-ray, DFT)"),
+                   "SI section of the compound as a Word file; parts selectable (characterization, X-ray, DFT)"),
     "si_parts_head": ("In die SI übernehmen:", "Include in the SI:"),
     "si_part_char": ("Charakterisierung (m.p., NMR, IR, HR-MS, UV-Vis, Elementaranalyse)",
-                     "Characterisation (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis)"),
+                     "Characterization (m.p., NMR, IR, HR-MS, UV-Vis, elemental analysis)"),
     "si_part_nmr": ("NMR-Spektren (zwei je Seite)", "NMR spectra (two per page)"),
     "si_part_figs": ("Abbildungen aller Tabs (UV-Vis, IR, HR-MS, Fluoreszenz, CV, SEC, EPR; zwei je Seite)",
                      "Figures from all tabs (UV-Vis, IR, HR-MS, fluorescence, CV, SEC, EPR; two per page)"),
@@ -1323,7 +1323,7 @@ TEXTS = {
                           "⚠ ion formula in the report ({rep}) does not match the chosen ion ({own})"),
     "ms_sf_calc_differs": ("⚠ calc. im Bericht ({rep}) weicht vom berechneten Wert ({own}) ab – in der Zeile steht {own}",
                            "⚠ calc. in the report ({rep}) differs from the computed value ({own}) – the line uses {own}"),
-    "ms_pdf_ionis": ("⚠ Ionisierung im Bericht nicht eindeutig: {ion} angenommen", "⚠ ionisation not clear in the report: {ion} assumed"),
+    "ms_pdf_ionis": ("⚠ Ionisierung im Bericht nicht eindeutig: {ion} angenommen", "⚠ ionization not clear in the report: {ion} assumed"),
     "ms_pdf_bad": ("{name}: kein lesbares PDF", "{name}: not a readable PDF"),
     "ms_pdf_no_text": ("{name}: PDF ohne Textebene (Scan) – Werte von Hand eintragen", "{name}: PDF without a text layer (scan) – enter the values manually"),
     "line_ir": ("IR-Zeile für die SI", "IR line for the SI"),
@@ -1419,7 +1419,7 @@ TEXTS = {
                        "Kurve im Normierungsbereich), stärkster Übergang = 1 oder Kurvenmaximum = 1 mit "
                        "Oszillatorstärke f als zweiter Skala rechts (jeder Strich so hoch wie seine Bande)",
                        "One common factor for curve and sticks: curve maximum = 1 (highest point "
-                       "of the broadened curve in the normalisation range), strongest transition = 1, or curve "
+                       "of the broadened curve in the normalization range), strongest transition = 1, or curve "
                        "maximum = 1 with oscillator strength f as a second scale on the right (each stick as high "
                        "as its band)"),
     "xr_prob_ball": ("gilt nur für die Stile Mercury und flach (Kugel-Stab: feste Kugelgröße)",
@@ -1551,11 +1551,11 @@ TEXTS = {
     "cv_fref_global": ("Wie unter „Referenzierung“ (für alle)", "As under “Referencing” (for all)"),
     "cv_fref_internal": ("Eigener interner Standard", "Own internal standard"),
     "cv_fref_manual": ("Eigene feste Verschiebung", "Own fixed shift"),
-    "cv_ref_mixed": ("Achtung: Messungen mit unterschiedlicher Referenz (Fc⁺/Fc und Referenzelektrode) in einer Abbildung.",
-                     "Note: measurements with different references (Fc⁺/Fc and reference electrode) in one figure."),
+    "cv_ref_mixed": ("Achtung: Messungen mit unterschiedlicher Referenz (Fc⁰/⁺ und Referenzelektrode) in einer Abbildung.",
+                     "Note: measurements with different references (Fc⁰/⁺ and reference electrode) in one figure."),
     "cv_plot": ("Auftragung", "Plot"),
     "sec_gone": ("{n} Spektren fehlen im Projektordner und werden nicht gezeigt.", "{n} spectra are missing from the project folder and are not shown."),
-    "drop_unknown": ("{name}: Dateityp nicht erkannt, nichts geladen.", "{name}: file type not recognised, nothing loaded."),
+    "drop_unknown": ("{name}: Dateityp nicht erkannt, nichts geladen.", "{name}: file type not recognized, nothing loaded."),
     "file_gone": ("{name} fehlt im Projektordner.", "{name} is missing from the project folder."),
     "si_series_failed": ("Serie {name} fehlt in der SI: {error}", "Series {name} is missing from the SI: {error}"),
     "dp_missing": ("{n} eingetragene Datei(en) fehlen und kommen nicht ins Datenpaket: {names}",
@@ -1658,22 +1658,22 @@ TEXTS = {
                     "isosbestische Punkte bleiben). Einzelne Spektren: jedes markierte für sich. SEC wird nie als ε "
                     "gezeigt (Schichtdicke und umgesetzte Konzentration der Dünnschichtzelle sind nicht genau bekannt).",
                     "Series: range from the first to the last marked spectrum, without marking the whole series; all "
-                    "spectra normalised with the same factor to the start spectrum (intensity ratios and isosbestic "
+                    "spectra normalized with the same factor to the start spectrum (intensity ratios and isosbestic "
                     "points are kept). Single spectra: each marked one on its own. SEC is never shown as ε (path "
                     "length and converted concentration in the thin-layer cell are not known exactly)."),
     "ov_sec_series": ("SEC-Serie", "SEC series"),
     "ov_sec_series_label": ("SEC {rng} ({n} Spektren)", "SEC {rng} ({n} spectra)"),
-    "ov_sec_mode_all": ("Serie: alle Spektren (gemeinsam normiert)", "Series: all spectra (normalised together)"),
+    "ov_sec_mode_all": ("Serie: alle Spektren (gemeinsam normiert)", "Series: all spectra (normalized together)"),
     "ov_sec_mode_ends": ("Serie: nur Anfang und Ende (gemeinsam normiert)",
-                         "Series: start and end only (normalised together)"),
-    "ov_sec_mode_single": ("Einzelne Spektren (jedes für sich normiert)", "Single spectra (each normalised on its own)"),
+                         "Series: start and end only (normalized together)"),
+    "ov_sec_mode_single": ("Einzelne Spektren (jedes für sich normiert)", "Single spectra (each normalized on its own)"),
     "ov_sec_no_eps": ("„{name}“: SEC-Spektren nur normiert, nicht als ε – ausgelassen",
-                      "“{name}”: SEC spectra only normalised, not as ε – skipped"),
+                      "“{name}”: SEC spectra only normalized, not as ε – skipped"),
     "ov_add_calc": ("TD-DFT …", "TD-DFT …"),
     "ov_add_esd": ("ESD …", "ESD …"),
     "ov_add_esd_tip": ("Vibronisches Spektrum aus ORCA ESD(ABS) (.spectrum, auch .spectrum.rootN) – fertig "
                        "verbreitert, nur normiert vergleichbar", "Vibronic spectrum from ORCA ESD(ABS) (.spectrum, "
-                       "also .spectrum.rootN) – already broadened, comparable only when normalised"),
+                       "also .spectrum.rootN) – already broadened, comparable only when normalized"),
     "ov_esd_unit": ("Einheit der Datei", "File unit"),
     "ov_esd_unit_tip": ("x-Einheit der .spectrum-Datei (ORCA %ESD UNIT; steht nicht in der Datei). Beim Laden aus "
                         "der .inp/.out daneben, sonst aus dem Wertebereich bestimmt.",
@@ -1684,7 +1684,7 @@ TEXTS = {
     "ov_esd_src_range": ("aus dem Wertebereich – bitte prüfen", "from the value range – please check"),
     "ov_esd_src_user": ("vorgegeben", "set by user"),
     "ov_esd_norm_only": ("„{name}“: ESD-Intensität ohne gesicherte Einheit – nur im Modus „Normiert“ gezeigt",
-                         "“{name}”: ESD intensity has no confirmed unit – shown only in “Normalised” mode"),
+                         "“{name}”: ESD intensity has no confirmed unit – shown only in “Normalized” mode"),
     "esd_bad": ("{name}: kein ORCA-ESD-Spektrum (Kopf „Energy TotalSpectrum …“ fehlt).",
                 "{name}: not an ORCA ESD spectrum (header “Energy TotalSpectrum …” missing)."),
     "fl_esd": ("Berechnet (ESD)", "Calculated (ESD)"),
@@ -1703,20 +1703,20 @@ TEXTS = {
     "ov_cmp_open": ("Öffnen …", "Open …"),
     "ov_cmp_open_tip": ("Zur Projektseite, Reiter „Vergleich“: Spektren mehrerer Verbindungen in einem Bild, normiert auf\n"
                         "eine Bande, Strukturen in Kurvenfarbe, auch in der Gesamt-SI.",
-                        "To the project page, tab “Comparison”: spectra of several compounds in one figure, normalised to\n"
+                        "To the project page, tab “Comparison”: spectra of several compounds in one figure, normalized to\n"
                         "one band, structures in curve colour, also in the combined SI."),
     "ov_cmp_old": ("Ältere Abbildung: ihre Struktur je Spektrum bleibt so; neue Vergleiche verschiedener Verbindungen "
                    "im Projekt.",
                    "Older figure: its structure per spectrum stays as it is; new comparisons of different compounds "
                    "in the project."),
-    "ov_own_norm": ("Eigener (statt „Normierung“ unten)", "Own (instead of “Normalisation” below)"),
-    "ov_norm_window": ("Normierung [nm]", "Normalisation [nm]"),
-    "ov_norm_window_long": ("Normierungsbereich [nm]", "Normalisation range [nm]"),
+    "ov_own_norm": ("Eigener (statt „Normierung“ unten)", "Own (instead of “Normalization” below)"),
+    "ov_norm_window": ("Normierung [nm]", "Normalization [nm]"),
+    "ov_norm_window_long": ("Normierungsbereich [nm]", "Normalization range [nm]"),
     "ov_fwhm": ("Breite (FWHM)", "Width (FWHM)"),
     "ov_shift": ("Verschiebung", "Shift"),
-    "ov_display": ("Normierung", "Normalisation"),
+    "ov_display": ("Normierung", "Normalization"),
     "ov_ymode": ("y-Größe", "y quantity"),
-    "ov_y_norm": ("Normiert (auf die Bande von Interesse)", "Normalised (to the band of interest)"),
+    "ov_y_norm": ("Normiert (auf die Bande von Interesse)", "Normalized (to the band of interest)"),
     "ov_y_eps": ("ε [10³ M⁻¹ cm⁻¹]", "ε [10³ M⁻¹ cm⁻¹]"),
     "ov_y_abs": ("Absorbanz (wie gemessen)", "Absorbance (as measured)"),
     "ov_ymode_tip": ("ε: Messungen brauchen Konzentration und Schichtdicke (SEC entfällt). Absorbanz: Messungen und "
@@ -1724,7 +1724,7 @@ TEXTS = {
                      "ε: measurements need concentration and path length (SEC is left out). Absorbance: measurements "
                      "and SEC as measured, without TD-DFT."),
     "ov_calc_no_abs": ("„{name}“: TD-DFT hat keine Absorbanz (c, d unbekannt) – ε oder normiert wählen",
-                       "“{name}”: TD-DFT has no absorbance (c, d unknown) – choose ε or normalised"),
+                       "“{name}”: TD-DFT has no absorbance (c, d unknown) – choose ε or normalized"),
     "ov_triplets": ("Tripletts markieren", "Mark triplets"),
     "ov_triplets_long": ("Triplett-Zustände markieren (f = 0)", "Mark triplet states (f = 0)"),
     "ov_triplets_tip": ("Formal spinverbotene Triplett-Anregungen als gestrichelte Marken fester Höhe;\n"
@@ -1752,7 +1752,7 @@ TEXTS = {
     "ov_sticks": ("TD-DFT-Striche", "TD-DFT sticks"),
     "ov_sticks_long": ("TD-DFT-Übergänge als Striche", "TD-DFT transitions as sticks"),
     "ov_no_signal": ("„{name}“: kein Signal im Normierungsbereich {lo:g}–{hi:g} nm – ausgelassen",
-                     "“{name}”: no signal in the normalisation range {lo:g}–{hi:g} nm – skipped"),
+                     "“{name}”: no signal in the normalization range {lo:g}–{hi:g} nm – skipped"),
     "ov_need_conc": ("„{name}“: für ε Konzentration (und bei mg mL⁻¹ Molmasse) eintragen – ausgelassen",
                      "“{name}”: enter concentration (and molar mass for mg mL⁻¹) for ε – skipped"),
     "ov_struct_color": ("Struktur in Kurvenfarbe", "Structure in curve colour"),
@@ -1766,7 +1766,7 @@ TEXTS = {
     "ls_dotted": ("Gepunktet", "Dotted"),
     "ls_dashdot": ("Strich-Punkt", "Dash-dot"),
     "stick_mode": ("TD-DFT-Normierung", "TD-DFT scaling"),
-    "stick_mode_long": ("TD-DFT-Normierung", "TD-DFT normalisation"),
+    "stick_mode_long": ("TD-DFT-Normierung", "TD-DFT normalization"),
     "stick_max": ("Stärkster Übergang = 1", "Strongest transition = 1"),
     "stick_band": ("Kurvenmaximum = 1", "Curve maximum = 1"),
     "stick_faxis": ("Kurvenmaximum = 1, rechts zusätzlich f", "Curve maximum = 1, f on the right axis"),
@@ -1774,7 +1774,7 @@ TEXTS = {
                        "(Striche wie „Kurvenmaximum = 1“)",
                        "f axis omitted: stacked or offset curves do not start at y = 0 (sticks as “Curve maximum = 1”)"),
     "ov_faxis_mixed": ("f-Achse ausgelassen: die Rechnungen haben verschiedene Maßstäbe (FWHM/Normierung)",
-                       "f axis omitted: the calculations use different scales (FWHM/normalisation)"),
+                       "f axis omitted: the calculations use different scales (FWHM/normalization)"),
     "fl_data": ("Spektren", "Spectra"),
     "fl_abs": ("Absorption", "Absorption"),
     "fl_em": ("Emission", "Emission"),
@@ -1788,8 +1788,8 @@ TEXTS = {
                   "change the curves otherwise."),
     "fl_abs_window_tip": ("Die Absorption wird in diesem Fenster auf ihr Maximum = 1 normiert, dort liegt λabs. "
                           "Die Emission wird auf ihr Maximum im ganzen Spektrum normiert.",
-                          "The absorption is normalised to its maximum = 1 in this window, where λabs is taken. "
-                          "The emission is normalised to its maximum over the whole spectrum."),
+                          "The absorption is normalized to its maximum = 1 in this window, where λabs is taken. "
+                          "The emission is normalized to its maximum over the whole spectrum."),
     "fl_eps_tip": ("Nur Beschriftung am Absorptionslabel (z. B. aus dem Tab UV-Vis (ε)), wird nicht gerechnet.",
                    "Label text at the absorption label only (e.g. from the UV-Vis (ε) tab), not used in any "
                    "calculation."),
@@ -1916,7 +1916,7 @@ TEXTS = {
     "chain_baseline": ("Basislinie", "Baseline"),
     "chain_mask": ("Ausblenden", "Masking"),
     "chain_smooth": ("Glätten", "Smoothing"),
-    "chain_norm": ("Normieren", "Normalise"),
+    "chain_norm": ("Normieren", "Normalize"),
     "chain_cycle": ("Zyklus {n}", "Cycle {n}"),
     "chain_ref": ("Referenz Fc⁰/⁺", "Reference Fc⁰/⁺"),
     "chain_broad": ("Verbreiterung", "Broadening"),
@@ -1931,12 +1931,12 @@ TEXTS = {
     "si_caption_none": ("Noch keine Abbildung – keine Bildunterschrift.", "No figure yet – no caption."),
     "kpi_spectra": ("Spektren", "Spectra"),
     "kpi_sims": ("Simulationen", "Simulations"),
-    "kpi_found": ("gefunden", "found"),
+    "kpi_found": ("Gefunden", "Found"),
     "auto_range_tip": ("Automatisch: ganzer Bereich. Klicken für eigene Grenzen.",
                        "Automatic: full range. Click to set your own limits."),
     "auto_range_clear_tip": ("Feld leeren = wieder automatisch", "Clear the field = automatic again"),
     "reset_special_tip": ("Zurück auf „{what}“ (oder das Feld leeren)", "Back to '{what}' (or clear the field)"),
-    "chips_figure": ("Im Bild", "In Figure"),
+    "chips_figure": ("Im Bild", "In figure"),
     "img_size": ("Größe [% Plotbreite]", "Size [% of plot width]"),
     "struct_w_group_tip": ("Breite der breitesten Struktur. Mehrere Strukturen in einem Bild haben immer denselben\n"
                            "Maßstab (gleiche Bindungslänge); das Mausrad auf einer Struktur ändert alle.",
@@ -1955,7 +1955,7 @@ TEXTS = {
     "col_conc": ("Konzentration", "Concentration"),
     "unit": ("Einheit", "Unit"),
     "dil_start": ("Start", "Start"),
-    "unit_choose": ("– bitte wählen –", "– please choose –"),
+    "unit_choose": ("– Bitte wählen –", "– Please choose –"),
     "unit_missing": ("Bitte die Konzentrationseinheit wählen.", "Please choose the concentration unit."),
     "start_missing": ("Bitte zuerst die Startkonzentration eintragen.", "Please enter the start concentration first."),
     "act_restart": ("Eingaben zu diesen Messdaten verwerfen …",
@@ -2040,7 +2040,7 @@ TEXTS = {
                      "The offset of each curve is added on top."),
     "ov_gap": ("Abstand", "Spacing"),
     "ov_gap_tip": ("Abstand der Ebenen in y-Einheiten (normiert: 1 = eine Kurvenhöhe; ε-Modus: 10³ M⁻¹ cm⁻¹)",
-                   "Spacing of the levels in y units (normalised: 1 = one curve height; ε mode: 10³ M⁻¹ cm⁻¹)"),
+                   "Spacing of the levels in y units (normalized: 1 = one curve height; ε mode: 10³ M⁻¹ cm⁻¹)"),
     "ov_yaxis": ("y-Achse", "y axis"),
     "yaxis_auto": ("Automatisch (gestapelt: ohne Zahlen)", "Automatic (stacked: no numbers)"),
     "yaxis_numbers": ("Mit Zahlen", "With numbers"),
@@ -2083,16 +2083,16 @@ TEXTS = {
     "cv_ref_file_long": ("Messung mit Referenz", "Measurement with reference"),
     "cv_ref_window": ("Referenzfenster [V]", "Reference window [V]"),
     "cv_ref_window_long": ("Fenster Referenz [V, gemessen]", "Reference window [V, measured]"),
-    "cv_ref_compound": ("E° Ref. vs. Fc⁺/Fc", "E° ref. vs. Fc⁺/Fc"),
-    "cv_ref_compound_long": ("Referenz E° vs. Fc⁺/Fc", "Reference E° vs. Fc⁺/Fc"),
+    "cv_ref_compound": ("E° Ref. vs. Fc⁰/⁺", "E° ref. vs. Fc⁰/⁺"),
+    "cv_ref_compound_long": ("Referenz E° vs. Fc⁰/⁺", "Reference E° vs. Fc⁰/⁺"),
     "cv_ref_custom": ("Eigene", "Custom"),
-    "cv_ref_value_tip": ("E½ der Referenzverbindung gegen Fc⁺/Fc. Ac₂Fc (1,1'-Diacetylferrocen): Vorgabe +0,49 V;\n"
+    "cv_ref_value_tip": ("E½ der Referenzverbindung gegen Fc⁰/⁺. Ac₂Fc (1,1'-Diacetylferrocen): Vorgabe +0,49 V;\n"
                          "lösungsmittelabhängig – mit der verwendeten Literatur abgleichen.",
-                         "E½ of the reference compound vs. Fc⁺/Fc. Ac₂Fc (1,1'-diacetylferrocene): default +0.49 V;\n"
+                         "E½ of the reference compound vs. Fc⁰/⁺. Ac₂Fc (1,1'-diacetylferrocene): default +0.49 V;\n"
                          "solvent dependent – check against the literature you use."),
-    "cv_offset": ("E(Fc⁺/Fc) gemessen", "E(Fc⁺/Fc) measured"),
-    "cv_offset_tip": ("Lage von Fc⁺/Fc gegen die Referenzelektrode; wird von allen Potentialen abgezogen.",
-                      "Position of Fc⁺/Fc vs. the reference electrode; subtracted from all potentials."),
+    "cv_offset": ("E(Fc⁰/⁺) gemessen", "E(Fc⁰/⁺) measured"),
+    "cv_offset_tip": ("Lage von Fc⁰/⁺ gegen die Referenzelektrode; wird von allen Potentialen abgezogen.",
+                      "Position of Fc⁰/⁺ vs. the reference electrode; subtracted from all potentials."),
     "cv_electrode": ("Referenzelektrode", "Reference electrode"),
     "cv_display": ("Darstellung", "Display"),
     "cv_gradient": ("Farbverlauf nach Scanrate", "Gradient by scan rate"),
@@ -2111,10 +2111,10 @@ TEXTS = {
                      "des Hinlaufs. ≈ 1: chemisch reversibel. i_pa/i_pc mit Basislinie (falls eingeschaltet).",
                      "Reverse/forward peak ratio after Nicholson (Anal. Chem. 1966): accounts for the decaying\n"
                      "forward current. ≈ 1: chemically reversible. i_pa/i_pc with baseline (if enabled)."),
-    "cv_ref_note": ("Referenz: {name} bei E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc",
-                    "Reference: {name} at E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁺/Fc"),
-    "cv_ref_own": ("eigene Referenz dieser Messung: E(Fc⁺/Fc) gemessen = {off} V (nicht die für alle)",
-                   "own reference of this measurement: E(Fc⁺/Fc) measured = {off} V (not the one for all)"),
+    "cv_ref_note": ("Referenz: {name} bei E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁰/⁺",
+                    "Reference: {name} at E½ = {e12} V vs. {el} (ΔE_p = {dep} mV) ≙ {val} V vs. Fc⁰/⁺"),
+    "cv_ref_own": ("eigene Referenz dieser Messung: E(Fc⁰/⁺) gemessen = {off} V (nicht die für alle)",
+                   "own reference of this measurement: E(Fc⁰/⁺) measured = {off} V (not the one for all)"),
     "cv_ref_missing": ("⚠ Referenz nicht gefunden (Messung oder Fenster prüfen) – Achse wie gemessen.",
                        "⚠ Reference not found (check measurement or window) – axis as measured."),
     "cv_edge": ("⚠ Peak am Fensterrand", "⚠ peak at the window edge"),
@@ -2382,9 +2382,9 @@ TEXTS = {
                        "(z. B. Wartezeit vor dem Scan oder unterschiedliche PC-Uhren). Bei 2 mV s⁻¹: 10 s ≙ 20 mV.",
                        "Added to each spectrum's time before the potential is read from the Gamry run\n"
                        "(e.g. waiting time before the scan or different PC clocks). At 2 mV s⁻¹: 10 s ≙ 20 mV."),
-    "sec_shift": ("E(Fc⁺/Fc) gemessen", "E(Fc⁺/Fc) measured"),
-    "sec_shift_tip": ("Lage von Fc⁺/Fc gegen die Referenzelektrode; wird abgezogen (0 = Achse wie gemessen).",
-                      "Position of Fc⁺/Fc vs. the reference electrode; subtracted (0 = axis as measured)."),
+    "sec_shift": ("E(Fc⁰/⁺) gemessen", "E(Fc⁰/⁺) measured"),
+    "sec_shift_tip": ("Lage von Fc⁰/⁺ gegen die Referenzelektrode; wird abgezogen (0 = Achse wie gemessen).",
+                      "Position of Fc⁰/⁺ vs. the reference electrode; subtracted (0 = axis as measured)."),
     "sec_from_cv": ("Aus CV-Tab", "From CV tab"),
     "sec_display": ("Darstellung", "Display"),
     "sec_mode": ("Ansicht", "View"),
@@ -2549,7 +2549,7 @@ TEXTS = {
                         "Load a finished simulation as an ASCII file (e.g. from EasySpin)"),
     "epr_kind_exp": ("Messung", "Measured"),
     "epr_kind_sim": ("Simulation", "Simulation"),
-    "epr_none": ("– keine –", "– none –"),
+    "epr_none": ("– Keine –", "– None –"),
     "epr_funit": ("Feldeinheit der Datei", "Field unit of the file"),
     "epr_funit_tip": ("Die Textdatei nennt die Einheit des Magnetfelds nicht. Die Wahl hier gilt für diese Messung;\n"
                       "Fits an dieser Messung werden danach verworfen.",
@@ -2618,8 +2618,8 @@ TEXTS = {
     "epr_display": ("Darstellung", "Display"),
     "epr_xrange": ("B-Bereich", "B range"),
     "epr_unit": ("Feldeinheit", "Field unit"),
-    "epr_normalize": ("Normieren", "Normalise"),
-    "epr_normalize_long": ("Normieren (max |I| = 1)", "Normalise (max |I| = 1)"),
+    "epr_normalize": ("Normieren", "Normalize"),
+    "epr_normalize_long": ("Normieren (max |I| = 1)", "Normalize (max |I| = 1)"),
     "epr_labels": ("Labels", "Labels"),
     "epr_labels_ph": ("Z. B. Z⁻@122, Y⁺@400, X⁺@450", "E.g. Z⁻@122, Y⁺@400, X⁺@450"),
     "epr_labels_tip": ("Text@Feld (in der Achseneinheit), durch Kommas getrennt – z. B. kanonische Positionen.",
@@ -2869,7 +2869,7 @@ TEXTS = {
                             "prüfen).", "{name}: a component has a negative weight – no fractions given (check the "
                             "components)."),
     "epr_nuclei_unknown": ("Kern nicht erkannt: {parts} (Schreibweise z. B. „2 14N 0.65“ oder „2 I=1 0.65“).",
-                           "Nucleus not recognised: {parts} (write e.g. “2 14N 0.65” or “2 I=1 0.65”)."),
+                           "Nucleus not recognized: {parts} (write e.g. “2 14N 0.65” or “2 I=1 0.65”)."),
     "epr_fractions": ("{name}: Anteile (Doppelintegral) {parts}", "{name}: fractions (double integral) {parts}"),
     "epr_ref_freq": ("Frequenz angleichen", "Scale to frequency"),
     "epr_ref_freq_tip": ("B·ν_ref/ν: Spektren mit leicht unterschiedlicher Mikrowellenfrequenz vergleichbar machen\n"
@@ -2925,7 +2925,7 @@ TEXTS = {
                     "Against time: isothermal, per temperature I(t) = I0·exp(−k·t) (the choice on the right does not apply);\n"
                     "the view 1/T (Arrhenius) always fits, even if this says 'Off'.\n"
                     "Against temperature (ramp): I(T) = exp(−A·∫exp(−E_a/RT)/β dT), first order; heating rate β from mean T\n"
-                    "and time step; with 'As script' the intensity is min–max normalised first (like the MATLAB script).\n"
+                    "and time step; with 'As script' the intensity is min–max normalized first (like the MATLAB script).\n"
                     "The dotted limits insert both interval ends of E_a and ln A (as in the script) – because of the strong\n"
                     "coupling they lie almost on the curve and are not an uncertainty band of the curve."),
     "epr_kin_script": ("Wie Skript (√|r|)", "As script (√|r|)"),
@@ -3034,7 +3034,7 @@ TEXTS = {
     "xr_frags": ("Fragmente", "Fragments"),
     "xr_frags_tip": ("Getrennte Fragmente (Lösungsmittel, Gegenionen) ein-/ausblenden",
                      "Show/hide separate fragments (solvent, counter-ions)"),
-    "xr_main_frag": ("größtes", "largest"),
+    "xr_main_frag": ("Größtes", "Largest"),
     "xr_prev_view": ("Vorige Ansicht", "Previous view"),
     "xr_prev_view_tip": ("Letzte Drehung, Verschiebung oder Zoomänderung der gewählten Struktur zurücknehmen "
                          "(mehrfach möglich).",
@@ -3065,7 +3065,7 @@ TEXTS = {
     "xr_box_labels_on": ("Labels zeigen ({n} Atome)", "Show labels ({n} atoms)"),
     "xr_colors": ('Atomfarben', 'Atom Colours'),
     "xr_colors_reset": ("Olex2-Standardfarben", "Olex2 default colours"),
-    "xr_select": ("Ausgewählte Parameter", "Selected parameters"),
+    "xr_select": ("Ausgewählte Parameter", "Selected Parameters"),
     "xr_calc": ("Vergleich mit Rechnung", "Comparison with Calculation"),
     "xr_calc_src": ("Rechnung", "Calculation"),
     "xr_calc_src_tip": ("Berechnete Geometrie derselben Verbindung: aus dem DFT-Tab oder als Datei (xyz, ORCA, Gaussian)",
@@ -3123,7 +3123,7 @@ TEXTS = {
                           "Vergleich die optimierte Geometrie wählen.",
                           "The geometry of the calculation is practically the crystal geometry (RMSD {rmsd} Å): "
                           "probably a single point on the crystal coordinates. The column then compares nothing; "
-                          "choose the optimised geometry for the comparison."),
+                          "choose the optimized geometry for the comparison."),
     "xr_calc_hdiff": ("Zahl der H-Atome verschieden – {atoms}. Das Gerüst ist zugeordnet, überzählige H bleiben ohne "
                       "Partner. Prüfen, ob es dieselbe Spezies ist (in hinterlegten CIFs fehlt manchmal ein H).",
                       "Number of H atoms differs – {atoms}. The framework is assigned, surplus H stay without a "
@@ -3203,9 +3203,9 @@ TEXTS = {
     "xr_hide_ions": ("Gegenionen ausblenden", "Hide counterions"),
     "xr_hide_tip": ("Erkannt über die Summenformel des Fragments (THF, Et₂O, CH₂Cl₂, Toluol …; OTf⁻, BF₄⁻, PF₆⁻, "
                     "BArF⁻ …). Weitere Fragmente einzeln in der Liste abhaken.",
-                    "Recognised from the fragment's formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …). "
+                    "Recognized from the fragment's formula (THF, Et₂O, CH₂Cl₂, toluene …; OTf⁻, BF₄⁻, PF₆⁻, BArF⁻ …). "
                     "Untick other fragments individually in the list."),
-    "xr_kind_molecule": ("weiteres Molekül, Z′ > 1", "further molecule, Z′ > 1"),
+    "xr_kind_molecule": ("Weiteres Molekül, Z′ > 1", "Further molecule, Z′ > 1"),
     "xr_kind_solvent": ("Lösungsmittel", "solvent"),
     "xr_kind_ion": ("Gegenion", "counterion"),
     "xr_atom_wire": ("Draht", "Wire"),
@@ -3413,7 +3413,7 @@ TEXTS = {
                        "Order is automatic: ¹H, ¹³C, other nuclei by mass number, then 2D (COSY, HSQC, HMBC, NOESY …). "
                        "Two spectra per page in Word."),
     "nmr_selected": ('Ausgewähltes Spektrum', 'Selected Spectrum'),
-    "nmr_nuc_from_axis": ("Kern aus der Achsenbeschriftung erkannt.", "Nucleus recognised from the axis label."),
+    "nmr_nuc_from_axis": ("Kern aus der Achsenbeschriftung erkannt.", "Nucleus recognized from the axis label."),
     "nmr_nuc_manual": ("Kern von Hand eingetragen.", "Nucleus entered by hand."),
     "nmr_nuc_missing": ("⚠ Kern nicht in der Achse gefunden – bitte eintragen (z. B. 1H oder 1H/13C).",
                         "⚠ nucleus not found in the axis label – please enter it (e.g. 1H or 1H/13C)."),
@@ -3521,14 +3521,14 @@ TEXTS = {
     "nmr_count_formula": ("Summenformel", "Formula"),
     "nmr_count_note": ("Hinweis", "Note"),
     "nmr_count_signals": ("{n} Signale", "{n} signals"),
-    "nmr_count_ok": ("passt", "matches"),
-    "nmr_count_less_h": ("austauschbare H?", "exchangeable H?"),
+    "nmr_count_ok": ("Passt", "Matches"),
+    "nmr_count_less_h": ("Austauschbare H?", "Exchangeable H?"),
     "nmr_count_open": ("{n} Vorschläge offen", "{n} suggestions open"),
-    "nmr_count_more_h": ("zu viele H", "too many H"),
+    "nmr_count_more_h": ("Zu viele H", "Too many H"),
     "nmr_count_no_nh": ("{k} ohne H-Zahl", "{k} without H count"),
-    "nmr_count_none": ("kein {el} in der Formel", "no {el} in the formula"),
-    "nmr_count_more": ("mehr Signale als {el}", "more signals than {el}"),
-    "nmr_count_fewer": ("Symmetrie möglich", "symmetry possible"),
+    "nmr_count_none": ("Kein {el} in der Formel", "No {el} in the formula"),
+    "nmr_count_more": ("Mehr Signale als {el}", "More signals than {el}"),
+    "nmr_count_fewer": ("Symmetrie möglich", "Symmetry possible"),
     # ¹³C-Signale und freie ¹H-Peaks gegen Restsignale und Verunreinigungen (Fulmer 2010, core/nmr_impurities.py);
     # Stoffnamen fulmer_<Name>
     "nmr_imp_chip": ("Verunreinigungen", "Impurities"),
@@ -3736,7 +3736,7 @@ TEXTS = {
     "dft_orb_mo_add": ("+", "+"),
     "dft_orb_molden_conv": ("Konvention der Basisfunktionen nicht erkannt (Orbitale nicht orthonormal, Abweichung {err}) "
                             "– Datei abgelehnt.",
-                            "Basis-function convention not recognised (orbitals not orthonormal, deviation {err}) – "
+                            "Basis-function convention not recognized (orbitals not orthonormal, deviation {err}) – "
                             "file rejected."),
     "dft_orb_molden_ok": ("Molden: Konvention {v}, CᵀSC = 1 bis auf {err}", "Molden: convention {v}, CᵀSC = 1 within {err}"),
     "dft_orb_select": ("Orbital", "Orbital"),
@@ -3744,7 +3744,7 @@ TEXTS = {
                            "MO-Nummer aus dem Cube bzw. dem Dateinamen (ORCA: name.mo21a.cube).",
                            "Orbital shown. HOMO/LUMO and energy from the ORCA/Gaussian output of the geometry, MO "
                            "number from the cube or the file name (ORCA: name.mo21a.cube)."),
-    "dft_orb_none": ("– keins –", "– none –"),
+    "dft_orb_none": ("– Keins –", "– None –"),
     "dft_profile": ('Energieprofil', 'Energy Profile'),
     "dft_prof_mode": ("Darstellung", "Display"),
     "dft_prof_mode_levels": ("Stufen (Opt/Freq)", "Levels (opt/freq)"),
@@ -3815,6 +3815,8 @@ TEXTS = {
     "dft_nics_files": ("Dateien", "Files"),
     "mr_card": ("Multireferenz", "Multireference"),
     "mr_result": ("Ergebnis", "Result"),
+    # Eintrag der Listen Singulett/Triplett: Wurzel (root) wie von ORCA gezählt, Energie wie gedruckt (echtes Minus)
+    "mr_root_item": ("Wurzel {root}{irrep} · {energy} Eh", "Root {root}{irrep} · {energy} Eh"),
     "mr_singlet": ("Singulett", "Singlet"),
     "mr_triplet": ("Triplett", "Triplet"),
     "mr_sign": ("Vorzeichen", "Sign"),
@@ -3842,7 +3844,7 @@ TEXTS = {
     "dft_nics_geom_tip": ("Für die Unterschrift „<NMR-Methode>//<Geometrie>“ (die NMR-Ausgabe kennt die Methode der "
                           "Optimierung nicht).",
                           "For the caption “<NMR method>//<geometry>” (the NMR output does not know the "
-                          "optimisation method)."),
+                          "optimization method)."),
     "dft_nics_file": ("Datei", "File"),
     "dft_nics_pair": ("Mittel ober-/unterhalb", "Average above/below"),
     "dft_nics_empty": ("NICS-Scan (Gaussian-NMR mit ≥ 10 Bq) erscheint hier; Einzelpunkte in der Tabelle",
@@ -3894,7 +3896,7 @@ TEXTS = {
     "acid_geom_tip": ("Für die Unterschrift „<CSGT-Methode>//<Geometrie>“ (die NMR-Ausgabe kennt die Methode der "
                       "Optimierung nicht).",
                       "For the caption “<CSGT method>//<geometry>” (the NMR output does not know the "
-                      "optimisation method)."),
+                      "optimization method)."),
     "acid_iso": ("Isowert", "Isovalue"),
     "acid_iso_tip": ("Isofläche bei diesem ACID-Wert (Einheit wie im Cube)",
                      "Isosurface at this ACID value (unit as in the cube)"),
@@ -3911,7 +3913,7 @@ TEXTS = {
                           "the cube has {n} atoms, the Gaussian output {m}: do they belong together?"),
     "acid_empty": ("ACID-Abbildung erscheint hier, sobald eine AICD-Ausgabe oder ein ACID-Cube geladen ist",
                    "The ACID figure appears here once an AICD output or an ACID cube is loaded"),
-    "dft_orb_iso": ("Schwellentyp", "Threshold Type"),
+    "dft_orb_iso": ("Schwellentyp", "Threshold type"),
     "dft_orb_iso_frac": ("Dichte", "Density"),
     "dft_orb_iso_abs": ("Absolut", "Absolute"),
     "dft_orb_thr": ("Schwelle", "Threshold"),
@@ -3934,7 +3936,7 @@ TEXTS = {
     "dft_orb_norm": ("Achtung: Σψ²·dV = {v} statt 1 – das Gitter enthält nicht das ganze Orbital (oder ψ ist nicht "
                      "normiert); der Anteil der Dichte stimmt dann nicht. Größeres Gitter oder festen Isowert nehmen.",
                      "Caution: Σψ²·dV = {v} instead of 1 – the grid does not contain the whole orbital (or ψ is not "
-                     "normalised); the density fraction is then wrong. Use a larger grid or a fixed isovalue."),
+                     "normalized); the density fraction is then wrong. Use a larger grid or a fixed isovalue."),
     "dft_orb_coarse": ("Grobes Gitter ({h} Å): Fläche kantig. orca_plot: Gitterpunkte erhöhen (z. B. 100).",
                        "Coarse grid ({h} Å): surface looks faceted. orca_plot: increase the grid points (e.g. 100)."),
     "dft_orb_new_entry": ("{f} passt nicht zur gewählten Geometrie – neue Geometrie aus dem Cube angelegt.",
@@ -3967,7 +3969,7 @@ TEXTS = {
     "cluster_dir": ("Ordner", "Folder"),
     "cluster_host_ph": ("Login-Knoten des Clusters", "Login node of the cluster"),
     "cluster_user_ph": ("Konto auf dem Cluster", "Account on the cluster"),
-    "cluster_dir_ph": ("Ordner auf dem Cluster, z. B. aus der Jobliste", "Folder on the cluster, e.g. from the job list"),
+    "cluster_dir_ph": ("Ordner auf dem Cluster", "Folder on the cluster"),
     "cluster_col_id": ("Job", "Job"),
     "cluster_col_name": ("Name", "Name"),
     "cluster_col_state": ("Zustand", "State"),
@@ -4044,7 +4046,7 @@ TEXTS = {
     "dft_si_col_name": ("Struktur", "Structure"),
     "dft_si_col_prog": ("Programm", "Program"),
     "dft_si_col_input": ("Eingabe", "Input"),
-    "dft_si_inp_yes": ("vorhanden", "present"),
+    "dft_si_inp_yes": ("Vorhanden", "Present"),
     "dft_si_kpi_input": ("Eingabe", "Input"),
     "dft_si_units": ("Alle Energien in Eₕ.", "All energies in Eₕ."),
     "dft_si_prog": ("Programm: {p}.", "Program: {p}."),
@@ -4055,7 +4057,7 @@ TEXTS = {
                            "Input file missing for {n} calculation(s); ACS requires it in the data package."),
     "dft_w_partly": ("Hinweis: ORCA hat die Optimierung als konvergiert beendet, obwohl nicht alle Kriterien „YES“ "
                      "zeigen (übererfüllter Gradient) – die Tabelle zeigt die Werte unverändert.",
-                     "Note: ORCA finished the optimisation as converged although not all criteria show “YES” "
+                     "Note: ORCA finished the optimization as converged although not all criteria show “YES” "
                      "(gradient overachieved) – the table shows the values unchanged."),
     "dft_name": ("Name", "Name"),
     "dft_file": ("Datei", "File"),
@@ -4117,19 +4119,19 @@ TEXTS = {
                        "vollständigen Abschnitt.",
                        "⚠ calculation did not terminate normally (aborted or file incomplete) – values from the last "
                        "complete section."),
-    "dft_w_not_converged": ("⚠ Optimierung nicht konvergiert.", "⚠ optimisation not converged."),
+    "dft_w_not_converged": ("⚠ Optimierung nicht konvergiert.", "⚠ optimization not converged."),
     "dft_w_orca_version": ("⚠ ORCA {v}: geprüft ist nur ORCA 6 – Werte im SI-Text mit der Ausgabe vergleichen.",
                            "⚠ ORCA {v}: only ORCA 6 has been verified – compare the SI values with the output."),
     "dft_w_no_opt": ("Keine Optimierung in dieser Ausgabe: Geometrie = Eingabegeometrie.",
-                     "No optimisation in this output: geometry = input geometry."),
+                     "No optimization in this output: geometry = input geometry."),
     "dft_w_no_freq": ("⚠ Frequenzrechnung angefordert, aber keine Frequenzen gefunden.",
                       "⚠ frequency calculation requested but no frequencies found."),
     "dft_w_imag": ("⚠ {n} imaginäre Frequenz(en): {v} cm⁻¹ – kein Minimum; H/G gelten nicht für ein Minimum.",
                    "⚠ {n} imaginary frequenc(y/ies): {v} cm⁻¹ – not a minimum; H/G do not refer to a minimum."),
     "dft_w_no_thermo": ("⚠ Thermochemie (H, G) fehlt.", "⚠ thermochemistry (H, G) missing."),
-    "dft_w_solv_cpcm": ("CPCM: angegeben ist der dielektrische Beitrag (in E(el) enthalten), keine Solvatationsenergie "
+    "dft_w_solv_cpcm": ("CPCM: angegeben ist der dielektrische Beitrag (in E_el enthalten), keine Solvatationsenergie "
                         "ΔG_solv – dafür braucht es dieselbe Rechnung in der Gasphase.",
-                        "CPCM: the dielectric contribution (contained in E(el)) is given, not a solvation energy "
+                        "CPCM: the dielectric contribution (contained in E_el) is given, not a solvation energy "
                         "ΔG_solv – that requires the same calculation in the gas phase."),
     "dft_w_solv_smd": ("SMD: dielektrischer Beitrag und Kavitäts-/Dispersionsterm angegeben; ΔG_solv nur aus dem "
                        "Vergleich mit der Gasphasenrechnung.",
@@ -4329,7 +4331,7 @@ TEXTS = {
     "group_exists": ("Eine Gruppe „{g}“ gibt es schon.", "A group “{g}” already exists."),
     "group_tip": ("Verbindungen gliedern (z. B. Precursor, Salze, NHOs): Rechtsklick auf eine Verbindung → Gruppe, oder "
                   "in eine Gruppe ziehen. Die Reihenfolge der Gruppen gilt für Gesamt-SI und Datensatz.",
-                  "Organise compounds (e.g. precursors, salts, NHOs): right-click a compound → Group, or drag it into a "
+                  "Organize compounds (e.g. precursors, salts, NHOs): right-click a compound → Group, or drag it into a "
                   "group. The order of the groups applies to the complete SI and the dataset."),
     "pub_sort_tip": ("Reihenfolge nach dem Namen der Verbindung (1a, 1b, 2a … 10a); einzeln lassen sich Verbindungen mit "
                      "der Maus an eine andere Stelle ziehen",
@@ -4416,7 +4418,7 @@ TEXTS = {
     "pub_si_groups": ("Gruppen als Unterkapitel", "Groups as subsections"),
     "pub_si_groups_tip": ("Aus: Gruppen ordnen nur die Projektseite, die SI hat keine Unterkapitel (Reihenfolge bleibt). "
                           "Gilt für dieses Projekt.",
-                          "Off: groups only organise the project page, the SI has no subsections (order unchanged). "
+                          "Off: groups only organize the project page, the SI has no subsections (order unchanged). "
                           "Applies to this project."),
     "pub_texts": ("SI-Texte …", "SI texts …"),
     "pub_texts_hint": ("Texte, die zum Projekt gehören: „Materials and Methods“ und je Kapitel eine Einleitung (steht unter "
@@ -4452,7 +4454,7 @@ TEXTS = {
                        "Verbindungen.",
                        "File → Export SI section (Word) exports right away with this selection; it applies to all "
                        "compounds."),
-    "si_chip_char": ("Charakterisierung", "Characterisation"),
+    "si_chip_char": ("Charakterisierung", "Characterization"),
     "si_chip_nmr": ("NMR-Spektren", "NMR spectra"),
     "si_chip_figs": ("Abbildungen", "Figures"),
     "si_chip_methods": ("Methodik", "Methods"),
@@ -4503,10 +4505,10 @@ TEXTS = {
     "cmp_compounds": ("Verbindungen", "Compounds"),
     "cmp_compound": ("Verbindung", "Compound"),
     "cmp_status": ("Stand", "Snapshot"),
-    "cmp_st_ok": ("aktuell", "current"),
-    "cmp_st_outdated": ("veraltet", "outdated"),
-    "cmp_st_missing": ("fehlt", "missing"),
-    "cmp_st_none": ("keine Daten", "no data"),
+    "cmp_st_ok": ("Aktuell", "Current"),
+    "cmp_st_outdated": ("Veraltet", "Outdated"),
+    "cmp_st_missing": ("Fehlt", "Missing"),
+    "cmp_st_none": ("Keine Daten", "No data"),
     "cmp_st_tip": ("Die Verbindung wurde seit ihrem letzten Stand geändert oder hat noch keinen: „Aktualisieren“",
                    "The compound changed since its last snapshot or has none yet: “Refresh”"),
     "cmp_need_refresh": ("Ohne aktuellen Stand (nicht im Vergleich): {names}",
@@ -4527,9 +4529,9 @@ TEXTS = {
     "cmp_gap": ("Abstand", "Gap"),
     "cmp_gap_tip": ("Abstand der Kurven in Vielfachen der größten Kurvenhöhe",
                     "Gap between the curves in multiples of the largest curve height"),
-    "cmp_normalize": ("Normiert", "Normalised"),
+    "cmp_normalize": ("Normiert", "Normalized"),
     "cmp_normalize_long": ("Jede Kurve auf ihren größten Betrag des Stroms normiert",
-                           "Each curve normalised to its largest absolute current"),
+                           "Each curve normalized to its largest absolute current"),
     "cmp_arrow": ("Scanpfeil", "Scan arrow"),
     "cmp_structures": ("Strukturen", "Structures"),
     "cmp_struct_color": ("Struktur in Kurvenfarbe", "Structure in curve colour"),
@@ -4544,9 +4546,9 @@ TEXTS = {
     "cmp_series": ("Serie (UV-Vis)", "Series (UV-Vis)"),
     "cmp_content": ("Inhalt", "Content"),
     "cmp_content_eps": ("UV-Vis (ε)", "UV-Vis (ε)"),
-    "cmp_content_abs_norm": ("UV-Vis normiert", "UV-Vis normalised"),
-    "cmp_content_em": ("Emission normiert", "Emission normalised"),
-    "cmp_content_abs_em": ("UV-Vis + Emission (normiert)", "UV-Vis + emission (normalised)"),
+    "cmp_content_abs_norm": ("UV-Vis normiert", "UV-Vis normalized"),
+    "cmp_content_em": ("Emission normiert", "Emission normalized"),
+    "cmp_content_abs_em": ("UV-Vis + Emission (normiert)", "UV-Vis + emission (normalized)"),
     "cmp_stack": ("Gestapelt", "Stacked"),
     "cmp_norm_tip": ("Bereich, dessen höchste Absorbanz auf 1 gesetzt wird (z. B. die Bande über 400 nm statt der im UV).\n"
                      "Feld leeren = auto: Maximum der ganzen Messung ab dem Anfang des Peakbereichs.",
@@ -4554,7 +4556,7 @@ TEXTS = {
                      "Clear the field = auto: maximum of the whole measurement from the start of the peak range."),
     "cmp_norm_outside": ("Keine Bande im Normierungsbereich {lo}–{hi} nm (außerhalb der Messung oder unter 2 % des "
                          "Maximums), nicht gezeigt: {names}",
-                         "No band within the normalisation range {lo}–{hi} nm (outside the measurement or below 2% of "
+                         "No band within the normalization range {lo}–{hi} nm (outside the measurement or below 2% of "
                          "the maximum), not shown: {names}"),
     "cmp_no_eps": ("Ohne ε (Konzentration oder Molmasse fehlt im ε-Tab), nicht gezeigt: {names}",
                    "No ε (concentration or molar mass missing in the ε tab), not shown: {names}"),
@@ -4595,7 +4597,7 @@ TEXTS = {
     "cmp_cell": ("Zelle", "Cell"),
     "cmp_reset_cell": ("Wert des Tabs", "Value of the tab"),
     "cmp_cell_tab": ("Wert im Tab: {v}", "Value in the tab: {v}"),
-    "cmp_cell_over": ("von Hand überschrieben", "overwritten by hand"),
+    "cmp_cell_over": ("Von Hand überschrieben", "Overwritten by hand"),
     "cmp_cell_hint": ("Zellen der Tabelle rechts direkt bearbeiten (Doppelklick); überschriebene Werte aus den Tabs "
                       "stehen orange.",
                       "Edit cells of the table on the right directly (double-click); overwritten values from the tabs "
@@ -4670,8 +4672,8 @@ TEXTS = {
                          "Scale field axes to this microwave frequency as the EPR tab does (B·ν_ref/ν). “Off”: only "
                          "spectra with the same frequency as the first; others are not shown"),
     "cmp_content_ir": ("IR", "IR"),
-    "cmp_content_epr": ("EPR (Feld, normiert)", "EPR (field, normalised)"),
-    "cmp_content_epr_g": ("EPR (g, normiert)", "EPR (g, normalised)"),
+    "cmp_content_epr": ("EPR (Feld, normiert)", "EPR (field, normalized)"),
+    "cmp_content_epr_g": ("EPR (g, normiert)", "EPR (g, normalized)"),
     "cmp_ir_refused": ("Andere Darstellung als das erste IR-Spektrum ({mode}), nicht gezeigt (nie umgerechnet): {names}",
                        "Other display than the first IR spectrum ({mode}), not shown (never converted): {names}"),
     "cmp_ir_mode_T": ("Transmission", "transmittance"),
@@ -4849,8 +4851,8 @@ TEXTS = {
     "ir_calc_col_meas": ("ṽ gemessen [cm⁻¹]", "ṽ measured [cm⁻¹]"),
     "ir_calc_col_calc": ("ṽ berechnet [cm⁻¹]", "ṽ calculated [cm⁻¹]"),
     "ir_calc_col_how": ("Zuordnung", "Assignment"),
-    "ir_calc_how_manual": ("von Hand", "manual"),
-    "ir_calc_how_auto": ("eindeutig", "unique"),
+    "ir_calc_how_manual": ("Von Hand", "Manual"),
+    "ir_calc_how_auto": ("Eindeutig", "Unique"),
     "ir_calc_none": ("Keine Rechnung: in der Karte IR-Rechnung eine Frequenzrechnung wählen",
                      "No calculation: choose a frequency calculation in the IR Calculation card"),
     "ir_calc_info": ("{n} berechnete Moden, skaliert mit {s}; automatisch nur eindeutige Paare (Moden ab {pct} % der "
@@ -5080,7 +5082,16 @@ TEXTS = {
     "homa_col_note": ("Hinweis", "Note"),
     "homa_none": ("Keine ebenen 5- bis 7-Ringe in der gewählten Struktur",
                   "No planar 5- to 7-membered rings in the selected structure"),
-    "homa_missing": ("nicht parametrisiert: {bonds}", "not parametrised: {bonds}"),
+    "homa_missing": ("Nicht parametrisiert: {bonds}", "Not parametrized: {bonds}"),
+    # Satz unter der HOMA-Tabelle in der Oberfläche (die SI-Fußnote bleibt englisch, homa_view.method_sentence)
+    "homa_method": ("{name} = 1 − (1/n) Σ α (R_opt − R_i)² mit R_opt und α je Bindungstyp aus {cite}; Bindungslängen R_i "
+                    "aus {src}. EN und GEO (HOMA = 1 − EN − GEO; {engeo}) nur für Ringe mit einem einzigen Bindungstyp; "
+                    "Ringe mit einem Bindungstyp ohne Parameter haben keinen Wert.",
+                    "{name} = 1 − (1/n) Σ α (R_opt − R_i)² with R_opt and α per bond type from {cite}; bond lengths R_i "
+                    "from {src}. EN and GEO (HOMA = 1 − EN − GEO; {engeo}) are given only for rings with a single bond "
+                    "type; rings with a bond type without parameters have no value."),
+    "homa_src_xray": ("den Atomkoordinaten", "the atomic coordinates"),
+    "homa_src_calc": ("der berechneten Geometrie", "the calculated geometry"),
     # NTO (Paket B 1.2.0, Overlay)
     "nto_card": ("Übergangsorbitale (NTO)", "Transition Orbitals (NTO)"),
     "nto_card_tip": ("Natürliche Übergangsorbitale je Anregung aus der Rechnung zeigen (berechnet werden sie nicht): "
@@ -5160,7 +5171,7 @@ TEXTS.update({
                             "element): not labelled, please assign again"),
     "fixt_epr_spin_scale": ("Die Messungen unterscheiden sich in: {what}. Sind die Spektren nicht darauf normiert, sind "
                             "die Konzentrationen um dieses Verhältnis falsch; nicht umgerechnet.",
-                            "The measurements differ in: {what}. If the spectra are not normalised for this, the "
+                            "The measurements differ in: {what}. If the spectra are not normalized for this, the "
                             "concentrations are wrong by that ratio; not corrected."),
     "fixt_epr_n_scans": ("Zahl der Scans", "number of scans"),
     "fixt_epr_gain_dB": ("Empfängerverstärkung", "receiver gain"),
@@ -5171,7 +5182,7 @@ TEXTS.update({
                           "the intercept): {what}"),
     "fixt_epr_kin_rise": ("Intensität steigt (k < 0), keine Halbwertszeit: {what}", "Intensity increased (k < 0), no "
                           "half-life: {what}"),
-    "fixt_nmr_count_multi_h": ("mehrere H-Zahlen in einem Signal", "several H counts in one signal"),
+    "fixt_nmr_count_multi_h": ("Mehrere H-Zahlen in einem Signal", "Several H counts in one signal"),
     "fixt_raman_exc_none": ("Nicht angegeben", "Not given"),
     "fixt_cv_acs_ref": ("Referenz", "Reference"),
     "fixt_cv_acs_ref_long": ("Referenzelektrode im Messaufbau", "Reference electrode of the setup"),
@@ -5218,7 +5229,7 @@ TEXTS.update({
                            "missing, not read."),
     "r4_eclipse_layout": ("{name}: Aufbau des Cary-Eclipse-Exports nicht erkannt (Probennamen, Index der Z-Achse und "
                           "Datenspalten passen nicht zusammen): nicht gelesen.",
-                          "{name}: layout of the Cary Eclipse export not recognised (sample names, Z-axis index and "
+                          "{name}: layout of the Cary Eclipse export not recognized (sample names, Z-axis index and "
                           "data columns do not match): not read."),
     "r4_cary_no_data": ("{name}: Probe „{sample}“ ohne Datenspalten (Datei abgeschnitten oder anderer Aufbau): nicht "
                         "gelesen.", "{name}: sample “{sample}” has no data columns (file truncated or another layout): "
@@ -5361,7 +5372,7 @@ TEXTS.update({
     "b2nmr_int_overlap": ("Integralbereiche überlappen oder liegen ineinander: bitte trennen.",
                           "Integral ranges overlap or are nested: please separate them."),
     "b2nmr_norm_zero": ("Bezugsintegral ist null oder negativ: keine Normierung möglich.",
-                        "Reference integral is zero or negative: cannot normalise."),
+                        "Reference integral is zero or negative: cannot normalize."),
     "b2nmr_ref_weak": ("Restsignal ({ref} ppm) im Suchfenster nicht deutlich: kein Referenzvorschlag.",
                        "Residual signal ({ref} ppm) not distinct in the search window: no reference suggestion."),
     "b2nmr_int_broad": ("Integral einer breiten Linie (Halbwertsbreite > {hz} Hz): Genauigkeit ±2 % nicht belegt.",
@@ -5545,8 +5556,8 @@ TEXTS.update({
                                   "(Shift + Rahmen: mehrere).",
                                   "Select a group, then click its nuclei on the <a href=\"hfc\">“Hyperfine”</a> page "
                                   "(Shift + frame: several)."),
-    "dft_page_calc": ("Rechnung: <b>{name}</b> · <a href=\"structures\">andere wählen</a>",
-                      "Calculation: <b>{name}</b> · <a href=\"structures\">choose another</a>"),
+    "dft_page_calc": ("Rechnung: <b>{name}</b> · <a href=\"structures\">Andere wählen</a>",
+                      "Calculation: <b>{name}</b> · <a href=\"structures\">Choose another</a>"),
     "xray_pack_off_hint": ("Häkchen wirken nur im Packungsbild (<a href=\"pack\">Abbildung: Packung</a>).",
                            "Ticks act only on the packing figure (<a href=\"pack\">Figure: Packing</a>)."),
     "dft_nics_show_hint": ("Nur für die Vorschau; Export und SI: Scan und 3D.",
@@ -5914,8 +5925,8 @@ TEXTS.update({
     "nmr_phase_manual_tip": ("Phase im Bild ziehen: linke Taste 0. Ordnung, rechte 1. Ordnung, Klick setzt den Drehpunkt "
                              "(wie MNova Shift+P).", "Drag the phase in the figure: left button zero order, right button "
                              "first order, a click sets the pivot (like MNova Shift+P)."),
-    "nmr_phst_procs": ("aus procs ({ph})", "from procs ({ph})"),
-    "nmr_phst_manual": ("von Hand ({ph})", "manual ({ph})"),
+    "nmr_phst_procs": ("Aus procs ({ph})", "From procs ({ph})"),
+    "nmr_phst_manual": ("Von Hand ({ph})", "Manual ({ph})"),
     "nmr_phst_topspin": ("TopSpins Spektrum (1r), zusätzlich {ph}", "TopSpin's spectrum (1r), additional {ph}"),
     "nmr_phst_none": ("procs ohne Phase: {ph}", "procs without phase: {ph}"),
     "nmr_phst_acme": ("ACME-Vorschlag ({ph})", "ACME suggestion ({ph})"),
@@ -5980,7 +5991,7 @@ TEXTS.update({
                   "Couplings in Hz, separated by commas, for “Fit pattern”."),
     "nmr_nh": ("Kerne", "Nuclei"),
     "nmr_nh_tip": ("Anzahl H des Signals; „Auto“ = Integral × Normierung, gerundet.",
-                   "Number of H of the signal; “Auto” = integral × normalisation, rounded."),
+                   "Number of H of the signal; “Auto” = integral × normalization, rounded."),
     "nmr_fit": ("Muster anpassen", "Fit pattern"),
     "nmr_fit_tip": ("Klasse und J im Bereich des Signals suchen; die gefundenen Linien stehen als Striche über dem "
                     "Spektrum (orange = Vorschlag).", "Search class and J in the range of the signal; the found lines "
@@ -5998,16 +6009,16 @@ TEXTS.update({
                        "danach wie üblich bestätigen.", "Fit the pattern again without the unmeasured J (e.g. dd -> d): "
                        "δ and the resolved J stay, then confirm as usual."),
     "nmr_sig_del_tip": ("Gewähltes Signal entfernen.", "Remove the selected signal."),
-    "nmr_norm": ("Normierung", "Normalisation"),
+    "nmr_norm": ("Normierung", "Normalization"),
     "nmr_norm_set": ("Setzen", "Set"),
     "nmr_norm_tip": ("Gewähltes Integral (Modus I) oder gewähltes Signal hat so viele Kerne; alle Integrale und nH "
                      "folgen.", "The selected integral (mode I) or selected signal has this many nuclei; all "
                      "integrals and nH follow."),
     "nmr_norm_need": ("Erst ein Integral (Modus I) oder ein Signal wählen.", "Select an integral (mode I) or a signal "
                       "first."),
-    "nmr_norm_state": ("Normiert: {lo} – {hi} ppm = {n} H.", "Normalised: {lo} – {hi} ppm = {n} H."),
+    "nmr_norm_state": ("Normiert: {lo} – {hi} ppm = {n} H.", "Normalized: {lo} – {hi} ppm = {n} H."),
     "nmr_norm_none": ("Nicht normiert: Kerne erst nach „Normierung“ (Integrale zeigen das erste = 1).",
-                      "Not normalised: nuclei only after “Normalisation” (integrals show the first = 1)."),
+                      "Not normalized: nuclei only after “Normalization” (integrals show the first = 1)."),
     "nmr_mult_found": ("{n} Signale vorgeschlagen.", "{n} signals suggested."),
     "nmr_peaks_found": ("{n} Peaks vorgeschlagen.", "{n} peaks suggested."),
     "nmr_peaks_rest": ("{n} weitere Maxima über 5σ liegen näher als 1 Hz an einem höheren (Rauschen auf Flanken): "
@@ -6153,10 +6164,10 @@ TEXTS.update({
                              "Shift used by the CV tab (manual, 0 without a reference found): change it there. Your own "
                              "value applies again without the chip."),
     "z1_sec_ref_e12_tip": ("E½ der im CV-Tab gewählten Referenz, gemessen gegen die Elektrode: dort ändern. Die Achse "
-                           "rechnet mit E½ minus dem Wert der Referenz gegen Fc⁺/Fc. Der eigene Wert gilt wieder ohne "
+                           "rechnet mit E½ minus dem Wert der Referenz gegen Fc⁰/⁺. Der eigene Wert gilt wieder ohne "
                            "den Chip.",
                            "E½ of the reference chosen in the CV tab, measured against the electrode: change it there. "
-                           "The axis uses E½ minus the value of the reference vs. Fc⁺/Fc. Your own value applies again "
+                           "The axis uses E½ minus the value of the reference vs. Fc⁰/⁺. Your own value applies again "
                            "without the chip."),
     "z1_rp_paths_head": ("Reaktionspfad", "Reaction path"),
 })
@@ -6410,8 +6421,8 @@ TEXTS.update({                                            # HRMS: eigenes Ion, F
                          "Remove the own entries of this computer; only the shipped list applies again."),
     "ms_own_entry_bad": ("⚠ nicht rechenbar (ohne Hinweis): {items}", "⚠ cannot be computed (no hint): {items}"),
     "ms_pdf_kind_ocr": ("per OCR", "by OCR"),
-    "ms_cand_head_ocr": ("Per OCR erkannt (Klick übernimmt)", "Recognised by OCR (click to take)"),
-    "ms_ocr_entry": ("Per OCR erkannt: {mz}  ({ppm} ppm)", "Recognised by OCR: {mz}  ({ppm} ppm)"),
+    "ms_cand_head_ocr": ("Per OCR erkannt (Klick übernimmt)", "Recognized by OCR (click to take)"),
+    "ms_ocr_entry": ("Per OCR erkannt: {mz}  ({ppm} ppm)", "Recognized by OCR: {mz}  ({ppm} ppm)"),
     "ms_ocr_running": ("Texterkennung läuft …", "Text recognition running …"),
     "ocr_missing": ("⚠ Texterkennung nicht installiert (Paket rapidocr) – Werte von Hand eintragen",
                     "⚠ text recognition not installed (package rapidocr) – enter the values manually"),
@@ -6420,7 +6431,7 @@ TEXTS.update({                                            # HRMS: eigenes Ion, F
     "ir_doc_head_pdf": ("Zahlen aus dem PDF (Häkchen übernimmt sie in die IR-Zeile)",
                         "Numbers from the PDF (tick to take them into the IR line)"),
     "ir_doc_head_ocr": ("Per OCR erkannt (Häkchen übernimmt sie in die IR-Zeile)",
-                        "Recognised by OCR (tick to take them into the IR line)"),
+                        "Recognized by OCR (tick to take them into the IR line)"),
     "ir_doc_wn": ("ṽ [cm⁻¹]", "ṽ [cm⁻¹]"),
     "ir_doc_tip": ("Zahlen zwischen 350 und 4500 aus dem Dokument; nichts ist vorgewählt. Zeile und Ausschnitt stehen im "
                    "Tooltip jeder Zeile: vergleichen, bevor du sie übernimmst.", "Numbers between 350 and 4500 from the document; nothing is preselected. "

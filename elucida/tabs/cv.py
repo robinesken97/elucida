@@ -1237,7 +1237,7 @@ class CVTab(TABS.FigureTab):
             col = grad.get(e["uid"], e["color"])
             b.setEnabled(not grad)
             b.setToolTip(T("cv_color_gradient_tip") if grad else "")
-            b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {col}; border: 1px solid {STYLE.swatch_border()};")
+            b.setStyleSheet(STYLE.swatch_css(col, b.property('cellcss') or ''))
 
     def _set_color(self, e, c):
         e["color"] = c

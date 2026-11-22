@@ -26,7 +26,7 @@ Drag the files into the window or use **Open measurement data…** in the **UV-V
 merged into one data set.
 
 **Concentrations:** Elucida reads them from the sample names, e.g. `ABC-1-0p5mgml_THF` → series `ABC-1`, 0.5 mg/mL
-(`p` is the decimal point; mg/mL, mM and µM are recognised). Without concentrations in the names the **Enter concentrations**
+(`p` is the decimal point; mg/mL, mM and µM are recognized). Without concentrations in the names the **Enter concentrations**
 section opens in the **Data** card. **You have to choose the unit there explicitly**, so that no wrong ε can come out. "Fill dilution series" puts start,
 start/factor, … into the selected rows.
 
@@ -63,7 +63,7 @@ size. Optional: indices λ₁/ε₁ …, "(sh)" at shoulders, R² in the figure.
 ## 7. Export and into the SI
 
 **Export** writes the figure (PDF/SVG/PNG) to `figures/`, `<series>_UV-Vis_results.csv` and the Excel report to
-`tables/` for all series. The UV-Vis line is under **SI line** and goes into the characterisation paragraph with
+`tables/` for all series. The UV-Vis line is under **SI line** and goes into the characterization paragraph with
 **SI (Word)**; the figure with its caption ("UV-Vis spectra of **X** in THF, measured in 0.1 cm quartz cuvettes.") goes
 into the figure part. Enter the solvent for that under **Analysis**.
 

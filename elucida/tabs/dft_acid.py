@@ -658,7 +658,7 @@ class AcidPage:
         for b, key in ((self.btn_color, "color"), (self.btn_shaft, "color_shaft"), (self.btn_head, "color_head"),
                        (self.btn_field, "color_field")):      # Farbfelder nach Rückgängig/Öffnen nachziehen
             b.setProperty("color", st[key])
-            b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {st[key]}; border: 1px solid {STYLE.swatch_border()};")
+            b.setStyleSheet(STYLE.swatch_css(st[key], b.property('cellcss') or ''))
         self._loading = False
         if self.mouse:
             self.mouse.disconnect()

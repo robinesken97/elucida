@@ -18,7 +18,7 @@ spectrum.
 ## 2. Process
 
 Click a measurement: field **Dark spectrum** (light − k·dark). Under **Processing**: choose a baseline, mask ranges,
-smooth. The order is fixed: dark spectrum → baseline → masking → smoothing → normalisation.
+smooth. The order is fixed: dark spectrum → baseline → masking → smoothing → normalization.
 
 Which baseline?
 - **Polynomial** (from the edges or from signal-free ranges): the normal case for narrow sweeps.

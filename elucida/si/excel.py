@@ -438,7 +438,7 @@ def _results_sheet(ws, cs, calc, spec, cfg, results, series, files, version, uni
     ticks = "in" if cfg.get("tick_direction", "in") == "in" else "out"
     ss = spec["sheet"]
     if spec["n"]:
-        ch = _chart(cfg, cfg.get("xlabel") or "wavelength [nm]", cfg.get("ylabel") or "absorbance [a.u.]", w_cm, h_cm,
+        ch = _chart(cfg, cfg.get("xlabel") or "wavelength [nm]", cfg.get("ylabel") or "absorbance [arb. u.]", w_cm, h_cm,
                     ticks)
         xlim, ylim = spec["xlim"], spec["ylim"]
         ch.x_axis.scaling.min, ch.x_axis.scaling.max = float(min(xlim)), float(max(xlim))

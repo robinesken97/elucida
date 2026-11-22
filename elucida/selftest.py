@@ -4045,7 +4045,7 @@ def _g_epr_kinetics(ctx):
             w.epr_state.update(cap_species="TEST-1^{•+}", cap_solvent="THF", cap_conc="1 mM")   # Unterschrift wie in der SI
             cap_e = t_e.si_caption("TEST-1")
             assert cap_e.startswith("X-Band EPR spectr") and "<b>TEST-1<sup>•+</sup></b> in THF (1 mM)." in cap_e \
-                and "2×<sup>1</sup>H: 12." in cap_e and "<i>g</i> = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
+                and "2\u2009×\u2009<sup>1</sup>H: 12." in cap_e and "<i>g</i> = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
             w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
             # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
             A_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(1, 1.0, 1.4)], 0.2)
@@ -4524,7 +4524,7 @@ def _g_epr_kinetics(ctx):
             w.epr_state["spin_thresh"] = 5.0
             rows_ = cp_.rows("spin", d_)
             assert len(rows_) == 7 and rows_[-1][2] == "100" and rows_[2][2] == "\u22123", rows_  # Tabelle: alle
-            assert cp_.rows("hfc", d_)[2][-1].startswith("4 ") and cp_.rows("hfc", d_)[0][-1] == ""
+            assert cp_.rows("hfc", d_)[2][-1].startswith("4\u2009×\u2009") and cp_.rows("hfc", d_)[0][-1] == ""
             assert len(cp_.headers("hfc")) == 4 and cp_.rows("hfc", d_)[2][2] == "\u221240.00"     # eine Spalte A_iso
             w.epr_state.update(hfc_dipole=True, hfc_unit="mT")
             assert cp_.headers("hfc")[2:6] == ["A_iso [mT]", "B_aa [mT]", "B_bb [mT]", "B_cc [mT]"]
@@ -5539,7 +5539,7 @@ def _g_ir_hrms(ctx):
             assert IRMS.raman_line([{"wn": 1000.4}, {"wn": 1600.5}], 785.0) == (
                 "Raman (λexc = 785 nm): ṽ = 1601, 1000 cm-1",
                 "<b>Raman</b> (<i>λ</i><sub>exc</sub> = 785 nm): ṽ = 1601, 1000 cm<sup>-1</sup>")
-            assert IRMS.exc_text(632.8) == "632.8"
+            assert IRMS.exc_text(632.8) == "633" and IRMS.exc_text(785.0) == "785"   # lambda ganzzahlig (fix7)
             # im Tab: Raman allein (Rechnung mit Aktivitäten), übereinander, SI-Zeile, Export; danach wie vorher
             t_r_ = w.irms_tab
             keep_r_ = {k_: w.irms_state.get(k_) for k_ in ("ram_file", "ram_view", "ram_off", "irc_file", "irc_pairs",
@@ -5547,7 +5547,12 @@ def _g_ir_hrms(ctx):
             try:
                 t_r_.set_raman(str(f_r_))
                 t_r_.set_calc(str(o1_r_))
-                w.irms_state.update(ram_view="raman", ram_exc=785.0, ir_labels=True, ram_calc=True, x_auto=True)
+                w.irms_state.update(ram_view="raman", ram_exc=632.8, ir_labels=True, ram_calc=True, x_auto=True)
+                t_r_.sync_widgets()                                       # fix7: Feld ganzzahlig, Zustand behaelt 632.8
+                assert t_r_.sp_ram_exc.text() == "633 nm", t_r_.sp_ram_exc.text()
+                t_r_.collect()
+                assert w.irms_state["ram_exc"] == 632.8, w.irms_state["ram_exc"]
+                w.irms_state["ram_exc"] = 785.0
                 t_r_.sync_widgets()
                 t_r_.render()
                 F_r_ = t_r_.F
@@ -7635,7 +7640,7 @@ def _g_dft(ctx):
             for frag_ in ("ORCA 6.1.1: ! B3LYP D4 def2-SVP TightOpt Freq CPCM(thf)",
                           "Charge: 0\tMultiplicity: 1\tPoint group: C1", "1 imaginary frequency (\u221231.20 cm-1)",
                           "thermochemistry at 298.15 K and 1.00 atm (quasi-RRHO)",
-                          "CPCM dielectric energy (included in E(el)): \u22120.00412345678901 Eh",
+                          "CPCM dielectric energy (included in E_el): \u22120.00412345678901 Eh",
                           "Energy change\t\u22120.0000002000\t0.0000010000\tyes", "\nCl  0.00000000000000",
                           "E_el [Eh]\tH [Eh]\tG [Eh]\n\u2212539.98765432\t\u2212539.91670987\t\u2212539.94683332"):
                 assert frag_ in pl_, (frag_, pl_)
@@ -12414,7 +12419,7 @@ def _g_publication(ctx):
             assert {x_.get_text() for x_ in th_.F.ax.get_yticklabels()} <= {"0.40", "0.95"}
             th_.st.update(quantity="raw", map_mode="none", map_ok=False)
             th_.render()
-            assert th_.F.cfg["heatmap"]["clabel"] == "raw signal [a.u.]" and "raw detector signal" in th_.si_caption("X")
+            assert th_.F.cfg["heatmap"]["clabel"] == "raw signal [arb. u.]" and "raw detector signal" in th_.si_caption("X")
             th_.st.update(spec_files=sec_files, dta=str(secdir / "sec_cv.DTA"), quantity="abs", mode="spectra")
             th_.render()
             assert json.dumps(th_.layout(), sort_keys=True) == lay_spec_, (th_.layout(), lay_spec_)
@@ -12733,8 +12738,18 @@ def _g_publication(ctx):
                 for v_ in root_.findChildren(TV31_) + root_.findChildren(TR31_):   # Listen der Auswahlfelder haben keine Köpfe
                     hh31_ = v_.horizontalHeader() if isinstance(v_, TV31_) else v_.header()
                     texts31_ += [("header", str(v_.model().headerData(c_, Qt.Horizontal) or "")) for c_ in range(hh31_.count())]
+                # Zellwerte und Links aus i18n (Robin 2026-11-22, fix7): „Aktuell“, „Andere wählen“, „✓ Passt“
+                for tw_ in root_.findChildren(QTableWidget):
+                    for r_ in range(tw_.rowCount()):
+                        for c_ in range(tw_.columnCount()):
+                            it_ = tw_.item(r_, c_)
+                            t_ = it_.text().strip() if it_ is not None else ""
+                            if t_ and (t_ in ui31_ or t_.lstrip("–✓⚠ ") in ui31_ or t_.lstrip("–✓⚠ ").startswith(pre31_)):
+                                texts31_.append(("cell", t_))
+                for lb_ in root_.findChildren(LB31_):
+                    texts31_ += [("link", a_) for a_ in re.findall(r"<a [^>]*>([^<]+)</a>", lb_.text())]
                 for kind_, t_ in texts31_:
-                    t_ = t_.strip()
+                    t_ = t_.strip().lstrip("–✓⚠ ")                  # „– Keins –“, „✓ Passt“: erstes Wort zählt
                     if t_[:1].islower() and not CAPS31_.match(t_):
                         bad31_.append((where_, "lower case " + kind_, t_))
 
@@ -18283,7 +18298,8 @@ def _g_lanes(ctx):
                 nm_y.setFont(f_y)
                 pump_y(0.1)
                 ls_y = nm_y.text().split("\n")
-                assert len(ls_y) == 2 and ls_y[1].endswith("…") and ls_y[0] and long_y.startswith(ls_y[0]), ls_y
+                assert len(ls_y) == 2 and "…" in ls_y[1] and long_y.endswith(ls_y[1].split("…")[1]) and ls_y[0] \
+                    and long_y.startswith(ls_y[0]), ls_y                  # Mitte gekürzt, Ende sichtbar (fix7)
                 assert all(nm_y.fontMetrics().horizontalAdvance(x_) <= nm_y.width() for x_ in ls_y), ls_y
                 assert nm_y.height() == 2 * nm_y.fontMetrics().lineSpacing() and nm_y.toolTip() == long_y
             nm_y.close()
@@ -23863,6 +23879,147 @@ def _g_nmr_own(ctx):
             assert all(-0.07 < t1 < -0.035 for _, t1, _ in co_or), co_or
             report.append("Own structure drawing: chain double bond keeps its side, a double bond in a 12-ring lies "
                           "inside (rings of any size), a centred C=O runs on to the neighbouring bonds' axes: OK")
+        with section:
+            # Lane fix7 (Abschlusssichtung 1.4.0): je Befund eine Prüfung, die ohne die Änderung scheitert. Beispielprojekt.
+            from PySide6.QtCore import QPoint as QP_f7
+            from PySide6.QtGui import QFontMetrics as QFM_f7
+            from PySide6.QtWidgets import QPushButton as QPB_f7, QTableWidget as QTW_f7
+            from elucida.app import style as ST_f7
+            from elucida.app import i18n as I18N_f7
+            from elucida.tabs import multireference as MR_f7, export as EXP_f7
+
+            def pump_f7(sec=0.3):
+                t0_ = time.time()
+                while time.time() - t0_ < sec:
+                    app.processEvents()
+                    time.sleep(0.02)
+
+            # statisch: Texte und Satz
+            assert MR_f7.line_html("Same-geometry electronic gap ΔE_ST = E(S) − E(T) = -1.2 kcal mol−1 (root 0; -0.5 Eh)") == (
+                "Same-geometry electronic gap Δ<i>E</i><sub>ST</sub> = <i>E</i>(S) − <i>E</i>(T) = −1.2 kcal mol<sup>−1</sup> "
+                "(root 0; −0.5 E<sub>h</sub>)")
+            for lang_ in (0, 1):
+                assert I18N_f7.TEXTS["mr_root_item"][lang_][:1].isupper()
+                for k_ in ("kpi_found", "dft_si_inp_yes", "cmp_st_ok", "ir_calc_how_manual", "ir_calc_how_auto"):
+                    assert I18N_f7.TEXTS[k_][lang_][:1].isupper(), (k_, I18N_f7.TEXTS[k_])
+                assert I18N_f7.TEXTS["dft_orb_none"][lang_].lstrip("– ")[:1].isupper()
+            assert "mit" in I18N_f7.TEXTS["homa_method"][0] and "with" not in I18N_f7.TEXTS["homa_method"][0]
+            ize_f7 = re.compile(r"(?i)\b(?:normali|optimi|recogni|characteri|organi|visuali|initiali|minimi|maximi|summari"
+                                r"|customi|synchroni|parametri|polari|lineari|standardi)s(?:e|ed|es|ing|ation|er)\b")
+            bad_f7 = [k_ for k_, v_ in I18N_f7.TEXTS.items() if isinstance(v_, tuple) and len(v_) > 1 and ize_f7.search(str(v_[1]))]
+            assert not bad_f7, bad_f7[:10]                                   # US -ize im Englischen (DE „Polarisation“ bleibt)
+            assert not [k_ for k_, v_ in I18N_f7.TEXTS.items() if "Fc⁺/Fc" in str(v_)]   # überall Fc⁰/⁺
+            assert any("QD-\u2060SC-\u2060NEVPT2" in "".join(v_) for v_ in I18N_f7.TEXTS.values() if isinstance(v_, tuple))   # kein Umbruch "QD-|SC-NEVPT2"
+            assert "2" not in ST_f7.ChipRow.PADS and 'QCheckBox[chip="true"][tight="2"]' not in app.styleSheet()   # Chips: Text nie in der Rundung
+            css_f7 = ST_f7.swatch_css("#ff0000")
+            assert "QPushButton:disabled" in css_f7 and css_f7.count("#ff0000") == 1, css_f7   # gesperrt: blass
+            fm_f7 = QFM_f7(app.font())
+            tl_f7 = EXP_f7.two_lines("hydration_step_two_transition_state_final_run.out", fm_f7, fm_f7.horizontalAdvance("x" * 18))
+            assert len(tl_f7) == 2 and tl_f7[1].endswith(".out") and "…" in tl_f7[1], tl_f7   # Ende des Dateinamens bleibt sichtbar
+            # Punkt 10 (CI Linux): jede Zeile so breit wie gemessen, auch mit Laufweite und breiten Schriften – elidedText
+            # rechnete die Laufweite nicht mit (Arial 150 % lief auch unter macOS über)
+            from PySide6.QtGui import QFont as QF_f7
+            long_f7 = "Orbitals_example_compound_with_an_invented_very_long_file_name_opt_freq.molden"
+            over_f7 = []
+            for fam_ in (app.font().family(), "Arial", "Verdana", "DejaVu Sans", "Courier New"):
+                for sp_ in (100, 130, 150):
+                    f_ = QF_f7(fam_, 13)
+                    f_.setLetterSpacing(QF_f7.PercentageSpacing, sp_)
+                    fmx_ = QFM_f7(f_)
+                    for wd_ in range(40, 300, 7):
+                        ls_ = EXP_f7.two_lines(long_f7, fmx_, wd_)
+                        if any(fmx_.horizontalAdvance(x_) > wd_ for x_ in ls_) or len(ls_) != 2:
+                            over_f7.append((fam_, sp_, wd_, ls_))
+            assert not over_f7, over_f7[:3]
+            # im Fenster (Beispielprojekt, 1500 px)
+            dp_f7 = demo_pub(w, out / "f7_pub")
+            assert w.open_project(dp_f7 / "S3", ask=False, recent=False)
+            w.resize(1500, 900)
+            pump_f7(0.5)
+            # 1 UV-Vis Ergebnisse: Tabelle oben unter der Titelzeile, „Kopieren“ auf der Titelzeile darüber
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            w.render()
+            w.tabs.setCurrentIndex(1)
+            pump_f7(0.6)
+            card_f7 = w.table.parentWidget()
+            y_f7 = w.table.mapTo(card_f7, QP_f7(0, 0)).y()
+            cp_f7 = [b_ for b_ in card_f7.findChildren(QPB_f7) if b_.property("tablecopy") and b_.isVisible()]
+            assert y_f7 < 60 and cp_f7 and all(b_.mapTo(card_f7, QP_f7(0, 0)).y() + b_.height() <= y_f7 for b_ in cp_f7), \
+                (y_f7, [b_.mapTo(card_f7, QP_f7(0, 0)).y() for b_ in cp_f7])
+            # 2 CV Messbedingungen: Methodentext so hoch wie sein Umbruch; Dateiliste so hoch wie ihre Zeilen (6)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            pump_f7(0.8)
+            w.cv_tab.steps.set_step(0, remember=False)
+            pump_f7(0.6)
+            lb_f7 = w.cv_tab.lbl_acs_text
+            assert lb_f7.isVisible() and lb_f7.height() >= lb_f7.heightForWidth(lb_f7.width()), \
+                (lb_f7.height(), lb_f7.heightForWidth(lb_f7.width()))
+            hug_f7 = [t_ for t_ in w.cv_tab.findChildren(QTW_f7) if t_.isVisible() and getattr(t_, "_hug_upd", None)]
+            assert hug_f7, "no file list"
+            for t_ in hug_f7:
+                hdr_ = t_.horizontalHeader().sizeHint().height() if not t_.horizontalHeader().isHidden() else 0
+                want_ = hdr_ + t_.rowCount() * t_.verticalHeader().defaultSectionSize() + 2 * t_.frameWidth()
+                assert t_.height() == t_.maximumHeight() <= want_, (t_.height(), t_.maximumHeight(), want_)
+            # Fußleiste: Unterschrift gesetzt (CH2Cl2 tief, kursive Größen), Klartext im Tooltip
+            w.cv_tab.sync_caption_bar()
+            cb_f7 = w.cv_tab.lbl_cap_bar
+            assert cb_f7._rich and "<sub>" in cb_f7._rich and "<sub>" not in cb_f7.toolTip(), cb_f7._rich
+            # 6 DFT-Energietabellen: Spalte „Struktur“ in beiden gleich breit
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("dft"))
+            pump_f7(1.5)
+            d_f7 = w.dft_tab
+            d_f7.update_si_table()
+            pump_f7(0.3)
+            if not d_f7.tbl_si.isHidden() and not d_f7.tbl_si2.isHidden():
+                d_f7.tbl_si.fit()
+                d_f7.tbl_si2.fit()
+                assert d_f7.tbl_si.columnWidth(0) == d_f7.tbl_si2.columnWidth(0), \
+                    (d_f7.tbl_si.columnWidth(0), d_f7.tbl_si2.columnWidth(0))
+            # 6 X-Ray Tabellen: schmal untereinander, breit nebeneinander
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("xray"))
+            pump_f7(1.5)
+            x_f7 = w.xray_tab
+            x_f7.update_tables()
+            assert ('<td width="28">' in x_f7.txt_tab.toHtml()) == x_f7._tables_wide(), x_f7._wide
+            if x_f7.txt_tab.viewport().width() < 700:
+                assert not x_f7._wide
+            # 3 Atomlabels im 3D-Bild: kein Paar näher als LABEL_CLEAR (halbe Schrifthöhe), Pfad des Beispielprojekts
+            from elucida.tabs import xray as XR_f7
+            from elucida.app import publication as PUB_f7
+            figs_f7, lab_f7 = [], XR_f7.XrayFigure._labels
+            XR_f7.XrayFigure._labels = lambda self_: (lab_f7(self_), figs_f7.append(self_))[0]
+            try:
+                w.close_project()
+                w.open_publication(dp_f7)
+                pump_f7(0.8)
+                pg_f7 = w.pub_page
+                pg_f7.project_tabs.setCurrentIndex(1)
+                pump_f7(0.5)
+                pg_f7.open_path(PUB_f7.load(dp_f7)["reaction_paths"][0])
+                pump_f7(1.5)
+                ws_f7 = pg_f7.path_workspace
+                figs_f7.clear()
+                ws_f7.tabs.setCurrentIndex(next(j_ for j_ in range(ws_f7.tabs.count()) if "3D" in ws_f7.tabs.tabText(j_)))
+                pump_f7(2.5)
+            finally:
+                XR_f7.XrayFigure._labels = lab_f7
+            assert figs_f7, "no 3D figure"
+            F_f7 = figs_f7[-1]
+            rd_f7 = F_f7.fig.canvas.get_renderer()
+            fs_f7 = F_f7.opts.get("label_size") or F_f7.cfg["labels"]["font_size"]
+            cl_f7 = F_f7.LABEL_CLEAR * fs_f7 * F_f7.fig.dpi / 72
+            bx_f7 = [a_.get_window_extent(rd_f7) for a_ in F_f7.ann_items.values()]
+            near_f7 = [(i_, j_) for i_ in range(len(bx_f7)) for j_ in range(i_ + 1, len(bx_f7))
+                       if max(max(bx_f7[i_].x0, bx_f7[j_].x0) - min(bx_f7[i_].x1, bx_f7[j_].x1),
+                              max(bx_f7[i_].y0, bx_f7[j_].y0) - min(bx_f7[i_].y1, bx_f7[j_].y1)) < cl_f7 - 0.5]
+            assert len(bx_f7) > 20 and not near_f7, near_f7
+            pg_f7.close_path()
+            pump_f7(0.3)
+            w.go_home()
+            report.append("Final review fixes (lane fix7): UV-Vis results table on top, CV methods text whole, file lists hug their "
+                          "rows, footer caption typeset, DFT energy tables share the name column, X-Ray tables stack when "
+                          "narrow, 3D atom labels half a font height apart, MR lines typeset, capitals in cells, US -ize, "
+                          "Fc0/+, chip padding, locked swatches pale, export names keep their end: OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

@@ -811,7 +811,7 @@ class NboPage:
             self.cb_hlab.setChecked(st["h_labels"])
             for b, k in ((self.btn_q, "color_q"), (self.btn_bo, "color_bo")):
                 b.setProperty("color", st[k])
-                b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {st[k]}; border: 1px solid {STYLE.swatch_border()};")
+                b.setStyleSheet(STYLE.swatch_css(st[k], b.property('cellcss') or ''))
             self.card.setVisible(self.enabled)
             d = self.data(cur)[0] if cur else None
             structs, cml_note = self.structures(cur, d) if d else ([], "")

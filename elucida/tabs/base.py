@@ -170,13 +170,13 @@ def color_button(color, on_pick, cell=False, small=False):
     elif not cell:
         b.setFixedSize(44, 22)
     b.setProperty("cellcss", css)
-    b.setStyleSheet(f"{css}background-color: {color}; border: 1px solid {STYLE.swatch_border()};")
+    b.setStyleSheet(STYLE.swatch_css(color, css))
 
     def pick():
         c = QColorDialog.getColor(QColor(b.property("color") or color))
         if c.isValid():
             b.setProperty("color", c.name())
-            b.setStyleSheet(f"{css}background-color: {c.name()}; border: 1px solid {STYLE.swatch_border()};")
+            b.setStyleSheet(STYLE.swatch_css(c.name(), css))
             on_pick(c.name())
     b.setProperty("color", color)
     b.clicked.connect(pick)
@@ -615,7 +615,7 @@ class TextFormatCard(QWidget):
             if self.btn_color is not None:
                 b = self.btn_color
                 b.setProperty("color", tf["color"])
-                b.setStyleSheet(f"{b.property('cellcss') or ''}background-color: {tf['color']}; border: 1px solid {STYLE.swatch_border()};")
+                b.setStyleSheet(STYLE.swatch_css(tf['color'], b.property('cellcss') or ''))
             for sp, k_ in ((self.sp_line, "line_w"), (self.sp_axis, "axis_w")):
                 if sp is not None:
                     sp.setValue(float(tf.get(k_, LINE_DEFAULTS[k_])))
@@ -1347,21 +1347,54 @@ class CaptionLabel(QLabel):
 
     def __init__(self):
         super().__init__(objectName="recentSub")
-        self._full = ""
+        self._full, self._rich = "", None
         from PySide6.QtWidgets import QSizePolicy
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.setMinimumWidth(40)
 
-    def set_full(self, text):
+    def set_full(self, text, rich=None):
+        """text: Klartext (Tooltip, `_full`); rich: dieselbe Unterschrift als HTML – dann gesetzt wie im Reiter SI-Text
+        (kcal mol⁻¹, λ_exc, Fc⁰/⁺; Sichtung 1.4.0), auch gekürzt."""
         from elucida.si import lines as SI
         text = SI.chem_plain(text)                           # CH₂Cl₂ auch in der Fußleiste (reiner Text)
         self._full = text
+        self._rich = None
+        if rich:                                             # fett nur in der SI, die Fußleiste bleibt ruhig
+            h = STYLE.si_display(re.sub(r"</?b>", "", rich))
+            self._rich = re.sub(r"^<div[^>]*>|</div>$", "", h)
+        self.setTextFormat(Qt.RichText if self._rich else Qt.PlainText)
         self.setToolTip(text)
-        self.setText(self.fontMetrics().elidedText(text, Qt.ElideRight, max(10, self.width())))
+        self._show()
+
+    def _show(self):
+        w = max(10, self.width())
+        fm = self.fontMetrics()
+        if self._rich is None:
+            self.setText(fm.elidedText(self._full, Qt.ElideRight, w))
+            return
+        # gekürzt: Textstücke zwischen den Tags bis zur Breite, offene Tags schließen (hoch/tief gestellt misst schmaler)
+        out, open_, used, budget = [], [], 0, w - fm.horizontalAdvance("…")
+        for tok in re.split(r"(<[^>]+>)", self._rich):
+            if tok.startswith("<"):
+                out.append(tok)
+                if tok.startswith("</"):
+                    open_ = open_[:-1]
+                elif not tok.endswith("/>") and not tok.startswith("<br"):
+                    open_.append(re.match(r"<(\w+)", tok).group(1))
+                continue
+            txt = html.unescape(tok)
+            for i, ch in enumerate(txt):
+                used += fm.horizontalAdvance(ch)
+                if used > budget:
+                    out.append(html.escape(txt[:i], quote=False))
+                    self.setText("".join(out) + "".join(f"</{t}>" for t in reversed(open_)) + "…")
+                    return
+            out.append(tok)
+        self.setText(self._rich)
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
-        self.setText(self.fontMetrics().elidedText(self._full, Qt.ElideRight, max(10, self.width())))
+        self._show()
 
 
 def side_bar(*widgets, stretch_at=None):
@@ -1401,11 +1434,14 @@ def result_page(group):
     v = group.layout()
     v.setContentsMargins(12, 12, 12, 12)                     # mit Padding 4 + Rahmen: ringsum 17
     v.setSpacing(10)
-    actions = []
+    actions, grows = [], False
     for idx in range(v.count()):
         it = STYLE.item_at(v, idx)
         w, lay = it.widget(), it.layout()
+        if isinstance(w, QTableWidget) and (w.property("hug") or w.property("rows_fit")):   # so hoch wie ihre Zeilen: sonst
+            continue                                         # verteilt Qt den Rest auf Kopfzeile und Lücken (UV-Vis 36)
         if isinstance(w, big):
+            grows = True
             w.setMaximumHeight(16777215)
             w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             v.setStretch(idx, 1)
@@ -1433,6 +1469,11 @@ def result_page(group):
                     lay.addWidget(x)
                     _natural(x)
                 actions.append(lay)
+    fixed = lambda x: isinstance(x, QTableWidget) and (x.property("hug") or x.property("rows_fit"))   # noqa: E731
+    grows = grows or any(x is not None and not fixed(x) and x.sizePolicy().verticalPolicy() == QSizePolicy.Expanding
+                         for x in (STYLE.item_at(v, i).widget() for i in range(v.count())))   # Platzhalter bleibt mittig
+    if not grows:                                            # nur Tabellen in Zeilenhöhe: Platz bleibt unten frei
+        v.addStretch(1)
     if actions:
         last = actions[-1]
         b = next(STYLE.item_at(last, j).widget() for j in range(last.count()) if STYLE.item_at(last, j).widget() is not None)
@@ -2075,10 +2116,12 @@ class FigureTab(QWidget):
         """Bildunterschrift der SI in der Fußleiste unter der Abbildung (eine Zeile, ganz im Tooltip)."""
         name = (getattr(self.main, "compound", None) or {}).get("name") or "X"
         try:                                              # ohne Abbildung keine Unterschrift (HRMS zeigte eine zur Anleitung)
-            text = re.sub(r"<[^>]+>", "", self.si_caption(name)) if getattr(self, "F", None) is not None else ""
+            cap = self.si_caption(name) if getattr(self, "F", None) is not None else ""
         except Exception:
-            text = ""
-        self.lbl_cap_bar.set_full(f"{T('caption_bar')} · Figure Sn: {html.unescape(text)}" if text else "")
+            cap = ""
+        head = f"{html.escape(T('caption_bar'))} · Figure Sn: "
+        text = html.unescape(re.sub(r"<[^>]+>", "", cap))
+        self.lbl_cap_bar.set_full(f"{T('caption_bar')} · Figure Sn: {text}" if text else "", rich=head + cap if text else None)
 
     def _first_render(self):
         """Erstes Zeichnen nach dem Aufbau: sofort, wenn der Tab zu sehen ist, sonst beim ersten Anzeigen (beim
@@ -3449,7 +3492,7 @@ class OverlayTab(FigureTab):
             self.main.error(T("ov_sec_none"))
             return
         off, ref = sec.e_offset()
-        ref = "Fc⁺/Fc" if ref.startswith("Fc$") else ref
+        ref = "Fc⁰/⁺" if ref.startswith("Fc$") else ref
         dlg = QDialog(self)
         dlg.setWindowTitle(T("ov_add_sec"))
         v = QVBoxLayout(dlg)
@@ -3487,7 +3530,7 @@ class OverlayTab(FigureTab):
         sec = self.main.sec_tab
         sp, E = sec.series()
         off, ref = sec.e_offset()
-        ref = "Fc⁺/Fc" if ref.startswith("Fc$") else ref
+        ref = "Fc⁰/⁺" if ref.startswith("Fc$") else ref
         idx = list(range(i0, i1 + 1))
         Es = None if E is None else [float(E[i] - off) for i in idx]
         rng = f"{CV._fmt_e(Es[0], 2)} … {CV._fmt_e(Es[-1], 2)} V vs. {ref}" if Es else f"{len(idx)}"
@@ -3546,7 +3589,7 @@ class OverlayTab(FigureTab):
         sec = self.main.sec_tab
         sp, E = sec.series()
         off, ref = sec.e_offset()
-        ref = "Fc⁺/Fc" if ref.startswith("Fc$") else ref
+        ref = "Fc⁰/⁺" if ref.startswith("Fc$") else ref
         for i in indices:
             e_ax = None if E is None else float(E[i] - off)
             label = f"SEC {CV._fmt_e(e_ax, 2)} V vs. {ref}" if e_ax is not None else f"SEC {sp[i]['name']}"
@@ -4315,7 +4358,7 @@ class OverlayTab(FigureTab):
             cfg["ylim"] = [ymin, max(1.1, 1.05 * mx,      # stärkere Banden ausserhalb des Normierungsbereichs
                                      max(1.1 * e.get("scale", 1.0) + total_off(e) for e in vis))]
         cfg["ylabel"] = (r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else
-                         "absorbance [a.u.]" if abs_mode else "normalized absorbance [a.u.]")
+                         "absorbance [arb. u.]" if abs_mode else "normalized absorbance [arb. u.]")
         items = []
         if PRJ.has_structure(st.get("structure")):
             items.append(("struktur", st["structure"], None, "top"))
@@ -4788,7 +4831,7 @@ class FluoTab(FigureTab):
         xs = np.concatenate([c["x"] for c in curves if "_xr" not in c] or [c["_xr"] for c in curves])
         cfg["xlim"] = [float(xs.min()), float(xs.max())] if st["x_auto"] else [st["x_min"], st["x_max"]]
         cfg["ylim"] = [0, st["ymax"] if st["ymax"] > 0 else 1.2]
-        cfg["ylabel"] = "normalized intensity [a.u.]"
+        cfg["ylabel"] = "normalized intensity [arb. u.]"
         imgs = []
         if PRJ.has_structure(st.get("structure")):
             imgs.append({"file": st["structure"], "id": "struktur", "width": st.get("struct_w", 20) / 100,

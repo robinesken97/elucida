@@ -163,9 +163,9 @@ def si_parts(c, name, coord_lines, opts=None):
             extra.append((t, _h.escape(t)))
     if o["conv"] and c["opt_requested"]:
         # nicht konvergiert: nur Hinweis in der Anzeige, im SI-Text neutral die letzte Tabelle
-        t = "Geometry optimisation converged (final cycle):" if c["opt_converged"] and c["conv"] else \
-            "Geometry optimisation converged." if c["opt_converged"] else \
-            "Final geometry optimisation cycle:" if c["conv"] else ""
+        t = "Geometry optimization converged (final cycle):" if c["opt_converged"] and c["conv"] else \
+            "Geometry optimization converged." if c["opt_converged"] else \
+            "Final geometry optimization cycle:" if c["conv"] else ""
         if t:
             extra.append((t, _h.escape(t)))
     conv_at = len(extra)                                   # Konvergenztabelle direkt unter dieser Zeile
@@ -182,11 +182,11 @@ def si_parts(c, name, coord_lines, opts=None):
                 (" (quasi-RRHO)" if th.get("qrrho") else "") + "."
         extra.append((t, _h.escape(t).replace("cm-1", "cm<sup>-1</sup>")))
     if o["method"] != "off" and s and s.get("e_diel"):
-        t = f"{s['model'] if s['model'] == 'CPCM' else 'CPCM/SMD'} dielectric energy (included in E(el)): " \
+        t = f"{s['model'] if s['model'] == 'CPCM' else 'CPCM/SMD'} dielectric energy (included in E_el): " \
             f"{mi(s['e_diel'])} Eh"
         if s.get("e_cds"):
             t += f"; SMD cavity/dispersion term: {mi(s['e_cds'])} Eh"
-        extra.append((t + ".", _h.escape(t).replace("Eh", "E<sub>h</sub>") + "."))
+        extra.append((t + ".", _h.escape(t).replace("Eh", "E<sub>h</sub>").replace("E_el", "<i>E</i><sub>el</sub>") + "."))
     conv = (["Item", "Value", "Threshold", "Conv."],
             [[CONV_NAMES.get(r[0], r[0]), mi(r[1]), r[2], r[3].lower()] for r in c["conv"]]) \
         if o["conv"] and c["conv"] else None
@@ -908,6 +908,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         for t in (self.tbl_si, self.tbl_si2):
             t.elide_col = 0                                  # lange Namen gekürzt, Tooltip mit dem vollen Namen
             v.addWidget(t)
+        self.tbl_si2.lead_peer, self.tbl_si.lead_follower = self.tbl_si, self.tbl_si2   # Spalte „Struktur“ fluchtet
         self.lbl_si_tbl = STYLE.SciLabel("", T("dft_si_tbl_none"))     # ohne Rechnung: Satz statt leerer Fläche
         self.lbl_si_tbl.setWordWrap(True)
         v.addWidget(self.lbl_si_tbl)

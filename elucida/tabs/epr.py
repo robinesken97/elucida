@@ -1561,7 +1561,7 @@ class EPRTab(TABS.FigureTab):
             hfc = []
             for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", ""))):
                 nm = re.sub(r"^\d+", lambda m: m.group(0).translate(sup), nm)          # 14N -> ¹⁴N
-                hfc.append(f"{n}×{nm}: {self.hfc_unit_text(a, e['g'])}")
+                hfc.append(f"{n}\u2009×\u2009{nm}: {self.hfc_unit_text(a, e['g'])}")   # schmale Leerzeichen wie die Zuordnung
             rows.append([e["label"], STYLE.num(g_text(e["g"]), e["g"]), STYLE.num(f"{e['lw']:.3f}", e["lw"]),
                          "; ".join(hfc) or "–", STYLE.num(core.r2_text(e["fit"]["r2"]), e["fit"]["r2"])])
         return rows
@@ -1594,7 +1594,7 @@ class EPRTab(TABS.FigureTab):
         isos = [e for e in vis if e["kind"] == "iso" and self.fit_ok(e) and not (dB and e.get("fit_to") == calib_t)]
         for e in isos:
             parts = [f"<i>g</i> = {g_text(e['g'])}", f"Δ<i>B</i><sub>pp</sub> = {e['lw']:.3f} mT"]
-            hfc = [f"{n}×{nucleus_html(nm)}: {self.hfc_unit_text(a, e['g'])}"
+            hfc = [f"{n}\u2009×\u2009{nucleus_html(nm)}: {self.hfc_unit_text(a, e['g'])}"
                    for (n, _, a), nm in zip(self.iso_groups(e), nuclei_names(e.get("nuclei", "")))]
             if hfc:
                 parts.append("hyperfine coupling: " + "; ".join(hfc))

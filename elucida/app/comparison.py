@@ -1270,7 +1270,7 @@ class CVStackTab(CompareTab):
         cfg["legend"] = bool(st["legend"])
         cfg["legend_beside"] = True
         cfg["xlabel"] = f"E [V vs. {CV.axis_ref(ref0)}]"
-        cfg["ylabel"] = "normalized current [a.u.]" if st["normalize"] else "I [µA]"
+        cfg["ylabel"] = "normalized current [arb. u.]" if st["normalize"] else "I [µA]"
         for c in curves:
             c.pop("_off", None)
         return cfg, curves, labels, []
@@ -1557,7 +1557,7 @@ class SpectraTab(CompareTab):
         cfg["y_axis"] = "no_numbers" if st["stack"] else "numbers"
         cfg["legend_beside"] = True
         cfg["ylabel"] = (r"$\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]" if eps_mode else
-                         "normalized emission [a.u.]" if content == "em" else "normalized intensity [a.u.]")
+                         "normalized emission [arb. u.]" if content == "em" else "normalized intensity [arb. u.]")
         cfg["images"] = self.struct_images(cfg, traces)
         return cfg, curves, [], []
 
