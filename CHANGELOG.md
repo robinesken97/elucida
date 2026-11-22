@@ -2,6 +2,93 @@
 
 # Changelog
 
+## 1.4.0 – 2026-11-22
+
+### New
+
+#### Figures and labels
+- **Figure Labels in every tab with a figure** (UV-Vis, fluorescence, HRMS, IR, CV, SEC, H-Cell, EPR, TD-DFT, kinetics,
+  comparison stacks): own text, hide and reset per label (card and right-click menu). **Own extra labels:** right-click an
+  empty spot, **Add Label Here**; drag, hide, remove (**Remove Own Labels**). Never in captions or methods text.
+
+#### Export and tables
+- **Tables per tab:** one CSV format (comma, decimal point, UTF-8, headers "name [unit]", raw values), a workbook
+  `<compound>_<Tab>_tables.xlsx` with the on-screen numbers as numeric cells, **Copy** on every result table (Word and Excel).
+- **Export tab:** one card per figure and table; the selection drives **Images**, **Tables**, **PPTX** and **SI (Word)**
+  from four equal buttons; **All**/**None**; disabled buttons say why. **Export All** writes tables too.
+- **Example project** is built once per version: opening it again takes about 0.2 s instead of 19 s; the first build shows progress.
+
+#### NMR
+- **Comparison of own 1D spectra** (one nucleus, one solvent): **Single**, **Overlaid** or **Stacked**; exportable with a
+  comparison subchapter in the SI. Caption with temperature range and a free sentence; withheld until phase and reference
+  of every trace are confirmed.
+- **Octet prediction lane** on click (view only, never in any output); auto range ¹H 9..0, ¹³C 200..0 widened by the signals.
+- Example project: invented temperature series in S3.
+
+#### HRMS
+- **PDF reports:** Bruker SmartFormula layout read automatically (found from the report, calc always computed here, warning
+  when the report's calc differs, instrument spectrum image selectable); header data (path, operator, sample) never taken over.
+- **Unknown PDFs:** candidate list (line, ppm against calc), nothing preselected, taken over by a click; **text recognition
+  (OCR)** for scans, also for IR peak values. Manual found field always available.
+- **More adducts** (MeOH, MeCN, H2O, 2M, 2+, formate) and a free own ion.
+- **Contaminants and Reagents:** hints for peaks matching known contaminants, reagents or fragments (5 ppm, adjustable);
+  on screen only, never in SI or exports; **Own Contaminants** per computer.
+
+#### CV
+- **Reference by click:** column Fc, **Set Reference** snaps to the standard's peaks (Esc cancels); the standard's
+  structure sits above its wave, in the reference colour or black.
+- **D and k0 per couple** in their own table; k0 only from at least three scan rates, as a range from dEp, marked apparent
+  without iR compensation; D only for reversible couples; new `<name>_rate_fits.csv`.
+- Dropped `.DTA` files are routed by content: Gamry CV to CV, cyclic charge-discharge to H-Cell, Bruker BES3T to EPR.
+
+#### Interface
+- **Tab reset menu: Clear Tab (Data and Settings)** in every tab (one undo step, files stay in the folder; the compound keeps its name, its drawing file is never changed).
+- **Format menu, Interface Size** 100/110/125/150 % per computer; **Restart Now** reopens the same compound and tab, or the project page.
+
+#### Structures and salts
+- **Counter-ions:** common abbreviations are resolved in labels and formulas (PF6, SbF6, AsF6, BF4, ClO4, OTf, NTf2,
+  BArF, BPh4, OAc, NO3, HSO4, I3, SO4, N3); the charge is read from the label (a single-digit charge only on a monatomic
+  ion such as Fe2+, "SO4 2-" with a space). Ambiguous labels such as SO42- and unbalanced charges get a hint instead of a guess.
+- **HRMS, Ion of the Salt:** cation [M]+, anion [M]- or 2+/2-; default is the carbon-containing part, projects with an
+  evaluated report keep the whole salt.
+- **ChemDraw import:** rings pasted from ChemDraw keep their double bonds inside; a minus charge sits level with a plus.
+- **Octet and own structure drawer:** double bonds in rings of any size (macrocycles too) go inside the ring; centred double-bond lines (e.g. C=O) run to the axis of the neighbouring bond.
+
+### Changed
+- **Light/dark switch** recolours the open window in place instead of rebuilding it, so it is faster.
+- **Interface review:** tables, lists and trees with rounded corners like the fields; the tab bar tightens before it
+  scrolls (fits at 1200 px); notices sit in the footer in one line (Details grows upward); result tables tighten cells,
+  then use two-line headers before scrolling; empty non-input columns are hidden on screen (files keep them); HRMS raw
+  data and isotopes as tables.
+- Methods texts and captions typeset quantities in italics in Word and in the preview; IR/Raman peaks are integers everywhere.
+- Consistent capitalisation of chips, placeholders, table headers, hints, drop-down items and cell values (symbols, units and abbreviations unchanged); synthesis column header "eq. / %"; MNova spelling.
+- Export tiles: names on two lines, symbols scaled to the preview card; DFT multireference evaluation is a card in the left column; spacing on the details page; lone colour swatches.
+- Left column equally wide in every tab; NMR acquisition parameters as a table; X-Ray/DFT atom labels keep apart;
+  UV-Vis/CV label gaps grow with the label font size.
+- IR: a PDF counts as an OPUS printout only by its layout; other PDFs offer their values as candidates.
+- HRMS figure page: one sentence instead of the guide when a report or raw data has no spectrum.
+- Two-wave guard in CV: a window holding two couples is flagged like an edge peak; suggested windows end halfway to the neighbour.
+- Tables use less cell padding before they scroll sideways; no bold header on selection.
+- Closing or creating a compound turns hidden tabs into placeholders instead of rebuilding them.
+- CV: reference-only measurements leave the scan-rate analysis; scan arrow top left.
+- Result pages: the UV-Vis results table sits on top with **Copy** in its title row; X-Ray tables stack in a narrow
+  window; DFT energy tables share the name column; file lists are as high as their rows.
+- Typography: "arb. u." for arbitrary units, thin spaces in n × nucleus, Fc⁰/⁺ written the same everywhere, -ize spelling
+  in English texts; the Raman laser wavelength is shown as an integer.
+
+### Fixed
+- UV-Vis tab stayed empty after a light/dark switch.
+- Octet: an empty drawing clears structure file, formula and mass instead of "no structure found".
+- Reset All in the label card brought back the old text; IR tab lost the elemental analysis values (EA sentence missing in the SI).
+- Window title bar above the screen edge at 150 % scaling (startup geometry clamped).
+- MNova SVGs with "MS Shell Dlg 2" or no font family render with Arial in PDF and Word.
+- Dark canvas colours: no whitish dark blues/greens; crash at quit from WebEngine pages; crash at exit from the clipboard.
+- Distinct NBO captions and file names for two calculations; E1/2 mean consistent between figure and methods text.
+- Left column keeps its scroll position after a rebuild even when the first render is slow.
+- Crash when drawing structures RDKit cannot sanitize; importing files failed when the compound was opened through a symlink.
+- Wide fonts (Windows): footer notice, NMR parameter column and typeset cells shorten cleanly.
+- CV methods text was cut off in its card; 3D atom labels in the reaction path overlapped; export tile names ran over their card on Linux.
+
 ## 1.3.0 – 2026-11-17
 
 ### New

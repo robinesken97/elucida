@@ -1549,7 +1549,8 @@ figures per page like all others; not in the data package.
 ## Appearance
 
 The program follows the system's light or dark mode; **Format → Appearance** switches to light or dark permanently, as
-does the moon/sun button in the toolbar (the icon shows the current state).
+does the moon/sun button in the toolbar (the icon shows the current state). The switch recolours the open window
+in place instead of rebuilding it.
 The left column of every tab is split into steps (usually **Data · Evaluation · Display**): the bar at the top switches the step, a dot on it marks changed values, **Next: …** at the bottom leads to the next one. Lists with several entries (spectra, measurements, structures) are reordered with the arrow buttons or by dragging a row.
 In the evaluation step the **Processing Chain** card shows which steps of the calculation are in use. To the right of the tabs the most important results appear as tiles; the **SI Text** tab holds the caption with its fields and the methods text, each ready to copy. Quantities are typeset properly: symbols in italics, indices as subscripts, units upright and with negative exponents (mg mL⁻¹, mV s⁻¹); names and formulas with subscript numbers and italic locants. Drop-down lists and chips cannot do this and stay upright. Switches are **chips**: clicking a pill turns it on (blue) or off; the tooltip gives the long form. A field that shows **"Off"** switches its function on with the first step up (with the value used last) and off again at the lower end. Ranges that show **"Auto"** cover all data: a click into the field sets your own limits, a cleared field switches back to automatic. Every field with "Auto" or "Off" shows a small reset arrow while it holds a value of its own: one click returns to "Auto"/"Off", and so does clearing the field and leaving it or pressing Enter.
 Rarely used cards of the left column are collapsed (click the title to open them); a title with **"(changed)"** means

@@ -2,6 +2,98 @@
 
 # Änderungen
 
+## 1.4.0 – 2026-11-22
+
+### Neu
+
+#### Abbildungen und Beschriftungen
+- **Beschriftungen im Bild in jedem Tab mit Abbildung** (UV-Vis, Fluoreszenz, HRMS, IR, CV, SEC, H-Cell, EPR, TD-DFT,
+  Kinetik, Vergleichsstapel): eigener Text, Ausblenden und Zurücksetzen je Label (Karte und Rechtsklickmenü). **Eigene
+  Zusatzlabels:** Rechtsklick auf eine freie Stelle, **Label hier einfügen**; ziehen, ausblenden, entfernen
+  (**Eigene Labels entfernen**). Nie in Unterschriften oder Methodentexten.
+
+#### Export und Tabellen
+- **Tabellen je Tab:** ein CSV-Format (Komma, Dezimalpunkt, UTF-8, Köpfe „Name [Einheit]“, Rohwerte), eine Mappe
+  `<Verbindung>_<Tab>_tables.xlsx` mit den Zahlen vom Bildschirm als Zahlenzellen, **Kopieren** an jeder Ergebnistabelle
+  (Word und Excel).
+- **Tab „Export“:** eine Karte je Abbildung und Tabelle; die Auswahl steuert **Bilder**, **Tabellen**, **PPTX** und
+  **SI (Word)** über vier gleich große Knöpfe; **Alle**/**Keine**; ausgegraute Knöpfe nennen den Grund. **Alles
+  exportieren** schreibt auch Tabellen.
+- **Beispielprojekt** wird einmal je Version angelegt: erneutes Öffnen dauert etwa 0,2 s statt 19 s; der erste Aufbau zeigt den Fortschritt.
+
+#### NMR
+- **Vergleich eigener 1D-Spektren** (ein Kern, ein Lösungsmittel): **Einzeln**, **Überlagert** oder **Gestapelt**; mit
+  Vergleichsunterkapitel in der SI exportierbar. Unterschrift mit Temperaturbereich und freiem Satz; zurückgehalten, bis
+  Phase und Referenz jeder Spur bestätigt sind.
+- **Octet-Vorhersage als Spur** auf Klick (nur Ansicht, nie in einer Ausgabe); Automatikbereich ¹H 9..0, ¹³C 200..0,
+  erweitert um die Signale.
+- Beispielprojekt: erfundene Temperaturreihe in S3.
+
+#### HRMS
+- **PDF-Berichte:** Bruker-SmartFormula-Layout wird automatisch gelesen (found aus dem Bericht, calc immer hier gerechnet,
+  Warnung bei abweichendem calc des Berichts, Spektrenbild des Geräts wählbar); Kopfdaten (Pfad, Bediener, Probe) werden nie übernommen.
+- **Unbekannte PDFs:** Kandidatenliste (Zeile, ppm gegen calc), nichts vorgewählt, Übernahme per Klick; **Texterkennung
+  (OCR)** für Scans, auch für IR-Peakwerte. Feld für found von Hand immer verfügbar.
+- **Mehr Addukte** (MeOH, MeCN, H2O, 2M, 2+, Formiat) und ein freies eigenes Ion.
+- **Fremdpeaks und Reagenzien:** Hinweise auf Peaks, die zu bekannten Fremd-Ionen, Reagenzien oder Bruchstücken passen
+  (5 ppm, einstellbar); nur am Bildschirm, nie in SI oder Exporten; **Eigene Fremdpeaks** je Rechner.
+
+#### CV
+- **Referenz per Klick:** Spalte Fc, **Referenz setzen** rastet auf die Peaks des Standards ein (Esc bricht ab); die
+  Struktur des Standards steht über seiner Welle, in der Farbe der Referenzmessung oder schwarz.
+- **D und k0 je Paar** in eigener Tabelle; k0 erst ab drei Vorschüben, als Bereich aus dEp, ohne iR-Kompensation als
+  scheinbar gekennzeichnet; D nur für reversible Paare; neue `<name>_rate_fits.csv`.
+- Abgelegte `.DTA`-Dateien werden nach Inhalt zugeordnet: Gamry-CV zu CV, zyklisches Laden/Entladen zu H-Cell, Bruker BES3T zu EPR.
+
+#### Oberfläche
+- **Rücksetzmenü der Tabs: Tab leeren (Daten und Einstellungen)** in jedem Tab (ein Rückgängig-Schritt, Dateien bleiben im Ordner; die Verbindung behält ihren Namen, ihre Zeichnungsdatei bleibt unverändert).
+- **Menü Format, Oberflächengröße** 100/110/125/150 % je Rechner; **Jetzt neu starten** öffnet dieselbe Verbindung und denselben Tab oder die Projektseite wieder.
+
+#### Strukturen und Salze
+- **Gegenionen:** gängige Abkürzungen werden in Labels und Formeln aufgelöst (PF6, SbF6, AsF6, BF4, ClO4, OTf, NTf2,
+  BArF, BPh4, OAc, NO3, HSO4, I3, SO4, N3); die Ladung wird aus dem Label gelesen (einstellige Ladung nur an einem
+  einatomigen Ion wie Fe2+, „SO4 2-“ mit Leerzeichen). Mehrdeutige Labels wie SO42- und unausgeglichene Ladungen
+  bekommen einen Hinweis statt einer Vermutung.
+- **HRMS, Ion des Salzes:** Kation [M]+, Anion [M]- oder 2+/2-; Vorgabe ist der kohlenstoffhaltige Teil, Projekte mit
+  ausgewertetem Bericht behalten das ganze Salz.
+- **ChemDraw-Import:** aus ChemDraw eingefügte Ringe behalten ihre Doppelbindungen innen; ein Minus steht so hoch wie ein Plus.
+- **Octet und eigener Strukturzeichner:** Doppelbindungen in Ringen beliebiger Größe (auch Makrozyklen) liegen innen; mittige Doppelbindungslinien (z. B. C=O) laufen bis zur Achse der Nachbarbindung.
+
+### Geändert
+- **Wechsel hell/dunkel** färbt das offene Fenster an Ort und Stelle um, statt es neu aufzubauen, und ist dadurch schneller.
+- **Oberflächendurchsicht:** Tabellen, Listen und Bäume mit runden Ecken wie die Felder; die Tab-Leiste wird erst
+  enger, dann geschoben (passt bei 1200 px); Meldungen stehen einzeilig in der Fußleiste („Details“ wächst nach oben);
+  Ergebnistabellen ziehen erst die Zellen zusammen, dann zweizeilige Köpfe, bevor sie seitwärts scrollen; leere
+  Spalten ohne Eingabe sind am Bildschirm verborgen (Dateien behalten sie); HRMS-Rohdaten und Isotope als Tabellen.
+- Methodentexte und Unterschriften setzen Größen in Word und Vorschau kursiv; IR-/Raman-Peaks überall ganzzahlig.
+- Einheitliche Großschreibung bei Chips, Platzhaltern, Tabellenköpfen, Hinweisen, Auswahlpunkten und Zellwerten (Symbole, Einheiten und Abkürzungen bleiben); Synthese-Spaltenkopf „eq. / %“; Schreibweise „MNova“.
+- Export-Kacheln: Namen in zwei Zeilen, Symbole an die Vorschaufläche angepasst; DFT-Multireferenz-Auswertung als Karte in der linken Spalte; Abstände auf der Detailseite; einzelne Farbfelder.
+- Linke Spalte in jedem Tab gleich breit; NMR-Aufnahmeparameter als Tabelle; Atomlabels in X-Ray/DFT halten Abstand;
+  Labelabstände in UV-Vis/CV wachsen mit der Labelschrift.
+- IR: eine PDF gilt nur an ihrem Layout als OPUS-Ausdruck; andere PDFs bieten ihre Werte als Kandidaten an.
+- HRMS-Abbildungsseite: ein Satz statt der Anleitung, wenn ein Bericht oder Rohdaten kein Spektrum haben.
+- CV: Zwei-Wellen-Schutz: ein Fenster mit zwei Paaren wird wie ein Randpeak markiert; vorgeschlagene Fenster enden auf halbem Weg zur Nachbarwelle.
+- Tabellen nehmen weniger Zellrand, bevor sie seitwärts scrollen; kein fetter Kopf bei Auswahl.
+- Beim Schließen oder Anlegen einer Verbindung werden verborgene Tabs zu Platzhaltern statt neu gebaut.
+- CV: reine Referenzmessungen verlassen die Vorschubanalyse; Pfeil der Messrichtung oben links.
+- Ergebnisseiten: die UV-Vis-Ergebnistabelle steht oben, **Kopieren** in ihrer Titelzeile; X-Ray-Tabellen stapeln sich
+  bei schmalem Fenster; DFT-Energietabellen teilen die Namensspalte; Dateilisten so hoch wie ihre Zeilen.
+- Schreibweise: „arb. u.“ für willkürliche Einheiten in Abbildungen, schmale Leerzeichen in n × Kern, Fc⁰/⁺ überall
+  gleich, englische Texte mit -ize; die Wellenlänge des Raman-Lasers erscheint ganzzahlig.
+
+### Behoben
+- UV-Vis-Tab blieb nach dem Wechsel hell/dunkel leer.
+- Octet: eine leere Zeichnung löscht Strukturdatei, Formel und Masse, statt „keine Struktur gefunden“ zu melden.
+- „Alles zurücksetzen“ in der Label-Karte brachte den alten Text zurück; der IR-Tab verlor die Werte der Elementaranalyse (EA-Satz fehlte in der SI).
+- Titelleiste über dem Bildschirmrand bei 150 % Skalierung (Startgeometrie begrenzt).
+- MNova-SVGs mit „MS Shell Dlg 2“ oder ohne Schriftfamilie erscheinen in PDF und Word mit Arial.
+- Dunkle Zeichenfläche: keine weißlichen dunklen Blau-/Grüntöne; Absturz beim Beenden durch WebEngine-Seiten; Absturz beim Beenden durch die Zwischenablage.
+- Eigene NBO-Unterschriften und Dateinamen bei zwei Rechnungen; E1/2-Mittel in Abbildung und Methodentext gleich.
+- Linke Spalte behält ihre Scrollposition nach dem Neuaufbau auch bei langsamem ersten Zeichnen.
+- Absturz beim Zeichnen von Strukturen, die RDKit nicht bereinigen kann; Import scheiterte, wenn die Verbindung über einen Symlink geöffnet war.
+- Breite Schriften (Windows): Fußleistenmeldung, NMR-Parameterspalte und gesetzte Zellen kürzen sauber.
+- CV-Methodentext war in seiner Karte abgeschnitten; 3D-Atomlabels im Reaktionspfad überlappten; Namen der Export-Kacheln liefen unter Linux über ihre Karte.
+
 ## 1.3.0 – 2026-11-17
 
 ### Neu
