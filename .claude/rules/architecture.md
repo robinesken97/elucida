@@ -80,3 +80,18 @@ Länge (Datum, Autor); MS-Bericht `scrub_docx` (Absätze über Runs hinweg, docP
 
 Ausgelassene Teile laufen über `si_part`/`skip_part` in die Exportmeldung, nie nur ins Protokoll; jeder Tab muss sich mit einer
 unlesbaren gespeicherten Datei bauen lassen.
+
+## Tempo-Messwerte und Prüfstand (aus CLAUDE.md)
+- Seit 1.2.0 neu und nur an öffentlichen oder erfundenen Dateien geprüft (echte Dateien des Nutzers stehen aus; jeder Punkt
+  steht mit Quelle in der passenden Regeldatei): ORCA-Leser für Spindichten/Hyperfein (4.0–6.0 an echten öffentlichen
+  Ausgaben, 6.1 mit dem 6.0-Layout und Hinweis), NBO 7 (geschlossenschalig an echten ORCA-6.0-Ausgaben; Wiberg und
+  Dubletts an öffentlichen Ausgaben, α/β-Listen nur am NBO-6-Layout), AICD-Ausgabe (`Isoober.inc`/`Molekuel.inc`, eine
+  öffentliche Datei), Gamry-Pulsleser (an einer Square-Wave-Datei, DPV selbst nicht), NTO-Bilder aus echter Molden-Datei,
+  Raman-/PXRD-/Lebensdauer-Messungen (nur allgemeiner Textleser, kein Geräteformat), Bruker-Rohdaten im FID-Paket.
+  PXRD-Rechnung gegen eigene Referenzen, nicht gegen Mercury/VESTA verglichen. Bondi-Radien (Packungskontakte) und die
+  HOMA-Parameter für CP/CS/NO stammen aus Sekundärquellen: gegen die Originalarbeiten prüfen.
+- Messwerte 1.2.0 (Beispielprojekt, offscreen, Median): Öffnen S3 0,3 s, erste Verbindung 1,0 s (Zeichner); Wechsel zu
+  einer anderen Verbindung mit gebauten Tabs 0,5 s; erster Klick auf einen Tab 0,15–0,55 s (DFT 2,0 s), zweiter < 0,1 s;
+  Rechenseiten (NTO, NICS, ACID, Hyperfein) beim ersten Anzeigen 0,6–1,7 s; Rückgängig 0,33 s (der geänderte Tab wird neu
+  gebaut); Sprache/Theme 1,0/1,6 s; Gesamt-SI ~29 s; Speicher mit allen Tabs ~1,6 GB. Messskript:
+  `~/Elucida-Audit/tempo/measure.py` (nicht im Repo).

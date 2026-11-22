@@ -109,3 +109,6 @@ paths:
   Position lesen, Tabellen ohne diese Namen ablehnen. Unterschrift: Titel nach Verfahren (gemischt „Voltammograms“),
   Pulsparameter nur, wenn für alle gleich; Achse ΔI. Keine Peakpaar- und Vorschub-Auswertung für Pulskurven (E_p eines
   DPV-Peaks ist nicht E½; eine Umrechnung wäre eine eigene, noch nicht bestellte Auswertung).
+
+## Prüfstand (aus CLAUDE.md)
+- CV geprüft mit echten Gamry-Serien; bei hohem Vorschub in schlecht leitendem Medium iR-dominiert: „Vorschlag“ findet dort zu Recht kein Paar.

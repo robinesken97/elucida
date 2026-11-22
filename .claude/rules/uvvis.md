@@ -54,3 +54,6 @@ paths:
   der Toleranz (Spannweite) liegen und Δ(letztes − erstes) beiderseits deutlich (> 3·Toleranz) mit Vorzeichenwechsel ist;
   sonst keiner, nie interpoliert oder geschätzt. Markiert als Kreis ohne Text (λ in Unterschrift, Tabelle, Kachel).
   Keine Verdünnungskorrektur, keine Bindungskonstanten. SI: beide Titrationsbilder, wenn eine Titrationsansicht gewählt ist.
+
+## Prüfstand (aus CLAUDE.md)
+- BSW-Datei mit Sprung in Spektrum 60 (CSV-Export zum Vergleich fehlt).

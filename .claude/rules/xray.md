@@ -104,3 +104,10 @@ paths:
   Drei Nachkommastellen überall (`homa.fmt`). Wert im Bild: Anmerkung `homa_<Atom-Schlüssel>` in der Ringmitte
   (`XrayFigure._anchor` nimmt ein Tupel von Atomen), Ringmitte vorher für Atomlabels belegt (`opts["ring_marks"]`).
   Zustand `homa_var`/`homa_fig`/`homa_si` im Tab; im Reaktionspfad ausgeblendet.
+
+## Prüfstand (aus CLAUDE.md)
+- X-Ray geprüft mit künstlicher CIF, einer Olex2-CIF und einer CCDC-CIF mit Fehlordnung und Lösungsmittel; Symmetrieerzeugung
+  nur künstlich; Polymere werden
+  abgebrochen (`max_factor`). Vergleich mit einer berechneten Geometrie (seit 1.1.0, Zuordnung nur über das Bindungsnetz)
+  an einer hinterlegten CIF, der ein H fehlte, mit einer Rechnung auf der Kristallgeometrie geprüft; echte CIF gegen
+  eine frei optimierte Geometrie desselben Moleküls noch nicht.

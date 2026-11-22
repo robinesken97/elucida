@@ -62,3 +62,6 @@ paths:
   (Nutzerentscheid 1.2.0, wörtlich „Wieder einbauen so wie du vorgeschlagen hast“): mehrere Spektren derselben Verbindung
   (Lösungsmittel, vor/nach Reaktion, gemessen gegen gerechnet) gestapelt sind sinnvoll; Karte „Stapeln und Achsen“ mit
   den alten Schlüsseln, normale Schlüssel (Vorlagen speichern/setzen sie).
+
+## Prüfstand (aus CLAUDE.md)
+- Echte Gaussian-TD-DFT-Ausgabe noch nicht getestet (nur ORCA inkl. SOC); DFT-Tab: Gaussian-Leser mit einer Opt+Freq geprüft.

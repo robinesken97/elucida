@@ -47,3 +47,7 @@ paths:
   Vorschlag im Tab Verbindung (EA ≤ 0.4 → EA, sonst Kerne der NMR-Zeile) wird nie selbst gesetzt. Bezeichner der
   Gesamt-SI zentral in `SI.labels()` (Vorlage oder Projekteinstellung `si_naming`: `s`/`supplementary`, `set_template(…,
   naming=…)`); `write_docx` stellt Verweise im Fließtext (`_REF_KINDS`) über `rename_refs` um, „Figure 3“ ohne S bleibt.
+
+## Prüfstand (aus CLAUDE.md)
+- Word-Ausgabe aller in 1.2.0 neuen Abbildungen und Tabellen nur als Blöcke im Selbsttest geprüft, nicht in Word angesehen;
+  Windows nur über die CI (offscreen misst Schrift zu breit, schriftabhängige Prüfungen sind dort ausgenommen).

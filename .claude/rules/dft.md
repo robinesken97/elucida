@@ -210,3 +210,12 @@ paths:
   NBO-Version, Zitate **wie in der Ausgabe gedruckt**, Niveau (`level_of_theory` ohne „NBO“), NBOKEYLIST ohne FILE= (Pfad
   des Nutzers). E(2)-Tabelle ab `e2_min` (Standard 5 kcal/mol; Robins SI zeigt keine E(2)-Tabelle), größte zuerst; CSV
   enthält alles. Im Reaktionspfad aus (wie NICS). Beispielprojekt: `demo.make_nbo` (erfunden, Layout wie echt).
+
+## Prüfstand (aus CLAUDE.md)
+- Echte Gaussian-TD-DFT-Ausgabe noch nicht getestet (nur ORCA inkl. SOC); DFT-Tab: Gaussian-Leser mit einer Opt+Freq geprüft.
+- DFT-Tab: IboView wird bewusst nicht angesteuert (eigenes Rendering, Orbitale wie IboView). Orbitale: echte ORCA-Molden-
+  Datei und ORCA-Cube noch nicht gegen orca_plot geprüft (PySCF-Molden ja, inkl. g). MR-Ausgaben (ORCA 6 CASSCF/SC-NEVPT2/QD-SC-NEVPT2,
+  `formats/multireference.py`) gegen synthetische Layouts und eine öffentliche ORCA-6.1.1-Ausgabe (CASSCF + DLPNO-NEVPT2) geprüft;
+  SORCI (nur der DDCI3-Schritt, Energie = gedruckter STATE-Wert inkl. Davidson-Korrektur wie in der Übergangstabelle, CI-Energie daneben) gegen eine echte
+  H2-Ausgabe (ORCA 6.0.1) geprüft: ohne innere Orbitale, ohne Symmetrie, ohne Spektren; im Overlay nicht wählbar. Orbitale, die beim Einlesen nicht
+  orthogonal waren (`redoing schmidt`, > `MAX_SCHMIDT`), gibt der Parser als Warnung aus: ORCA endet trotzdem normal.
