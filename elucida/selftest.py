@@ -23485,6 +23485,7 @@ def _g_nmr_own(ctx):
                     pump(1.0)
                     assert w._snap() == snap_f1, key_
                     if key_ == "compound" and w.comp_tab.drawing_editor is not None and struct0_f1:
+                        _until(lambda: w.comp_tab.drawing_editor.path == Path(struct0_f1).resolve(), pump, limit=15.0)   # CI arm64: Zeichner lädt langsam (1.4.0)
                         assert w.comp_tab.drawing_editor.path == Path(struct0_f1).resolve(), w.comp_tab.drawing_editor.path
                 # laufende Eingabe: Feld mit Fokus (Verbindung) und Vorschrift (Zeitgeber) gelten vor dem Leeren
                 w.show_tab("compound")
