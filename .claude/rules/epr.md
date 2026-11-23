@@ -8,8 +8,8 @@ paths:
 # EPR: fachliche Regeln (nicht ändern ohne Rückfrage)
 
 - EPR: Reihenfolge hell − k·dunkel → Basislinie → Ausblenden → Glätten → Normieren; Simulation mit dem
-  Normierungsfaktor ihrer Messung (Verhältnis bleibt). Triplett-Simulation nicht selbst rechnen (EasySpin), nur
-  importieren. Projekte kopieren BES3T-Partnerdateien (.dsc/.DTA/.YGF/.xml) mit.
+  Normierungsfaktor ihrer Messung (Verhältnis bleibt). Triplett-Simulation (S = 1, D/E, Pulver) darf selbst
+  gerechnet werden (Verfahren nach EasySpin/pepper, MIT; gegen EasySpin-Ausgaben prüfen); EasySpin-Import bleibt. Projekte kopieren BES3T-Partnerdateien (.dsc/.DTA/.YGF/.xml) mit.
 - Basislinie (Nutzerwunsch 2026-11-12 „alle gängigen und sinnvollen“; `bl_method`, Auswahl in der Karte Verarbeitung,
   Felder folgen dem Verfahren): **Polynom** (Ränder oder signalfreie Bereiche), **Glatt** (`smooth_baseline`:
   Whittaker-Glätter nach Eilers 2003 auf Abschnittsmitteln + **genau ein** robuster Schritt mit symmetrischen
