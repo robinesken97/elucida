@@ -102,7 +102,7 @@ project folder.
    datasets** or **Data packages (zip)** at the top: one zip per compound, `CompChem.zip`, `README.txt` and license text in
    `datapack/`, ready for the upload (e.g. TUDOdata).
 
-To try it: **Help → Open example project** creates a project with two invented compounds: a precursor with the usual characterization and its product with matching data for all tabs. The first time per program version it is created (progress at the bottom right), afterwards it opens at once; changes to the example are replaced when it is opened again.
+To try it: **Help → Open example project** creates a project with two invented compounds: a precursor with the usual characterization and its product with matching data for all tabs. The first time per program version it is created (progress at the bottom right), afterwards it opens at once; it is a fresh copy every time, and changes made in it are discarded when it is opened again (the status bar says so).
 
 ## Guides
 
@@ -301,7 +301,7 @@ elsewhere into the project.
 
 The **Comparison** tab of the project page puts compounds of the project side by side, with any number of named
 comparisons. The tab shows them as cards like the reaction paths (preview, name, last change); the card **New
-comparison …** creates a CV stack, a spectra comparison or a table, a right-click on a card removes the entry (exported
+comparison …** creates a CV stack, a spectra comparison, an H-Cell or UV-Vis kinetics comparison or a table, a right-click on a card removes the entry (exported
 files stay). Clicking a card opens the comparison at full window size; the breadcrumb at the top (project name) leads
 back, and its last entry also switches between comparisons. Steps on the left as in the tabs, figure or table on the right, **Export** bottom right. Everything
 is saved in `publication.elucida`. **Undo/Redo** (Edit menu, Ctrl+Z) apply to the changes of the open comparison
@@ -313,6 +313,14 @@ of the ε tab, E½ and ΔE_p like the CV results, g with four decimals). The com
 no compound. If a compound changed since its snapshot or has none (e.g. a tab that was not opened in the session, or a
 compound from an older version), the list shows it as **outdated** or **missing** and its values stay empty. **Refresh**
 opens these compounds briefly one after another, writes the snapshot again and returns to the page.
+
+**Quick comparison** (**New → Quick comparison** on the start screen, or in the menu of the card **New comparison …**) compares
+loose files without a project: drop files or folders on the area (or **Add Files**); the kind (CV, H-Cell, UV-Vis, IR, EPR,
+SEC, NMR, HRMS, X-Ray, DFT) is read from the file, and each file becomes a quick evaluation in the internal project "Quick
+evaluations". What is not recognised is never guessed: it stays in the list **Not Recognized** with a **Reason** (e.g. unknown
+format, UV-Vis without concentrations so no ε, H-Cell without its `CHARGE_DISCHARGE/` folder); where two kinds are possible
+(a PDF as HRMS report or IR spectrum) you choose the kind, **Clear list** empties the list. Double-click a file to open its
+quick evaluation.
 
 - **CV stack:** one cyclic voltammogram per compound, offset vertically (top of the list = top curve, drag or arrows to
   reorder, **Gap** in multiples of the largest curve height). Under "Selected Compound": measurement (default: the first
@@ -336,7 +344,16 @@ opens these compounds briefly one after another, writes the snapshot again and r
   other display is not shown (never converted). **EPR** (normalized, stacked by default): on the field axis only spectra
   with the same microwave frequency as the first one, or scaled to a reference frequency with **Scale to frequency** as
   in the EPR tab (B·ν_ref/ν); **EPR (g)** plots against g = hν/(µ_B·B). Whatever does not fit (other frequency, no
-  frequency in the file) is named in a note below the figure and not shown.
+  frequency in the file) is named in a note below the figure and not shown. **SEC: end spectrum (normalized)** and
+  **TD-DFT: calculated spectrum (ε)** take the end spectrum of the SEC tab and the calculation of the TD-DFT tab; SEC only
+  as absorbance (a raw signal is named in a note and not shown).
+- **H-Cell:** capacity against cycle of several charge/discharge measurements in one figure, Coulombic efficiency on the
+  right axis.
+- **UV-Vis kinetics:** absorbance against time of several kinetics series in one figure (**Series** per compound, **Time unit**;
+  absolute or relative to the first spectrum [%]). **Show fits** adds the first-order fit of each series (off by default).
+- **Several measurements per compound:** in the step "Data", **+ Measurement** adds another row for the selected compound
+  (the card below chooses which measurement); the column **Label** names each row in figure, legend and caption (double-click;
+  empty = compound name, with the measurement when there are several rows). Only added rows can be removed.
 - **Table:** rows = compounds in project order (can be deselected in the step "Data"). The step "Table" has three
   cards on the left:
   - **Quantities:** what is compared, as a list with quantity, unit, group header and source. **From the Tabs** adds a
@@ -344,7 +361,10 @@ opens these compounds briefly one after another, writes the snapshot again and r
     λ_abs/λ_em/Stokes shift, CV E½/E_pa/E_pc/ΔE_p per redox couple and reference, EPR g, hyperfine couplings, D and
     |E/D|, X-ray: every selected parameter of the X-Ray tab with its standard uncertainty from the CIF – one column per
     atom labels, e.g. "C6–C7 / Å", filled for all compounds with the same labels –, space group and crystal system,
-    DFT: input line, E(el), G, HOMO and LUMO), all exactly as in the tab; name and unit are then fixed. **IR: band** and
+    DFT: input line, E(el), G, HOMO and LUMO, synthesis yield [%], HRMS ion, m/z calculated and found and Δ [ppm] (above
+    5 ppm marked), TD-DFT λ, f and E of the strongest transition, kinetics λ, remaining [%] and t½, SEC E½ (apparent) and
+    reference, H-Cell Q_theo, discharge capacity of the first and last cycle, retention, mean CE, cycles and duration),
+    all exactly as in the tab; name and unit are then fixed. **IR: band** and
     **NMR: shift** need a **Target** and a **Tolerance** (fields below the list; default IR ±15 cm⁻¹, ¹H ±0.5 ppm, other
     nuclei ±2 ppm; for NMR also the nucleus): the cell shows the band or signal from the tab's list closest to the
     target, otherwise it stays empty. If a compound has several structures or calculations, choose one in the step
@@ -795,7 +815,7 @@ The cells hold the full value; only the number format rounds as in the app.
 Compare the measured spectra of one compound with its calculation (TD-DFT, ESD) in one figure; several
 measurements of the same compound (another solvent, another concentration, before and after a reaction) are fine.
 Spectra of **different compounds** are compared in the project (project page → **Comparison**: normalized to one band,
-structures in curve colour, also in the combined SI); the row “Comparison” in step Data leads there. Up to 1.1 the
+structures in curve colour, also in the combined SI); this tab shows only what it compares itself. Up to 1.1 the
 tab was called “UV-Vis overlay”; older figures with a structure per spectrum stay as they are (note in the tab), but
 this can no longer be set up here. Stacking stays (spectra of the same compound one above the other).
 
@@ -813,7 +833,8 @@ this can no longer be set up here. Stacking stays (spectra of the same compound 
   can be set per calculation, default 0.3 eV); ε follows from the oscillator strengths
   (ε(ν̃) = 1.306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), as in GaussView). Transitions can be shown as sticks.
 - **y quantity**: *normalized* – every spectrum is scaled to its maximum within the normalization range (globally,
-  or per spectrum with its own range, e.g. if the calculated band is shifted), **ε [10³ M⁻¹ cm⁻¹]** – measured
+  or per selected spectrum with its own range (checkbox **Own (instead of “Normalization” below)**; without one the fields
+  show "Auto"), e.g. if the calculated band is shifted), **ε [10³ M⁻¹ cm⁻¹]** – measured
   spectra then need concentration (and molar mass for mg/mL) and path length, or **absorbance** as measured
   (measurements and SEC, without TD-DFT). The automatic y range always contains every curve.
 - Per spectrum: colour, name, **line style and width**, **scale factor and vertical offset**
@@ -858,7 +879,9 @@ this can no longer be set up here. Stacking stays (spectra of the same compound 
   route is refused). Alternatively load two cubes of one pair (hole = lower MO number), e.g. from orca_plot or
   Gaussian cubegen (`Pop=(NTO,SaveNTO)`); the weight is taken from the NTO block when it lists that pair, otherwise
   enter it as given by your calculation or leave it empty. "Pairs from" (Molden), isovalue (empty = 80% of the
-  orbital density) and "Into the SI" (figure per state with caption, also in the export as `…_NTO_S1`).
+  orbital density) and "Into the SI" (figure per state with caption, also in the export as `…_NTO_S1`). Dragging in the
+  figure rotates hole and particle together (own view per state, used in export and SI); **Reset view** (row **View**)
+  restores the automatic view, likewise in NBO, ACID, 3D NICS and the EPR calculation.
 
 ## UV-Vis kinetics tab
 
@@ -990,6 +1013,16 @@ Absorption and emission in one figure, as commonly shown in papers:
   compensation (Gamry file, otherwise project setup), if ΔE_p of the internal standard exceeds the D threshold or if D
   comes from a couple that is not reversible; if k⁰ falls by more than 25 % with increasing scan rate, a warning points
   to uncompensated resistance.
+- **Electron count n** (evaluation step, card "Electron Count n"): n per wave from the ratio of the forward peak currents of
+  the sample and an **internal one-electron standard** (Fc, Ac₂Fc) in the same voltammogram (Randles–Ševčík,
+  n = [(i_p/i_p,std)·(D_std/D)^½·(c_std/c)]^⅔, baseline-corrected, not rounded). The concentrations of sample (card "Diffusion
+  and k⁰") and standard and both D (**D of sample**, **D of standard**, from DOSY for example) are only used as entered, never
+  estimated from the CV. A standard in another measurement or a custom standard gives no n. If n cannot be given, the
+  table shows the reason instead of a number (e.g. standard separate, no baseline, waves overlap, not reversible, c or D
+  missing); for an irreversible standard wave (ΔE_p above 2.22·RT/F + 10 mV) n is only "apparent", like k⁰. A hint appears when n
+  differs from the entered n. **Coulometry** (same card: couple, **Charge Q**, **Amount N**) gives n = Q/(F·N) from the charge
+  passed (background subtracted) and the amount of substance, from these entries only. Results: table "Electron count n per
+  wave" (Results tab), `_electrons.csv`, a sheet of the workbook and the methods text.
 - **Conventions of the CV calculation:** the Nicholson ratio uses baseline-corrected currents (the original uses the
   zero-current axis) and scatters by about ±3 % even for ideally reversible couples, depending on the switching
   potential. The baseline ends 0.20 V before the peak; for an ideally reversible wave about 0.3 % of the peak current
@@ -1571,8 +1604,8 @@ restarts Elucida and opens the same compound in the same tab again, on the proje
 overview (an open comparison or reaction path does not come back).
 
 **Canvas dark / Canvas light** in the toolbar (moon = dark, sun = light; also Format → Canvas) switches; dark shows all plots, previews and editors on pure black. Hues stay (red stays
-red), dark colours are lightened so that they remain legible. This changes the screen only, never exports, stored
-files or the SI.
+red), dark colours are lightened so that they remain legible. Photos (cuvette photo, fluorescence photos) keep their colours in the preview; axes, text, curves and structures
+follow the dark canvas. This changes the screen only, never exports, stored files or the SI.
 
 ## Figure size for Word
 
@@ -1601,6 +1634,8 @@ CV, no frames in X-Ray). **Reset to defaults** restores the defaults:
 - **Text font** and **symbol font**. By default λ and ε are set in the symbol font (Times New Roman),
   as in Origin; this can be switched off.
 - **Band labels:** font size (automatic by default), bold, italic, colour.
+- **Axis title size**, **Tick label size** and **Legend size** in pt (empty = "Automatic", derived from the figure size);
+  in preview, export and Word SI; the ε inset keeps its own sizes. In X-Ray (PXRD only) and DFT (IRC, NICS scan) they apply to those figures.
 - **Lines** (in tabs with curves the card is called "Fonts and Lines", with colours below "Fonts, Lines and Colours"): **Curve width** as a factor on all
   curves and **Axis lines** (axes, frame, ticks in pt, "Auto" = as drawn); like the fonts for all tabs or with "This
   Tab Only"; applies to preview, export and Word. Not in X-ray, DFT and Other.
@@ -1614,18 +1649,19 @@ CV, no frames in X-Ray). **Reset to defaults** restores the defaults:
 ## Figure labels
 
 Card **Figure Labels** in the step **Display** (UV-Vis (ε) per series, TD-DFT, kinetics, fluorescence, HRMS, IR + EA,
-CV, SEC, H-Cell, EPR, CV stack and spectra of a comparison; not yet NMR, X-Ray, DFT and the energy profile). The table lists the labels of the figure shown:
+CV, SEC, H-Cell, EPR, own NMR spectra (1D and 2D: axis titles, spectrum title; trace names keep their own field), CV stack and spectra of a comparison, the energy profile with its y axis). Fixed texts of a figure (axis titles, secondary axes, legend, colour scale, inset heads and axes, table heads) are rows of the table, too. The table lists the labels of the figure shown:
 
 - **Tick** = label shown in the figure. Unticked, only the label is missing from the figure (and from every export);
   table, SI line, Excel and methods text keep the value. This differs from a deselected band in the ε tab or in IR,
   which also leaves the SI line.
-- **Own text:** select a row and change the text in the field below (applies when leaving the field; multi-line like
-  the label, formulas as in the figure between `$…$`). Empty or equal to the automatic text = no own text. Own texts
+- **Own text:** select a row and change the text in the field below with the text editor (buttons bold, italic, subscript,
+  superscript; no syntax). It applies 0.6 s after the last change and when leaving the field; a typed `$` stays a `$`.
+  Subscripts and superscripts stay upright, only text you made italic is italic. Empty or equal to the automatic text = no own text. Own texts
   are orange in the table; the tooltip shows the automatic text.
 - **Number changed:** if the label carries a number and the own text differs, the preview shows "Label … differs from
   the table/SI". Table, SI, Excel and caption always use the computed values.
 - **Right-click a label** in the preview: Edit text (shows the card), Hide in figure, Reset.
-- **Reset** / **Reset all:** automatic text, shown again. "Defaults" and templates leave own texts alone; every change
+- **Reset** / **Reset all:** automatic text, shown again; **Reset all** acts on the view shown only. "Defaults" and templates leave own texts alone; every change
   is one undo step.
 - Own texts belong to the label: for bands, peaks and masses (ε, SEC, IR, HRMS) to its value – if it changes
   (baseline, peak search), the old text no longer matches a label and is not used. For CV pairs, H-Cell cycles and the

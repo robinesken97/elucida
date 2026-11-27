@@ -107,7 +107,7 @@ Verbindung gehört zu einem Projekt: Sie liegt in dessen Ordner.
    **Datensätze schreiben** bzw. **Datenpakete (Zip)** oben: je Verbindung ein Zip, `CompChem.zip`, `README.txt` und Lizenztext in
    `datapack/`, fertig zum Hochladen (z. B. TUDOdata).
 
-Zum Ausprobieren: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit zwei erfundenen Verbindungen an: eine Vorstufe mit der üblichen Charakterisierung und ihr Produkt mit Daten für alle Tabs, die zueinander passen. Beim ersten Mal je Programmversion wird es angelegt (unten rechts steht der Fortschritt), danach öffnet es sofort; Änderungen am Beispiel ersetzt das nächste Öffnen.
+Zum Ausprobieren: **Hilfe → Beispielprojekt ansehen** legt ein Projekt mit zwei erfundenen Verbindungen an: eine Vorstufe mit der üblichen Charakterisierung und ihr Produkt mit Daten für alle Tabs, die zueinander passen. Beim ersten Mal je Programmversion wird es angelegt (unten rechts steht der Fortschritt), danach öffnet es sofort; es ist jedes Mal eine frische Kopie, Änderungen darin gehen beim nächsten Öffnen verloren (die Statuszeile sagt das).
 
 ## Anleitungen
 
@@ -319,7 +319,7 @@ einen Unterordner an, **Verbindung hinzufügen** verschiebt oder kopiert eine vo
 
 Der Reiter **Vergleich** der Projektseite stellt Verbindungen des Projekts nebeneinander, beliebig viele benannte
 Vergleiche. Der Reiter zeigt sie als Karten wie die Reaktionspfade (Vorschau, Name, Stand); die Karte **Neuer Vergleich …**
-legt einen CV-Stapel, einen Spektrenvergleich oder eine Tabelle an, ein Rechtsklick auf eine Karte entfernt den Eintrag
+legt einen CV-Stapel, einen Spektrenvergleich, einen H-Zelle- oder UV-Vis-Kinetik-Vergleich oder eine Tabelle an, ein Rechtsklick auf eine Karte entfernt den Eintrag
 (exportierte Dateien bleiben). Ein Klick auf eine Karte öffnet den Vergleich in voller Fenstergröße; zurück geht es über
 die Pfadleiste oben (Projektname), deren letzter Eintrag auch zwischen den Vergleichen wechselt. Links die Schritte wie in den Tabs, rechts Abbildung bzw. Tabelle, **Exportieren** unten
 rechts. Gespeichert wird in `publication.elucida`. **Rückgängig/Wiederholen** (Menü Bearbeiten, Strg+Z) gelten im offenen
@@ -333,6 +333,14 @@ Verbindung. Hat sich eine Verbindung seit ihrem Stand geändert oder fehlt er (z
 geöffnet war, oder eine Verbindung aus einer älteren Version), steht sie in der Liste als **veraltet** bzw. **fehlt** und
 ihre Werte bleiben leer. **Aktualisieren** öffnet diese Verbindungen kurz nacheinander, schreibt den Stand neu und kehrt
 zur Seite zurück.
+
+Der **Schnellvergleich** (**Neu → Schnellvergleich** im Startbildschirm oder im Menü der Karte **Neuer Vergleich …**) vergleicht
+lose Dateien ohne Projekt: Dateien oder Ordner auf die Fläche ziehen (oder **Dateien hinzufügen**); die Art (CV, H-Zelle,
+UV-Vis, IR, EPR, SEC, NMR, HRMS, X-Ray, DFT) wird aus der Datei gelesen, und jede Datei wird eine Einzelauswertung im
+internen Projekt „Einzelauswertungen“. Was nicht erkannt wird, wird nie geraten: es bleibt in der Liste **Nicht erkannt**
+mit einem **Grund** (z. B. unbekanntes Format, UV-Vis ohne Konzentrationen und damit ohne ε, H-Zelle ohne den Ordner
+`CHARGE_DISCHARGE/`); wo zwei Arten in Frage kommen (ein PDF als HRMS-Bericht oder IR-Spektrum), wählst du die Art, **Liste
+leeren** leert die Liste. Doppelklick auf eine Datei öffnet ihre Einzelauswertung.
 
 - **CV-Stapel:** je Verbindung ein Cyclovoltammogramm, versetzt übereinander (oben in der Liste = oberste Kurve, Ziehen
   oder Pfeile ordnen um, **Abstand** in Vielfachen der größten Kurvenhöhe). Unter „Gewählte Verbindung“: Messung (Standard:
@@ -357,7 +365,17 @@ zur Seite zurück.
   IR-Tab die andere Darstellung zeigt, wird nicht gezeigt (nie umgerechnet). **EPR** (normiert, Standard gestapelt): auf
   der Feldachse nur Spektren mit derselben Mikrowellenfrequenz wie das erste, oder mit **Frequenz angleichen** wie im
   EPR-Tab auf eine Referenzfrequenz skaliert (B·ν_ref/ν); **EPR (g)** trägt gegen g = hν/(µ_B·B) auf. Was nicht passt
-  (andere Frequenz, keine Frequenz in der Datei), steht als Hinweis unter dem Bild und wird nicht gezeigt.
+  (andere Frequenz, keine Frequenz in der Datei), steht als Hinweis unter dem Bild und wird nicht gezeigt. **SEC: Endspektrum
+  (normiert)** und **TD-DFT: berechnetes Spektrum (ε)** nehmen das Endspektrum des SEC-Tabs und die Rechnung des TD-DFT-Tabs;
+  SEC nur als Absorbanz (ein Rohsignal steht als Hinweis unter dem Bild und wird nicht gezeigt).
+- **H-Zelle:** Kapazität gegen Zyklus mehrerer Lade/Entlade-Messungen in einem Bild, Coulomb-Effizienz an der rechten Achse.
+- **UV-Vis-Kinetik:** Absorbanz gegen die Zeit mehrerer Kinetik-Reihen in einem Bild (**Reihe** je Verbindung,
+  **Zeiteinheit**; absolut oder relativ zum ersten Spektrum [%]). **Fits zeigen** fügt den Fit erster Ordnung jeder Reihe
+  hinzu (Vorgabe aus).
+- **Mehrere Messungen je Verbindung:** im Schritt „Daten“ fügt **+ Messung** der gewählten Verbindung eine weitere Zeile
+  hinzu (die Karte darunter wählt die Messung); die Spalte **Beschriftung** benennt jede Zeile in Bild, Legende und
+  Unterschrift (Doppelklick; leer = Name der Verbindung, bei mehreren Zeilen mit der Messung). Nur hinzugefügte Zeilen
+  lassen sich entfernen.
 - **Tabelle:** Zeilen = Verbindungen in der Reihenfolge des Projekts (im Schritt „Daten“ abwählbar). Im Schritt
   „Tabelle“ stehen links drei Karten:
   - **Größen:** was verglichen wird, als Liste mit Größe, Einheit, Gruppenkopf und Herkunft. **Aus den Tabs** fügt
@@ -365,7 +383,10 @@ zur Seite zurück.
     Lösungsmittel, Fluoreszenz λ_abs/λ_em/Stokes, CV E½/E_pa/E_pc/ΔE_p je Redoxpaar und Referenz, EPR g, Kopplungen, D
     und |E/D|, X-Ray: jeder ausgewählte Parameter des X-Ray-Tabs mit Standardabweichung aus der CIF – eine Spalte je
     Atomlabels, z. B. „C6–C7 / Å“, gefüllt bei allen Verbindungen mit denselben Labels –, Raumgruppe und Kristallsystem,
-    DFT: Eingabezeile, E(el), G, HOMO und LUMO), alle genau wie im Tab; Name und Einheit stehen dann fest.
+    DFT: Eingabezeile, E(el), G, HOMO und LUMO, Synthese-Ausbeute [%], HRMS-Ion, m/z berechnet und gefunden und Δ [ppm] (über
+    5 ppm markiert), TD-DFT λ, f und E des stärksten Übergangs, Kinetik λ, verbleibend [%] und t½, SEC E½ (scheinbar) und
+    Referenz, H-Zelle Q_theo, Entladekapazität des ersten und letzten Zyklus, Erhalt, mittlere CE, Zyklen und Dauer),
+    alle genau wie im Tab; Name und Einheit stehen dann fest.
     **IR: Bande** und **NMR: Verschiebung** brauchen ein **Ziel** und eine **Toleranz** (Felder unter der Liste; Vorgabe
     IR ±15 cm⁻¹, ¹H ±0.5 ppm, andere Kerne ±2 ppm; bei NMR dazu der Kern): die Zelle zeigt die Bande bzw. das Signal
     aus der Liste des Tabs, das dem Ziel am nächsten liegt, sonst bleibt sie leer. Hat eine Verbindung mehrere
@@ -834,7 +855,7 @@ Die Zellen enthalten den vollen Wert; nur das Zahlenformat rundet wie in der App
 Gemessene Spektren einer Verbindung mit ihrer Rechnung (TD-DFT, ESD) in einer Abbildung vergleichen; mehrere
 Messungen derselben Verbindung (anderes Lösungsmittel, andere Konzentration, vor und nach einer Reaktion) sind erlaubt.
 Spektren **verschiedener Verbindungen** vergleicht das Projekt (Projektseite → **Vergleich**: normiert auf eine Bande,
-Strukturen in Kurvenfarbe, auch in der Gesamt-SI); die Zeile „Vergleich“ im Schritt Daten führt dorthin. Bis 1.1 hieß
+Strukturen in Kurvenfarbe, auch in der Gesamt-SI); dieser Tab zeigt nur, was er selbst vergleicht. Bis 1.1 hieß
 der Tab „UV-Vis-Overlay“; ältere Abbildungen mit einer Struktur je Spektrum bleiben unverändert erhalten (Hinweis im
 Tab), neu einrichten lässt sich das hier nicht mehr. Stapeln bleibt (Spektren derselben Verbindung übereinander).
 
@@ -853,7 +874,8 @@ Tab), neu einrichten lässt sich das hier nicht mehr. Stapeln bleibt (Spektren d
   Oszillatorstärken (ε(ν̃) = 1,306·10⁸ · Σ f/σ · exp(−((ν̃−ν̃ᵢ)/σ)²), wie in GaussView). Übergänge
   lassen sich als Striche anzeigen.
 - **y-Größe**: *normiert* – jedes Spektrum wird auf sein Maximum im Normierungsbereich skaliert (global oder pro
-  Spektrum mit eigenem Bereich, z. B. wenn die berechnete Bande verschoben ist), **ε [10³ M⁻¹ cm⁻¹]** – gemessene
+  gewähltem Spektrum mit eigenem Bereich (Kästchen **Eigener (statt „Normierung“ unten)**; ohne ihn zeigen die Felder
+  „Auto“), z. B. wenn die berechnete Bande verschoben ist), **ε [10³ M⁻¹ cm⁻¹]** – gemessene
   Spektren brauchen dann Konzentration (bei mg/mL auch Molmasse) und Schichtdicke, oder **Absorbanz** wie gemessen
   (Messungen und SEC, ohne TD-DFT). Der automatische y-Bereich enthält immer alle Kurven.
 - Pro Spektrum: Farbe, Name, **Linienart und -stärke**, **Skalierungsfaktor und vertikaler Versatz**
@@ -900,7 +922,9 @@ Tab), neu einrichten lässt sich das hier nicht mehr. Stapeln bleibt (Spektren d
   MO-Nummer), z. B. aus orca_plot oder Gaussian cubegen (`Pop=(NTO,SaveNTO)`); das Gewicht steht im NTO-Block, wenn er
   dieses Paar nennt, sonst wie in der Rechnung angegeben eintragen oder leer lassen. „Paare ab“ (Molden), Isowert
   (leer = 80 % der Orbitaldichte) und „In die SI“ (Abbildung je Zustand mit Unterschrift, auch im Export als
-  `…_NTO_S1`).
+  `…_NTO_S1`). Ziehen im Bild dreht Loch und Teilchen gemeinsam (eigene Ansicht je Zustand, gilt für Export und SI);
+  **Startansicht** (Zeile **Ansicht**) stellt die automatische Ansicht wieder her, ebenso in NBO, ACID, 3D-NICS und der
+  EPR-Rechnung.
 
 ## UV-Vis-Kinetik-Tab
 
@@ -1035,6 +1059,17 @@ Absorption und Emission in einer Abbildung, wie in Publikationen üblich:
   aufgenommen wurde (Gamry-Datei, sonst Projektangabe), ΔE_p des internen Standards über der D-Schwelle liegt oder D aus
   einem nicht reversiblen Paar stammt; fällt k⁰ mit steigender Scanrate um mehr als 25 %, weist eine Warnung auf
   unkompensierten Widerstand hin.
+- **Elektronenzahl n** (Schritt Auswertung, Karte „Elektronenzahl n“): n je Welle aus dem Verhältnis der Hinpeakströme von
+  Probe und einem **internen Ein-Elektronen-Standard** (Fc, Ac₂Fc) im selben Voltammogramm (Randles–Ševčík,
+  n = [(i_p/i_p,Std)·(D_Std/D)^½·(c_Std/c)]^⅔, basislinienkorrigiert, nicht gerundet). Die Konzentrationen von Probe (Karte
+  „Diffusion und k⁰“) und Standard sowie beide D (**D der Probe**, **D des Standards**, z. B. aus DOSY) gelten nur wie
+  eingegeben, nie aus der CV geschätzt. Ein Standard in einer anderen Messung oder ein eigener Standard gibt kein n. Lässt
+  sich n nicht angeben, steht in der Tabelle der Grund statt einer Zahl (z. B. Standard getrennt, Basislinie fehlt, Wellen
+  überlappen, nicht reversibel, c oder D fehlt); bei irreversibler Standardwelle (ΔE_p über 2,22·RT/F + 10 mV) ist n nur
+  „scheinbar“, wie k⁰. Weicht n vom eingetragenen n ab, erscheint ein Hinweis. **Coulometrie** (dieselbe Karte: Paar,
+  **Ladung Q**, **Stoffmenge N**) gibt n = Q/(F·N) aus der umgesetzten Ladung (Hintergrund abgezogen) und der Stoffmenge,
+  nur aus diesen Angaben. Ergebnisse: Tabelle „Elektronenzahl n je Welle“ (Reiter Ergebnisse), `_electrons.csv`, ein Blatt
+  der Mappe und der Methodentext.
 - **Konventionen der CV-Rechnung:** Das Nicholson-Verhältnis rechnet mit basislinienkorrigierten Strömen (im Original
   gegen die Nulllinie) und streut auch bei ideal reversiblen Paaren um etwa ±3 %, je nach Umkehrpotential. Die
   Basislinie endet 0,20 V vor dem Peak; bei einer ideal reversiblen Welle liegen dort noch etwa 0,3 % des Peakstroms,
@@ -1636,8 +1671,8 @@ Einblendung speichert, startet Elucida neu und öffnet wieder dieselbe Verbindun
 Projekt, auf der Übersicht die Übersicht (ein offener Vergleich oder Reaktionspfad kommt nicht wieder).
 
 **Canvas dunkel / Canvas hell** in der Werkzeugleiste (Mond = dunkel, Sonne = hell; auch Format → Canvas) schaltet um; dunkel zeigt alle Diagramme, Vorschauen und Editoren auf reinem Schwarz. Farbtöne
-bleiben (Rot bleibt Rot), dunkle Farben werden aufgehellt, damit sie lesbar sind. Das betrifft nur den Bildschirm, nie
-Exporte, gespeicherte Dateien oder die SI.
+bleiben (Rot bleibt Rot), dunkle Farben werden aufgehellt, damit sie lesbar sind. Fotos (Küvettenfoto, Fluoreszenzfotos) behalten in der Vorschau ihre Farben; Achsen, Text, Kurven und Strukturen folgen dem
+dunklen Canvas. Das betrifft nur den Bildschirm, nie Exporte, gespeicherte Dateien oder die SI.
 
 ## Abbildungsgröße für Word
 
@@ -1666,6 +1701,9 @@ in der Verbindung gespeichert, jede Änderung lässt sich rückgängig machen; d
 - **Textschrift** und **Symbolschrift**. λ und ε stehen standardmäßig in der Symbolschrift
   (Times New Roman), wie in Origin; abschaltbar.
 - **Bandenlabels:** Schriftgröße (standardmäßig automatisch), fett, kursiv, Farbe.
+- **Größe Achsentitel**, **Größe Achsenzahlen** und **Größe Legende** in pt (leer = „Automatisch“, aus der Bildgröße
+  abgeleitet); in Vorschau, Export und Word-SI; das ε-Inset behält seine eigenen Größen. In X-Ray (nur PXRD) und DFT (IRC,
+  NICS-Scan) gelten sie für diese Abbildungen.
 - **Linien** (die Karte heißt in Tabs mit Kurven „Schrift und Linien“, mit den Farben unten „Schrift, Linien und Farben“): **Kurvenbreite** als Faktor auf alle
   Kurven und **Achsenlinien** (Achsen, Rahmen, Striche in pt, „Auto“ = wie gezeichnet); wie die Schrift für alle Tabs
   oder mit „Nur dieser Tab“; gilt für Vorschau, Export und Word. Nicht in X-Ray, DFT und Weitere.
@@ -1678,18 +1716,19 @@ in der Verbindung gespeichert, jede Änderung lässt sich rückgängig machen; d
 ## Beschriftungen im Bild
 
 Karte **Beschriftungen im Bild** im Schritt **Darstellung** (UV-Vis (ε) je Serie, TD-DFT, Kinetik, Fluoreszenz, HRMS,
-IR + EA, CV, SEC, H-Cell, EPR, CV-Stapel und Spektren im Vergleich; NMR, X-Ray, DFT und das Energieprofil noch nicht). Die Tabelle zeigt die Labels der gezeigten Abbildung:
+IR + EA, CV, SEC, H-Cell, EPR, eigene NMR-Spektren (1D und 2D: Achsentitel, Titel des Spektrums; Spurnamen behalten ihr eigenes Feld), CV-Stapel und Spektren im Vergleich, das Energieprofil mit seiner y-Achse). Feste Texte einer Abbildung (Achsentitel, Zweitachsen, Legende, Farbskala, Inset-Köpfe und -Achsen, Tabellenköpfe) sind ebenfalls Zeilen der Tabelle. Die Tabelle zeigt die Labels der gezeigten Abbildung:
 
 - **Häkchen** = Label im Bild. Abgewählt fehlt nur das Label in der Abbildung (und in allen Exporten); Tabelle,
   SI-Zeile, Excel und Methodentext behalten den Wert. Das ist etwas anderes als eine abgewählte Bande im ε-Tab oder in
   IR, die auch aus der SI-Zeile fällt.
-- **Eigener Text:** Zeile wählen, Text im Feld darunter ändern (gilt beim Verlassen des Felds; mehrzeilig wie das Label,
-  Formeln wie im Bild zwischen `$…$`). Leer oder gleich dem automatischen Text = kein eigener Text. Eigene Texte
+- **Eigener Text:** Zeile wählen, Text im Feld darunter mit dem Texteditor ändern (Knöpfe fett, kursiv, tief, hoch; keine
+  Syntax). Er gilt 0,6 s nach der letzten Änderung und beim Verlassen des Felds; ein getipptes `$` bleibt ein `$`. Tief- und
+  Hochgestelltes steht aufrecht, nur selbst Kursivgesetztes ist kursiv. Leer oder gleich dem automatischen Text = kein eigener Text. Eigene Texte
   stehen orange in der Tabelle, der Tooltip zeigt den automatischen Text.
 - **Zahl geändert:** trägt das Label eine Zahl und weicht der eigene Text ab, steht unter der Vorschau „Label … weicht
   von Tabelle/SI ab“. Tabelle, SI, Excel und Bildunterschrift benutzen immer die berechneten Werte.
 - **Rechtsklick auf ein Label** in der Vorschau: Text bearbeiten (zeigt die Karte), Im Bild ausblenden, Zurücksetzen.
-- **Zurücksetzen** / **Alle zurücksetzen:** automatischer Text, wieder im Bild. „Standardwerte“ und Vorlagen lassen
+- **Zurücksetzen** / **Alle zurücksetzen:** automatischer Text, wieder im Bild; **Alle zurücksetzen** wirkt nur auf die gezeigte Ansicht. „Standardwerte“ und Vorlagen lassen
   eigene Texte in Ruhe; jede Änderung ist ein Rückgängig-Schritt.
 - Eigene Texte hängen am Label: bei Banden, Peaks und Massen (ε, SEC, IR, HRMS) an seinem Wert – ändert er sich
   (Basislinie, Peaksuche), gehört der alte Text zu keinem Label mehr und wird nicht mehr benutzt. Bei CV-Paaren,
