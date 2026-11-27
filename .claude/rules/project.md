@@ -121,7 +121,7 @@ paths:
   `ComparePage` mit denselben Ständen (nichts neu ausgewertet), `assemble(comparisons=…)` setzt sie je Kapitel nach die
   Verbindungen (Abbildungen über `two_per_page`, Tabelle als `tabcap` + `params` mit `fit`). Stand: zusätzlich irms
   (Banden der Liste, Kurve wie im Bild), xray (ausgewählte Parameter mit `param_label`, Raumgruppe, Kristallsystem), dft
-  (Eingabezeile, E(el), G, HOMO/LUMO), nmr (Signale aus dem Multiplettbericht); CV zusätzlich die Zyklen 1–`MAX_CYCLES`
+  (Eingabezeile, E(el), G, HOMO/LUMO), nmr (Signale aus dem Multiplettbericht) sowie overlay (TD-DFT-Kurve als ε mit FWHM/Verschiebung des Eintrags, Übergänge E/λ/f wie gelesen; ESD nur normiert; gemessene Dateien ohne Verknüpfung), uvkin (A(λ) gegen t je Reihe, Zusammenfassung wie die Tabelle; Titration A gegen Äq. und isosbestische Punkte), sec (Start-, Zwischen- und Endspektrum des gezeigten Bereichs, Messgröße, Potentiale wie die Legende; scheinbare Nernst-Werte nur aus der Ansicht A gegen E, nie als CV-Wert), hcell (Zyklen und Zusammenfassung wie die Tabelle), hrms (Ion, calc., found, Δ ppm wie die Prüftabelle). Der Fingerabdruck schließt ein, was ein Eintrag außerhalb seines Tabs liest (SEC mit Referenz aus dem CV-Tab: dessen Zustand; HRMS: Formel und Struktur). CV zusätzlich die Zyklen 1–`MAX_CYCLES`
   je Messung; Zahlen am Peak nur im ausgewerteten Zyklus. Tabelle: X-Ray-Spalte = Atomlabels in beiden Richtungen
   (`xr_key`); IR/NMR-Spalte mit Ziel und Toleranz (IR 15 cm⁻¹, ¹H 0.5 ppm, sonst 2 ppm), Zelle = nächster Eintrag der
   Liste des Tabs innerhalb der Toleranz, sonst leer. Spektren: IR wie der IR-Tab (andere Darstellung abgelehnt), EPR
