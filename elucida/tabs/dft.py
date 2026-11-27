@@ -74,10 +74,13 @@ def calc_warnings(c):
         w.append(T("dft_w_imag", n=len(im), v=", ".join(XRAY.minus(f) for f in im)))
     if c["freqs"] and not c["thermo"].get("G"):
         w.append(T("dft_w_no_thermo"))
-    s = c.get("solvation")
-    if s:
-        w.append(T("dft_w_solv_smd" if s["model"] == "SMD" else "dft_w_solv_cpcm"))
     return w
+
+
+def calc_notes(c):
+    """Hinweise ohne Fehler (Solvatationsmodell): Hinweisfarbe statt Warnrot (unslop #10)."""
+    s = c.get("solvation")
+    return [T("dft_w_solv_smd" if s["model"] == "SMD" else "dft_w_solv_cpcm")] if s else []
 
 
 CONV_NAMES = {"Energy change": "Energy change", "RMS gradient": "RMS gradient", "MAX gradient": "Max. gradient",
@@ -700,7 +703,7 @@ from elucida.core import uvvis as core  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
 from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app import style as STYLE  # noqa: E402
-from elucida.app.style import HINT_CSS, WARN_CSS, make_form  # noqa: E402
+from elucida.app.style import HINT_CSS, NOTE_CSS, WARN_CSS, make_form  # noqa: E402
 
 PICK_COLOR = XRAY.SEL_COLOR
 OLD_COLOR = "#9a9a9a"
@@ -861,6 +864,10 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.lbl_warn.setWordWrap(True)
         self.lbl_warn.setStyleSheet(WARN_CSS)
         v.addWidget(self.lbl_warn)
+        self.lbl_solv = STYLE.SciLabel("")
+        self.lbl_solv.setWordWrap(True)
+        self.lbl_solv.setStyleSheet(NOTE_CSS)
+        v.addWidget(self.lbl_solv)
         f = STYLE.make_form()
         self.cmb_method = QComboBox()
         for k in METHOD_MODES:
@@ -1801,12 +1808,15 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
         self.btn_si_copy.setEnabled(c is not None)
         self.btn_si_word.setEnabled(any(self.calc_of(x) is not None for x in self.entries()))
         self.lbl_warn.setVisible(c is not None and bool(calc_warnings(c)))
+        self.lbl_solv.setVisible(c is not None and bool(calc_notes(c)))
         self.si_stack.setCurrentIndex(0 if c is None else 1)
         if c is None:
             self.lbl_warn.setText("")
+            self.lbl_solv.setText("")
             self.txt_si.setHtml("")
             return
         self.lbl_warn.setText("\n".join(calc_warnings(c)))
+        self.lbl_solv.setText("\n".join(calc_notes(c)))
         self.txt_si.setHtml(si_html(self.si_of(e), view=True))
 
     # -- Pflichtangaben: Energietabelle, Sammel-xyz, Eingabedateien ----------------------------

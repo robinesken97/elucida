@@ -331,8 +331,8 @@ TEXTS = {
     "r2_hidden": ("{lam:g} nm: R² = {r2:.3f} < {min:g} – nicht im Bild",
                   "{lam:g} nm: R² = {r2:.3f} < {min:g} – not shown in figure"),
     "hdr_intercept": ("Achsenabschn.", "intercept"),
-    "no_fit": ("kein Fit: nur {n} Punkt(e) unter A = {cut:g} (min. {min})",
-               "no fit: only {n} point(s) below A = {cut:g} (min. {min})"),
+    "no_fit": ("kein Fit: zu wenige Punkte unter A = {cut:g} ({n}, min. {min})",
+               "no fit: too few points below A = {cut:g} ({n}, min. {min})"),
     "few_points": ("nur {n} Punkte im Fit", "only {n} points in fit"),
     "no_fit_conc": ("kein Fit: alle Konzentrationen gleich", "no fit: all concentrations are equal"),
     "baseline_outside": ("Basislinienfenster {a:g}–{b:g} nm liegt nicht in allen Spektren – keine Korrektur",
@@ -379,10 +379,10 @@ TEXTS = {
                                "Summenformel und Ladungsbilanz bleiben leer",
                                "Charge of “{names}” is ambiguous – put a space before the charge (e.g. SO4 2-); "
                                "formula and charge balance stay empty"),
-    "cdxml_dummies": ("{n} Platzhalteratom(e) (Abkürzung wie Dipp/Mes nicht aufgelöst?) – "
-                      "Molmasse bitte manuell eingeben",
-                      "{n} placeholder atom(s) (abbreviation like Dipp/Mes not expanded?) – "
-                      "please enter molar mass manually"),
+    "cdxml_dummies": ("Platzhalteratome (Abkürzung wie Dipp/Mes nicht aufgelöst?): {n} – Molmasse bitte manuell "
+                      "eingeben",
+                      "Placeholder atoms (abbreviation like Dipp/Mes not expanded?): {n} – please enter molar mass "
+                      "manually"),
     "cdxml_redrawn": ("Zeichnung von RDKit neu erzeugt (weicht von ChemDraw ab). Für das Original "
                       "die Struktur in ChemDraw zusätzlich als „{name}.svg“, „.pdf“ oder „.png“ "
                       "neben die CDXML speichern.",
@@ -796,9 +796,8 @@ TEXTS = {
                           "nicht in SI, Word-Export oder Datenpaket.",
                           "What is it? Shown on the welcome page and in the title bar – "
                           "not into the SI, Word export or data package."),
-    "recent_search_ph": ("Suchen in allen Projekten: Name/Nummer, Laborkürzel (z. B. AB-1-234), Summenformel, Notiz, "
-                         "Projekt …",
-                         "Search all projects: name/number, lab code (e.g. AB-1-234), formula, note, project …"),
+    "recent_search_ph": ("Alle Projekte durchsuchen: Name, Laborkürzel, Formel, Notiz …",
+                         "Search all projects: name, lab code, formula, note …"),
     "search_hits": ("Treffer", "Results"),
     "act_search": ("Verbindung suchen …", "Find compound …"),
     "search_none": ("Keine Verbindung gefunden.", "No compound found."),
@@ -875,8 +874,7 @@ TEXTS = {
     "grp_atoms": ('Atome und Fragmente', 'Atoms and Fragments'),
     "tab_presets_tip": ("Darstellung dieses Tabs als Vorlage speichern oder laden (Daten und Auswertung bleiben unberührt)",
                         "Save or load this tab's display as a preset (data and analysis are not affected)"),
-    "card_select_first": ("{t}: erst einen Eintrag in der Liste oben auswählen.",
-                          "{t}: first select an entry in the list above."),
+    "card_select_first": ("Erst einen Eintrag in der Liste oben wählen.", "Select an entry in the list above first."),
     "nav_grp_syn": ("Synthese & Analytik", "Synthesis & analysis"),
     "nav_grp_uv": ("UV-Vis & Photophysik", "UV-Vis & photophysics"),
     "nav_grp_ec": ("Elektrochemie & EPR", "Electrochemistry & EPR"),
@@ -1064,10 +1062,10 @@ TEXTS = {
                       "the data. Unchecked, min and max are used exactly (transmittance 0–100 %)."),
     "ir_yrange_bad": ("y-Bereich ungültig (min muss kleiner als max sein) – automatisch.",
                       "Invalid y range (min must be below max) – set automatically."),
-    "ir_labels_clamped": ("{n} Wellenzahl-Label(s) passen nicht in den festen y-Bereich und liegen am Rand – "
-                          "min verkleinern oder „Auto“ wählen.",
-                          "{n} wavenumber label(s) do not fit into the fixed y range and sit at the edge – "
-                          "lower min or choose “Auto”."),
+    "ir_labels_clamped": ("Wellenzahl-Labels außerhalb des festen y-Bereichs (liegen am Rand): {n} – min verkleinern "
+                          "oder „Auto“ wählen.",
+                          "Wavenumber labels outside the fixed y range (placed at the edge): {n} – lower min or "
+                          "choose “Auto”."),
     "ir_intensity": ("Intensität", "Intensity"),
     "ea_group": ('Elementaranalyse', 'Elemental Analysis'),
     "ea_solvate": ("Solvat", "Solvate"),
@@ -1126,12 +1124,11 @@ TEXTS = {
     "act_export_si": ("SI-Abschnitt exportieren (Word) …", "Export SI section (Word) …"),
     "act_datapack": ("Datenpaket (Zip) exportieren …", "Export data package (zip) …"),
     "dp_title": ("Datenpaket (Zip) exportieren", "Export data package (zip)"),
-    "dp_hint": ("Rohdaten dieser Verbindung als Zip für ein Datenrepositorium (z. B. TUDOdata), je Analytik ein Ordner "
-                "wie NMR/1H/10, IR, MS, UV-Vis, CV/<Lösungsmittel>, EPR. X-Ray (CCDC) und Synthese gehören nicht hinein. "
-                "Laborkürzel werden in Namen und Textdateien durch die Verbindung ersetzt.",
-                "Raw data of this compound as a zip for a data repository (e.g. TUDOdata), one folder per technique "
-                "like NMR/1H/10, IR, MS, UV-Vis, CV/<solvent>, EPR. X-ray (CCDC) and synthesis are not included. "
-                "Lab codes are replaced by the compound in names and text files."),
+    "dp_hint": ("Rohdaten dieser Verbindung als Zip für ein Datenrepositorium, je Analytik ein Ordner (z. B. "
+                "NMR/1H/10, IR, CV/<Lösungsmittel>); ohne X-Ray (CCDC) und Synthese. Laborkürzel werden durch die "
+                "Verbindung ersetzt.",
+                "Raw data of this compound as a zip for a data repository, one folder per technique (e.g. NMR/1H/10, "
+                "IR, CV/<solvent>); without X-ray (CCDC) and synthesis. Lab codes are replaced by the compound."),
     "dp_name": ("Name (Zip und Ordner)", "Name (zip and folder)"),
     "dp_name_tip": ("Wie in der Publikation, z. B. 3b – ergibt 3b.zip mit dem Ordner 3b/",
                     "As in the publication, e.g. 3b – gives 3b.zip with the folder 3b/"),
@@ -1209,8 +1206,8 @@ TEXTS = {
                     "(g, ΔB_pp, couplings in MHz) only from own S = ½ fits, without uncertainties. Please add "
                     "EasySpin simulations yourself."),
     "cap_species": ("Spezies", "Species"),
-    "cap_species_ph": ("Leer = Verbindung; z. B. 3b^{•+} (^{…} hochgestellt)",
-                       "Empty = compound; e.g. 3b^{•+} (^{…} superscript)"),
+    "cap_species_ph": ("Leer = Verbindung; z. B. 3b•+, „•+“ mit X² hochstellen",
+                       "Empty = compound; e.g. 3b•+, raise “•+” with X²"),
     "cap_el": ("Leitsalz", "Electrolyte"),
     "cap_el_ph": ("Z. B. 0.1 M n-Bu4NPF6 (wird gemerkt)", "E.g. 0.1 M n-Bu4NPF6 (remembered)"),
     "cap_temp": ("Temperatur", "Temperature"),
@@ -1558,18 +1555,18 @@ TEXTS = {
     "drop_unknown": ("{name}: Dateityp nicht erkannt, nichts geladen.", "{name}: file type not recognized, nothing loaded."),
     "file_gone": ("{name} fehlt im Projektordner.", "{name} is missing from the project folder."),
     "si_series_failed": ("Serie {name} fehlt in der SI: {error}", "Series {name} is missing from the SI: {error}"),
-    "dp_missing": ("{n} eingetragene Datei(en) fehlen und kommen nicht ins Datenpaket: {names}",
-                   "{n} listed file(s) are missing and will not be in the data package: {names}"),
+    "dp_missing": ("Eingetragene Dateien fehlen und kommen nicht ins Datenpaket ({n}): {names}",
+                   "Listed files are missing and will not be in the data package ({n}): {names}"),
     "sec_flt": ("Spektren", "Spectra"),
     "sec_merged_bad": ("{f}: Zeile {n} passt nicht zum Format „Merged spectral data“.",
                        "{f}: line {n} does not match the “Merged spectral data” format."),
     "sec_merged_axis": ("{f}: Wellenlängen fehlen oder steigen nicht an.",
                         "{f}: wavelengths are missing or not ascending."),
-    "sec_none_read": ("Keine lesbaren Spektren: {n} Datei(en) sind weder BWSpec noch „Merged spectral data“.",
-                      "No readable spectra: {n} file(s) are neither BWSpec nor “Merged spectral data”."),
+    "sec_none_read": ("Keine lesbaren Spektren: keine Datei ist BWSpec oder „Merged spectral data“ (geprüft: {n}).",
+                      "No readable spectra: no file is BWSpec or “Merged spectral data” (checked: {n})."),
     "sec_mixed": ("BWSpec-Spektren und zusammengeführte Spektren nicht in einer Serie mischen.",
                   "Do not mix BWSpec and merged spectra in one series."),
-    "sec_skipped": ("{n} Datei(en) nicht lesbar, ausgelassen.", "{n} unreadable file(s) skipped."),
+    "sec_skipped": ("Nicht lesbare Dateien ausgelassen: {n}.", "Unreadable files skipped: {n}."),
     "sec_q_abs": ("Absorbanz", "absorbance"),
     "sec_q_raw": ("Rohsignal", "raw signal"),
     "sec_q_ask": ("Welche Messgröße enthalten die Dateien?", "Which quantity do the files contain?"),
@@ -2227,12 +2224,15 @@ TEXTS = {
     "cv_dk_skip_rev": ("{n}× kein k⁰ (zu reversibel)", "{n}× no k⁰ (too reversible)"),
     "cv_dk_skip_alpha": ("{n}× kein k⁰ (α fehlt)", "{n}× no k⁰ (α missing)"),
     "cv_dk_falls": ("k⁰ fällt mit v", "k⁰ falls with v"),
-    "cv_w_bl_fail": ("Keine Basislinie bei {n} Zeile(n)", "No baseline in {n} row(s)"),
-    "cv_w_bl_short": ("Kurze Basislinie bei {n} Zeile(n): i_p etwas zu klein", "Short baseline in {n} row(s): i_p slightly too small"),
-    "cv_w_two_waves": ("Zwei Wellen im Fenster: {n} Zeile(n) nicht ausgewertet", "Two waves in the window: {n} row(s) not evaluated"),
-    "cv_w_D": ("D nur scheinbar bei {n} Paar(en)", "D only apparent for {n} couple(s)"),
-    "cv_w_k0": ("k⁰ nur scheinbar bei {n} Paar(en)", "k⁰ only apparent for {n} couple(s)"),
-    "cv_w_k0_falls": ("k⁰ fällt mit der Scanrate bei {n} Paar(en): iR-Abfall?", "k⁰ falls with scan rate for {n} couple(s): iR drop?"),
+    "cv_w_bl_fail": ("Zeilen ohne Basislinie: {n}", "Rows without baseline: {n}"),
+    "cv_w_bl_short": ("Zeilen mit kurzer Basislinie (i_p etwas zu klein): {n}",
+                      "Rows with short baseline (i_p slightly too small): {n}"),
+    "cv_w_two_waves": ("Zeilen mit zwei Wellen im Fenster (nicht ausgewertet): {n}",
+                       "Rows with two waves in the window (not evaluated): {n}"),
+    "cv_w_D": ("Paare mit nur scheinbarem D: {n}", "Couples with only apparent D: {n}"),
+    "cv_w_k0": ("Paare mit nur scheinbarem k⁰: {n}", "Couples with only apparent k⁰: {n}"),
+    "cv_w_k0_falls": ("Paare, bei denen k⁰ mit der Scanrate fällt (iR-Abfall?): {n}",
+                      "Couples where k⁰ falls with scan rate (iR drop?): {n}"),
     "cv_fit_slope": ("Steigung [µA (V s⁻¹)^-½]", "Slope [µA (V s⁻¹)^-½]"),
     "cv_fit_icpt": ("Abschnitt [µA]", "Intercept [µA]"),
     "cv_fit_icpt_tip": ("y-Achsenabschnitt der Regression (Strom bei v = 0)", "y intercept of the regression (current at v = 0)"),
@@ -2246,10 +2246,10 @@ TEXTS = {
                       "Heterogeneous rate constant k⁰ from ΔE_p, range over the scan rates (never ±): Nicholson ψ "
                       "after Lavagnini (n·ΔE_p 66–160 mV), above that Klingler–Kochi (only with α)."),
     "cv_two_waves": ("⚠ zwei Wellen im Fenster", "⚠ two waves in the window"),
-    "cv_two_waves_warn": ("⚠ {n} Zeile(n) mit zwei Wellen im Fenster: E_pa und E_pc kämen von verschiedenen Paaren – "
+    "cv_two_waves_warn": ("⚠ Zeilen mit zwei Wellen im Fenster: {n}. E_pa und E_pc kämen von verschiedenen Paaren – "
                           "nicht ausgewertet. Fenster je Paar enger setzen oder „Vorschlagen“.",
-                          "⚠ {n} row(s) with two waves in the window: E_pa and E_pc would come from different couples – "
-                          "not evaluated. Narrow the window of each couple or use “Suggest”."),
+                          "⚠ Rows with two waves in the window: {n}. E_pa and E_pc would come from different couples "
+                          "– not evaluated. Narrow the window of each couple or use “Suggest”."),
     "cv_D_apparent_warn": ("⚠ Paar {couple}: D nur scheinbar – bei {rates} mV s⁻¹ nicht reversibel (ΔE_p mehr als 10 mV "
                            "über dem der Referenz derselben Messung oder einer eigenen Messung mit gleicher Scanrate bzw. "
                            "über 2,22·RT/(nF)); langsamer Elektronentransfer oder iR-Abfall machen D zu klein.",
@@ -2316,7 +2316,7 @@ TEXTS = {
                     "(too small; enter D)"),
     "cv_k0_falls": ("⚠ Paar {couple}: k⁰ fällt mit steigender Scanrate um mehr als {pct} % – Zeichen für iR-Abfall.",
                     "⚠ Couple {couple}: k⁰ falls by more than {pct} % with increasing scan rate – a sign of iR drop."),
-    "cv_k0_D": ("D für k⁰", "D for k⁰"),
+    "cv_k0_D": ("D\u200b für k⁰", "D\u200b for k⁰"),
     "cv_k0_D_rs": ("Aus Randles–Ševčík", "From Randles–Ševčík"),
     "cv_k0_D_tip": ("Diffusionskoeffizient für k⁰ (D_O = D_R), z. B. aus einer reversiblen Messung oder Chronoamperometrie.\n"
                     "Leer: D aus der Randles–Ševčík-Steigung des Paars (bei nicht reversiblem Paar zu klein: k⁰ scheinbar).",
@@ -2343,10 +2343,11 @@ TEXTS = {
                       "still carries about 0.3% of the peak current there) and in any case before the wave rises (2% of the peak height; broad waves, iR drop).\n"
                       "Needs at least 30 mV of peak-free current in the window."),
     "cv_show_bl": ("Im Bild zeigen", "Show in figure"),
-    "cv_bl_short": ("⚠ Bei {n} Messung(en) reicht der Vorlauf im Fenster nur für eine Basislinie bis {gap} V vor dem Peak: "
-                    "i_p dort bis etwa 6 % zu klein. Fenster zur Startseite des Hinpeaks erweitern.",
-                    "⚠ For {n} measurement(s) the range before the wave only allows a baseline up to {gap} V before the "
-                    "peak: i_p is up to about 6 % too small there. Extend the window towards the start of the forward peak."),
+    "cv_bl_short": ("⚠ Messungen, bei denen der Vorlauf im Fenster nur für eine Basislinie bis {gap} V vor dem Peak "
+                    "reicht: {n}. i_p dort bis etwa 6 % zu klein. Fenster zur Startseite des Hinpeaks erweitern.",
+                    "⚠ Measurements where the range before the wave only allows a baseline up to {gap} V before the "
+                    "peak: {n}. i_p is up to about 6 % too small there. Extend the window towards the start of the "
+                    "forward peak."),
     "cv_bl_fail": ("⚠ Basislinie nicht möglich (zu wenig Vorlauf im Fenster) – Ströme von null gemessen, nicht in den "
                    "Regressionen. Fenster zur Startseite des Hinpeaks erweitern.",
                    "⚠ baseline not possible (too little current before the peak in the window) – currents from zero, "
@@ -2685,8 +2686,8 @@ TEXTS = {
                       "(field “Known c” under the selected spectrum)."),
     "epr_spin_need_double": ("Spinzählung braucht das Doppelintegral ohne I·T (Karte „Intensität und Kinetik“).",
                              "Spin counting needs the double integral without I·T (card “Intensity and Kinetics”)."),
-    "epr_spin_info": ("Kalibrierung aus {n} Referenzmessung(en), {how}; keine Unsicherheiten.",
-                      "Calibration from {n} reference measurement(s), {how}; no uncertainties."),
+    "epr_spin_info": ("Referenzmessungen für die Kalibrierung: {n}, {how}; keine Unsicherheiten.",
+                      "Reference measurements for the calibration: {n}, {how}; no uncertainties."),
     "epr_spin_origin": ("Gerade durch den Ursprung", "straight line through the origin"),
     "epr_spin_fit": ("Ausgleichsgerade mit Achsenabschnitt", "least-squares line with intercept"),
     "epr_spin_differ": ("Die Messungen unterscheiden sich in: {what}. Die Intensitäten werden nicht umgerechnet.",
@@ -2846,7 +2847,7 @@ TEXTS = {
                        "Groups of equivalent nuclei: number, isotope (1H, 2H, 11B, 13C, 14N, 15N, 19F, 31P, 63Cu, …) or I=… (also I=3/2),\n"
                        "coupling a in mT; separate groups with ';'. First order, isotropic (solution, fast tumbling)."),
     "epr_fit_btn": ("An Messung fitten (g, a, ΔB_pp)", "Fit to measurement (g, a, ΔB_pp)"),
-    "epr_iso_need_exp": ("Bitte zuerst eine Messung laden bzw. auswählen.", "Please load or select a measurement first."),
+    "epr_iso_need_exp": ("Erst eine Messung laden oder wählen.", "Load or select a measurement first."),
     "epr_iso_need_mw": ("Für die Simulation wird die Mikrowellenfrequenz der Messung gebraucht (fehlt in der Datei).",
                         "The simulation needs the microwave frequency of the measurement (missing in the file)."),
     "epr_calib": ("Feldkalibrierung", "Field calibration"),
@@ -3466,8 +3467,8 @@ TEXTS = {
     "nmr_raw_name": ("Name", "Name"),
     "nmr_raw_pulprog": ("Pulsprogramm", "Pulse program"),
     "nmr_raw_spectrum": ("Spektrum", "Spectrum"),
-    "nmr_raw_imported": ("NMR-Rohdaten: {n} Experiment(e) übernommen ({kinds})",
-                         "NMR raw data: {n} experiment(s) copied ({kinds})"),
+    "nmr_raw_imported": ("NMR-Rohdaten, übernommene Experimente: {n} ({kinds})",
+                         "NMR raw data, experiments copied: {n} ({kinds})"),
     "nmr_bruker_temp": ("T aus Bruker", "T from Bruker"),
     "nmr_bruker_temp_tip": ("Temperatur der Messung (TE) für die Bildunterschrift übernehmen",
                             "Use the measured temperature (TE) for the caption"),
@@ -3681,7 +3682,7 @@ TEXTS = {
     "welcome_gallery": ("Galerie", "Gallery"),
     "welcome_list": ("Liste", "List"),
     "welcome_new": ("Neu", "New"),
-    "welcome_add_hint": ("Oder Ordner und Messdateien hierher ziehen", "Or drop folders and data files here"),
+    "welcome_add_hint": ("Oder Ordner und Messdateien hierher\u00a0ziehen", "Or drop folders and data files\u00a0here"),
     "welcome_complete": ("Vollständig", "Complete"),
     "welcome_missing": ("Fehlt: {items}", "Missing: {items}"),
     "welcome_no_analytics": ("Noch keine Analytik", "No analytics yet"),
@@ -4053,8 +4054,8 @@ TEXTS = {
     "dft_si_inp_tip": ("Gesucht wird eine Eingabedatei mit gleichem Namen neben der Ausgabe (.inp, .gjf, .com).",
                        "Looked for: an input file with the same name next to the output (.inp, .gjf, .com)."),
     "dft_si_inp_all": ("Die Eingabedateien aller Rechnungen liegen bei.", "Input files of all calculations are present."),
-    "dft_si_inp_missing": ("Eingabedatei fehlt bei {n} Rechnung(en); ACS verlangt sie im Datenpaket.",
-                           "Input file missing for {n} calculation(s); ACS requires it in the data package."),
+    "dft_si_inp_missing": ("Rechnungen ohne Eingabedatei: {n}; ACS verlangt sie im Datenpaket.",
+                           "Calculations without input file: {n}; ACS requires it in the data package."),
     "dft_w_partly": ("Hinweis: ORCA hat die Optimierung als konvergiert beendet, obwohl nicht alle Kriterien „YES“ "
                      "zeigen (übererfüllter Gradient) – die Tabelle zeigt die Werte unverändert.",
                      "Note: ORCA finished the optimization as converged although not all criteria show “YES” "
@@ -4126,8 +4127,8 @@ TEXTS = {
                      "No optimization in this output: geometry = input geometry."),
     "dft_w_no_freq": ("⚠ Frequenzrechnung angefordert, aber keine Frequenzen gefunden.",
                       "⚠ frequency calculation requested but no frequencies found."),
-    "dft_w_imag": ("⚠ {n} imaginäre Frequenz(en): {v} cm⁻¹ – kein Minimum; H/G gelten nicht für ein Minimum.",
-                   "⚠ {n} imaginary frequenc(y/ies): {v} cm⁻¹ – not a minimum; H/G do not refer to a minimum."),
+    "dft_w_imag": ("⚠ Imaginäre Frequenzen: {n} ({v} cm⁻¹) – kein Minimum; H/G gelten nicht für ein Minimum.",
+                   "⚠ Imaginary frequencies: {n} ({v} cm⁻¹) – not a minimum; H/G do not refer to a minimum."),
     "dft_w_no_thermo": ("⚠ Thermochemie (H, G) fehlt.", "⚠ thermochemistry (H, G) missing."),
     "dft_w_solv_cpcm": ("CPCM: angegeben ist der dielektrische Beitrag (in E_el enthalten), keine Solvatationsenergie "
                         "ΔG_solv – dafür braucht es dieselbe Rechnung in der Gasphase.",
@@ -4226,10 +4227,10 @@ TEXTS = {
     "pub_info": ("Angaben …", "Details …"),
     "pub_info_missing": ("Noch keine Angaben – Titel, Autoren, DOI auf der Seite „Angaben“",
                          "No details yet – title, authors, DOI on the “Details” page"),
-    "pub_info_hint": ("Angaben für README.txt des Datensatzes (Aufbau wie die Datensätze der Gruppe auf TUDOdata) und "
-                      "die Titelseite der Gesamt-SI. Leere Felder fallen weg.",
-                      "Details for the README.txt of the dataset (layout as the group's datasets on TUDOdata) and "
-                      "the title page of the complete SI. Empty fields are left out."),
+    "pub_info_hint": ("Angaben für README.txt des Datensatzes und die Titelseite der Gesamt-SI. Leere Felder fallen "
+                      "weg.",
+                      "Details for the README.txt of the dataset and the title page of the complete SI. Empty fields "
+                      "are left out."),
     "pub_f_paper_title": ("Titel des Artikels", "Title of the paper"),
     "pub_ph_paper_title": ("Für das Titelblatt der SI; kursiv mit <i>…</i>", "For the SI title page; italics with <i>…</i>"),
     "pub_f_title": ("Titel des Datensatzes", "Title of the dataset"),
@@ -4435,9 +4436,9 @@ TEXTS = {
     "pub_texts_setup_tip": ("Hängt die in den Tabs hinterlegten Aufbau-Texte (Geräte) an",
                             "Appends the setup texts (instruments) stored in the tabs"),
     # ---- Karten statt Dialoge (Nutzerwunsch 2026-11-11: keine Popups) ------------------------------------------------
-    "tf_own": ("Nur dieser Tab", "This Tab Only"),
+    "tf_own": ("Nur dieser Tab", "This tab only"),
     "tf_own_hint": ("Ohne „Nur dieser Tab“ gilt jede Änderung für alle Tabs ohne eigenes Format.",
-                    "Without “This Tab Only”, every change applies to all tabs without their own format."),
+                    "Without “This tab only”, every change applies to all tabs without their own format."),
     "tf_greek_c": ("λ, ε in Symbolschrift", "λ, ε in symbol font"),
     "tf_label_size_row": ("Labelgröße", "Label size"),
     "tf_label_style": ("Labelstil", "Label style"),
@@ -4516,7 +4517,7 @@ TEXTS = {
     "cmp_refresh": ("Aktualisieren", "Refresh"),
     "cmp_refresh_tip": ("Verbindungen ohne oder mit veraltetem Stand kurz öffnen und ihren Stand neu schreiben",
                         "Briefly open compounds without or with an outdated snapshot and write it again"),
-    "cmp_refreshed": ("Stand von {n} Verbindung(en) erneuert", "Snapshot of {n} compound(s) renewed"),
+    "cmp_refreshed": ("Stand erneuert, Verbindungen: {n}", "Snapshot renewed, compounds: {n}"),
     "cmp_member": ("Gewählte Verbindung", "Selected Compound"),
     "cmp_measurement": ("Messung", "Measurement"),
     "cmp_couple": ("Redoxpaar", "Redox couple"),
@@ -4860,8 +4861,8 @@ TEXTS = {
                      "{n} calculated modes, scaled by {s}; automatic only for unique pairs (modes from {pct}% of the "
                      "strongest), Δṽ = measured − calculated."),
     "ir_calc_mad": ("{n} Banden zugeordnet, mittlere |Δṽ| = {d} cm⁻¹.", "{n} bands assigned, mean |Δṽ| = {d} cm⁻¹."),
-    "ir_calc_imag": ("Die Rechnung hat {n} imaginäre Frequenz(en): nicht im Spektrum.",
-                     "The calculation has {n} imaginary frequenc(y/ies): not in the spectrum."),
+    "ir_calc_imag": ("Imaginäre Frequenzen der Rechnung: {n} – nicht im Spektrum.",
+                     "Imaginary frequencies of the calculation: {n} – not in the spectrum."),
     "ir_calc_scale_hint": ("Skalierung 1.000: ungeskalierte Frequenzen. Den Faktor zum Rechenniveau selbst eintragen.",
                            "Scaling 1.000: unscaled frequencies. Enter the factor for the level of theory yourself."),
     "ir_calc_bad": ("Rechnung nicht lesbar: {e}", "Calculation not readable: {e}"),
@@ -4938,10 +4939,11 @@ TEXTS = {
     "xray_pack_res_none": ("Keine Abstände gewählt: links in der Karte „Abstände in der Packung“ ankreuzen",
                            "No distances chosen: tick them in the card “Distances in the Packing” on the left"),
     # 1.2.0-Review (x-ray/SI)
-    "fixx_pxrd_no_u": ("Keine Auslenkungsparameter in der CIF für {n} Atom(e) ({atoms}): ohne Temperaturfaktor gerechnet "
-                       "(U = 0, kein Wert angenommen) – Intensitäten bei hohen Winkeln zu hoch. Steht im Methodentext.",
-                       "No displacement parameters in the CIF for {n} atom(s) ({atoms}): calculated without a temperature "
-                       "factor (U = 0, no value assumed) – intensities at high angles too high. Stated in the methods text."),
+    "fixx_pxrd_no_u": ("Atome ohne Auslenkungsparameter in der CIF: {n} ({atoms}); ohne Temperaturfaktor gerechnet (U "
+                       "= 0, kein Wert angenommen) – Intensitäten bei hohen Winkeln zu hoch. Steht im Methodentext.",
+                       "Atoms without displacement parameters in the CIF: {n} ({atoms}); calculated without a "
+                       "temperature factor (U = 0, no value assumed) – intensities at high angles too high. Stated in "
+                       "the methods text."),
     "xray_pack_cg_def": ("Cg{n}: Schwerpunkt von {atoms}", "Cg{n}: centroid of {atoms}"),
     "xray_pack_calc_note": ("Abstände aus den Atomkoordinaten gerechnet, ohne Standardabweichung (keine in der CIF); "
                             "Versatz = Abstand der Schwerpunkte parallel zur Ebene des ersten Rings.",
@@ -5588,8 +5590,7 @@ TEXTS.update({
                          "“{a}” or “{e}” – nothing loaded."),
 })
 TEXTS.update({
-    "card_acts_on": ("Ergebnis rechts im Reiter {t} (Punkt am Reiter = geändert, noch nicht angesehen).",
-                     "Result on the right in the tab {t} (dot on the tab = changed, not yet viewed)."),
+    "card_acts_on": ("Ergebnis rechts im Reiter {t}.", "Result on the right in the tab {t}."),
 })
 TEXTS.update({
     "notice_show": ("Anzeigen", "Show"),
@@ -5606,7 +5607,7 @@ TEXTS.update({
     "si_used_figs_off": ("Abgewählte Abbildungen (nicht in der Datei): {tabs}",
                          "Deselected figures (not in the file): {tabs}"),
     "si_used_tables": ("Tabellen mit eigenem „In die SI“: {t}", "Tables with their own “In the SI”: {t}"),
-    "pub_si_used": ("{n} Verbindung(en); Kapitel: {parts}", "{n} compound(s); chapters: {parts}"),
+    "pub_si_used": ("Verbindungen: {n}; Kapitel: {parts}", "Compounds: {n}; chapters: {parts}"),
     "pub_si_change": ("Auswahl ändern …", "Change selection …"),
     "dp_used_text": ("Laborkürzel auch im Inhalt ersetzt", "Lab codes also replaced in the content"),
     "dp_change": ("Auswahl ändern …", "Change selection …"),
@@ -5625,7 +5626,7 @@ TEXTS.update({
                         "Writes the selected figures as a PowerPoint file (one slide per figure, caption as an editable "
                         "text box) to figures/"),
     "pptx_none": ("Keine Abbildung für die Folien gewählt oder vorhanden.", "No figure selected or available for the slides."),
-    "pptx_used": ("{n} Folie(n), je Abbildung eine", "{n} slide(s), one per figure"),
+    "pptx_used": ("Folien: {n}, je Abbildung eine", "Slides: {n}, one per figure"),
 })
 TEXTS.update({"notice_close": ("Schließen", "Close")})
 TEXTS.update({
@@ -5778,12 +5779,12 @@ TEXTS.update({                                      # Spur A2: ein Ort für die 
     "export_btn_tab": ("Tabellen", "Tables"),
     "export_btn_pptx": ("PPTX", "PPTX"),
     "export_btn_si": ("SI (Word)", "SI (Word)"),
-    "export_btn_img_tip": ("Dateien der {n} gewählten Karte(n): Abbildungen nach figures/ (Formate links), Methodentexte, "
-                           "Bildunterschriften und Berichte nach SI/; ohne Tabellen (Strg+E)",
-                           "Files of the {n} selected card(s): figures to figures/ (formats on the left), methods texts, "
-                           "captions and reports to SI/; no tables (Ctrl+E)"),
-    "export_btn_tab_tip": ("CSV und Excel-Mappe der {n} Tab(s) mit gewählter Karte nach tables/",
-                           "CSV and Excel workbook of the {n} tab(s) with a selected card to tables/"),
+    "export_btn_img_tip": ("Dateien der gewählten Karten ({n}): Abbildungen nach figures/ (Formate links), "
+                           "Methodentexte, Bildunterschriften und Berichte nach SI/; ohne Tabellen (Strg+E)",
+                           "Files of the selected cards ({n}): figures to figures/ (formats on the left), methods "
+                           "texts, captions and reports to SI/; no tables (Ctrl+E)"),
+    "export_btn_tab_tip": ("CSV und Excel-Mappe der Tabs mit gewählter Karte ({n}) nach tables/",
+                           "CSV and Excel workbook of the tabs with a selected card ({n}) to tables/"),
     "export_btn_pptx_tip": ("figures/<Verbindung>_slides.pptx: eine Folie je gewählter Abbildung ({n})",
                             "figures/<compound>_slides.pptx: one slide per selected figure ({n})"),
     "export_btn_si_tip": ("SI-Abschnitt dieser Verbindung (Teile links) mit {n} gewählten Abbildungen bzw. Tabellen; "
@@ -6106,8 +6107,8 @@ TEXTS.update({
     "nmr_own_empty": ("{nuc}: noch kein bestätigtes Signal: es bleibt der MNova-Text.",
                       "{nuc}: no confirmed signal yet: the MNova text stays."),
     "nmr_fig_mnova": ("MNova-Abbildung statt der eigenen ({why}).", "MNova figure instead of the own one ({why})."),
-    "nmr_held_line": ("Zurückgehalten: {n} eigene Abbildung(en) ohne Freigabe (nicht in Word).",
-                      "Withheld: {n} own figure(s) without release (not in Word)."),
+    "nmr_held_line": ("Zurückgehalten, eigene Abbildungen ohne Freigabe (nicht in Word): {n}.",
+                      "Withheld, own figures without release (not in Word): {n}."),
     "nmr_held_head": ("Zurückgehalten (eigene Abbildung nicht freigegeben):", "Withheld (own figure not released):"),
     "nmr_details": ("Details", "Details"),
     "nmr_fig_none": ("Eigene Abbildung nicht in Word ({why}).", "Own figure not in Word ({why})."),
@@ -6354,7 +6355,7 @@ TEXTS.update({
                       "Own label: text in the field below, drag to move, Reset removes it. Only in the figure, never "
                       "in the caption or SI text."),
     "lab_extra_reset_tip": ("Dieses eigene Label entfernen", "Remove this own label"),
-    "lab_extra_off": ("Eigene Labels entfernen", "Remove Own Labels"),
+    "lab_extra_off": ("Eigene Labels entfernen", "Remove own labels"),
     "lab_extra_off_tip": ("Alle eigenen Labels dieser Abbildung entfernen", "Remove all own labels of this figure"),
     "lab_extra_none": ("Keine eigenen Labels: Rechtsklick auf eine freie Stelle der Vorschau fügt eines ein",
                        "No own labels: right-click an empty spot of the preview to add one"),
@@ -6553,8 +6554,8 @@ TEXTS.update({                                      # Spur s1vergleich (1.5.0): 
     "qc_drop": ("Dateien oder Ordner hierher ziehen", "Drop files or folders here"),
     "qc_drop_sub": ("CV, H-Zelle, UV-Vis, IR, EPR, SEC, NMR, HRMS, X-Ray, DFT – die Art wird aus der Datei erkannt",
                     "CV, H-cell, UV-Vis, IR, EPR, SEC, NMR, HRMS, X-ray, DFT – the kind is read from the file"),
-    "qc_choose": ("Dateien wählen …", "Choose Files …"),
-    "qc_choose_dir": ("Ordner wählen …", "Choose Folder …"),
+    "qc_choose": ("Dateien wählen …", "Choose files …"),
+    "qc_choose_dir": ("Ordner wählen …", "Choose folder …"),
     "qc_files": ("Dateien", "Files"),
     "qc_file": ("Datei", "File"),
     "qc_reason": ("Grund", "Reason"),
@@ -6563,7 +6564,7 @@ TEXTS.update({                                      # Spur s1vergleich (1.5.0): 
     "qc_unrec_hint": ("Nicht geraten: Art wählen, wo zwei in Frage kommen, oder die Datei im passenden Tab einer "
                       "Verbindung öffnen.", "Not guessed: choose the kind where two are possible, or open the file in "
                       "the matching tab of a compound."),
-    "qc_unrec_clear": ("Liste leeren", "Clear List"),
+    "qc_unrec_clear": ("Liste leeren", "Clear list"),
     "qc_pick": ("Art wählen …", "Choose kind …"),
     "qc_src_hrms": ("HRMS-Bericht", "HRMS report"),
     "qc_src_irms": ("IR-Spektrum", "IR spectrum"),
@@ -6622,7 +6623,7 @@ TEXTS.update({                                      # Spur s1vergleich: Hinweise
     "qc_pick_none": ("Für diese Datei gibt es keine Wahl: im passenden Tab einer Verbindung öffnen",
                      "No choice for this file: open it in the matching tab of a compound"),
 })
-TEXTS.update({"cmp_uk_fits": ("Fits zeigen", "Show Fits")})   # Spur s1vergleich: Kinetik-Vergleich (Robin 2026-11-27)
+TEXTS.update({"cmp_uk_fits": ("Fits zeigen", "Show fits")})   # Spur s1vergleich: Kinetik-Vergleich (Robin 2026-11-27)
 # NTO-Strukturen drehbar (1.5.0, Spur s2bnto)
 TEXTS.update({
     "nto_view": ("Ansicht", "View"),
@@ -6636,12 +6637,19 @@ TEXTS.update({
                            "The button restores the automatic view."),
 })
 
+# Ruhigere Oberfläche (1.5.0, Spur s4unslop)
+TEXTS.update({
+    "nmr_si_need_raw": ("Nur für Spektren aus Rohdaten mit eigener Verarbeitung: unter „Spektren“ eine Rohdaten-Zeile "
+                        "wählen.", "Only for raw-data spectra with own processing: select a raw-data row under "
+                        "“Spectra”."),
+})
+
 # CV: Elektronenzahl n je Welle gegen den internen Standard und aus der Coulometrie (1.5.0, Spur s5cvn)
 TEXTS.update({
     "grp_electrons": ("Elektronenzahl n", "Electron Count n"),
     "cv_n_cstd": ("Konzentration Standard", "Standard concentration"),
-    "cv_n_D": ("D der Probe", "D of sample"),
-    "cv_n_Dstd": ("D des Standards", "D of standard"),
+    "cv_n_D": ("D\u200b der Probe", "D\u200b of sample"),          # \u200b: D kursiv (STYLE.QTY)
+    "cv_n_Dstd": ("D\u200b des Standards", "D\u200b of standard"),
     "cv_n_D_tip": ("Selbst eingeben (z. B. aus DOSY, gleiches Lösungsmittel und gleiche Temperatur); nie aus der CV "
                    "geschätzt. Gilt nur für n, nicht für D und k⁰.",
                    "Enter yourself (e.g. from DOSY, same solvent and temperature); never estimated from the CV. Used "
@@ -6652,8 +6660,8 @@ TEXTS.update({
                   "(Randles–Ševčík). c of the sample: card “Diffusion and k⁰”. Enter D yourself (e.g. DOSY), never "
                   "from the CV."),
     "cv_n_coul_couple": ("Coulometrie, Paar", "Coulometry, couple"),
-    "cv_n_coul_q": ("Ladung Q", "Charge Q"),
-    "cv_n_coul_mol": ("Stoffmenge N", "Amount N"),
+    "cv_n_coul_q": ("Ladung Q\u200b", "Charge Q\u200b"),
+    "cv_n_coul_mol": ("Stoffmenge N\u200b", "Amount N\u200b"),
     "cv_n_coul_tip": ("Bulk-Elektrolyse: n = Q/(F·N) aus der umgesetzten Ladung (Hintergrund abgezogen) und der "
                       "Stoffmenge, nur aus diesen Angaben.",
                       "Bulk electrolysis: n = Q/(F·N) from the charge passed (background subtracted) and the amount "
@@ -6707,8 +6715,8 @@ TEXTS.update({
                          "concentration of the standard and both D."),
     "cv_n_only_separate": ("Keine Messung enthält Probe und Standard zugleich: n nur aus demselben Voltammogramm.",
                            "No measurement contains sample and standard together: n only from the same voltammogram."),
-    "cv_w_n_rs": ("Berechnetes n weicht bei {n} Welle(n) vom eingegebenen n ab (D, k⁰)",
-                  "Computed n differs from the entered n for {n} wave(s) (D, k⁰)"),
+    "cv_w_n_rs": ("Wellen, bei denen das berechnete n vom eingegebenen abweicht (D, k⁰): {n}",
+                  "Waves where the computed n differs from the entered n (D, k⁰): {n}"),
     "cv_n_rs_detail": ("Paar {couple}: n = {n} ({src}), eingegeben n = {rs} – Angabe in „Diffusion und k⁰“ prüfen, "
                        "sie wird nicht still übernommen.",
                        "Couple {couple}: n = {n} ({src}), entered n = {rs} – check the entry in “Diffusion and k⁰”; "

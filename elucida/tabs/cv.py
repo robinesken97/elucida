@@ -931,10 +931,12 @@ class CVTab(TABS.FigureTab):
         self.tbl_dk.horizontalHeaderItem(2).setToolTip(T("cv_fit_k0_tip"))
         v.addWidget(self.tbl_dk)
         # Elektronenzahl n je Welle (Messung, Paar) und aus der Coulometrie; Bewertung kurz, Grund im Tooltip
-        self.lbl_n = QLabel(T("cv_n_title"))
+        self.lbl_n = STYLE.SciLabel(T("cv_n_title"))      # n kursiv wie k⁰ darüber; eine Zeile wie die Geschwister
         self.lbl_n.setProperty("formlabel", True)
-        self.lbl_n.setWordWrap(True)
         v.addWidget(self.lbl_n)
+        self.lbl_n_sep = STYLE.HintLabel()               # Grund ohne Zeilen eigene Zeile: ein umbrechender Titel hielt
+        self.lbl_n_sep.setWordWrap(True)                 # unter Windows seine alte Höhe (Lücke über der Tabelle)
+        v.addWidget(self.lbl_n_sep)
         self.tbl_n = STYLE.name_table(STYLE.summary_grid([T("cv_fit_couple"), T("cv_n_meas"), "i_p [µA]", "i_p,Std [µA]",
                                                           "n", T("cv_n_status")], rich=(2, 3, 4)),
                                       "electrons", "Electron count", csv=True)
@@ -2354,9 +2356,9 @@ class CVTab(TABS.FigureTab):
                 self.tbl_n.item(i, j).setToolTip(tip)
                 if mark:
                     self.tbl_n.item(i, j).setForeground(Qt.darkYellow)
-        self.lbl_n.setText(T("cv_n_title") + ("" if n_rows else ": " + T("cv_n_only_separate")))
-        self.lbl_n.setVisible(self.n_inputs() and (bool(n_rows) or any(r["why"] == "separate"
-                                                                         for r in self.electron_counts())))
+        show_n = self.n_inputs() and (bool(n_rows) or any(r["why"] == "separate" for r in self.electron_counts()))
+        self.lbl_n.setVisible(show_n)
+        self.lbl_n_sep.setText(T("cv_n_only_separate") if show_n and not n_rows else "")
         STYLE.fill_summary(self.tbl_fit, rows)
         STYLE.fill_summary(self.tbl_dk, dk_rows)
         for i, (d_bad, k_bad, any_bad) in enumerate(dk_warn):    # scheinbare Werte in der Warnfarbe

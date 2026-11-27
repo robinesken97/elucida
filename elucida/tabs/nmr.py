@@ -1249,6 +1249,7 @@ class NMRTab(QWidget):
         sv = QVBoxLayout(si)
         sv.setContentsMargins(0, 0, 0, 0)
         self.lbl_si_prev = QLabel("", alignment=Qt.AlignCenter, wordWrap=True)
+        self.lbl_si_prev.setStyleSheet("font-size: 15px; " + STYLE.HINT_CSS)     # Platzhalter groß und grau (ui.md)
         self.lbl_si_prev.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.lbl_si_prev.setMinimumSize(200, 200)
         register(self.lbl_si_prev)
@@ -4432,8 +4433,12 @@ class NMRTab(QWidget):
         s = self.current()
         own2d = s is not None and s.get("source") == "bruker" and s.get("kind", "1D") != "1D"
         s = s if own2d else self.raw_current()
-        if s is None or self.right_tabs.currentWidget() is not self.si_page:
+        if self.right_tabs.currentWidget() is not self.si_page:
             return
+        if s is None:                                      # leerer Zustand: ein Satz, was fehlt (unslop #13)
+            self.lbl_si_state.setText("")
+            self.lbl_si_prev.setPixmap(QPixmap())
+            return self.lbl_si_prev.setText(T("nmr_si_need_raw"))
         src, why = self.figure_source(s)
         self.lbl_si_state.setText(T("nmr_fig_mnova" if src else "nmr_fig_none", why=T(why)) if why else "")
         import pymupdf

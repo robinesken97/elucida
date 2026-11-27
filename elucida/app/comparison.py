@@ -1601,8 +1601,8 @@ class QuickDrop(QLabel):
         self.setWordWrap(True)
         self.setMinimumHeight(96)
         c = STYLE.colors()
-        self.setStyleSheet(f"QLabel {{ border: 2px dashed {c['text2']}; border-radius: 8px; color: {c['text2']};"
-                           f" padding: 10px; }}")
+        self.setStyleSheet(f"QLabel {{ border: none; color: {c['text2']}; padding: 10px; }}")
+        STYLE.DashedFrame(self, 8, "text2", 2)                # gestrichelt selbst gezeichnet (Ecken unter Windows)
 
     def dragEnterEvent(self, ev):
         if ev.mimeData().hasUrls():

@@ -243,6 +243,7 @@ def add_card(title, hint, height):
     b.setMinimumWidth(WEL.CARD_W)
     b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     b.setCursor(Qt.PointingHandCursor)
+    STYLE.DashedFrame(b, 12)
     return b
 
 

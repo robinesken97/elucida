@@ -33,13 +33,15 @@ _number_locale()
 COLORS = {
     # Abstufung wie im Entwurf: Seite < Karte, Felder etwas abgesetzt, warme Grautöne, dezente Ränder
     "light": dict(window="#F4F3EF", card="#FFFFFF", field="#FAF9F6", button="#FFFFFF", hover="#EFEEE9",
-                  border="#E2E0DA", border_strong="#C8C6BE", text="#1F1E1C", text2="#62615B",
-                  disabled="#ABA9A2", accent="#2E6BD6", accent_hover="#255BBB", on_accent="#FFFFFF",
-                  alt="#F7F6F3", check_border="#9A988F", side="#ECEBE5", sel="#DDDBD3", ok="#1A7F52", on_ok="#FFFFFF"),
+                  border="#CDCBC4", border_strong="#ADABA3", text="#1F1E1C", text2="#62615B",
+                  disabled="#9F9D96", accent="#2E6BD6", accent_hover="#255BBB", on_accent="#FFFFFF",
+                  alt="#F7F6F3", check_border="#9A988F", side="#ECEBE5", sel="#DDDBD3", ok="#1A7F52", on_ok="#FFFFFF",
+                  muted="#72706A"),
     "dark": dict(window="#141413", card="#1C1C1B", field="#111110", button="#232322", hover="#2B2B29",
-                 border="#2D2D2B", border_strong="#42423F", text="#EDECE8", text2="#9D9B94",
-                 disabled="#5E5D58", accent="#3D7CE0", accent_hover="#5089E6", on_accent="#FFFFFF",
-                 alt="#181817", check_border="#7A7872", side="#181817", sel="#2F2F2C", ok="#55C795", on_ok="#101010"),
+                 border="#2D2D2B", border_strong="#4C4C48", text="#EDECE8", text2="#9D9B94",
+                 disabled="#696863", accent="#3D7CE0", accent_hover="#5089E6", on_accent="#FFFFFF",
+                 alt="#181817", check_border="#7A7872", side="#181817", sel="#2F2F2C", ok="#55C795", on_ok="#101010",
+                 muted="#8E8C86"),
 }
 
 _SVG = {
@@ -78,7 +80,9 @@ _SVG = {
             '<path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
 }
 
-HINT_CSS = "color: gray;"            # Hinweistexte
+# Hinweistexte und Platzhalter: `muted` des Designs (≥ 4,5:1 auf Karte und Feld, unslop #8; vorher „gray“ 3,9:1 bzw.
+# Platzhalter `disabled` 2,2:1) über die Palette, damit der Designwechsel ihn nachzieht
+HINT_CSS = "color: palette(placeholder-text);"
 QTY = "\u200b"                      # hinter einem einzelnen Buchstaben: als Größe kursiv setzen (siehe _SCI)
 WARN_COLOR = "#d9534f"
 WARN_CSS = "color: #d9534f;"         # Warnungen (fehlende Molmasse, Farbe unvollständig)
@@ -236,7 +240,7 @@ class _EmptyNote(QObject):
         self.label = QLabel(text, view.viewport())
         self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignCenter)
-        self.label.setStyleSheet("color: gray; font-size: 14px; background: transparent;")
+        self.label.setStyleSheet(HINT_CSS + " font-size: 14px; background: transparent;")
         self.label.setAttribute(Qt.WA_TransparentForMouseEvents)
         view.viewport().installEventFilter(self)
         if isinstance(view, QAbstractItemView):
@@ -335,10 +339,17 @@ class _CellDelegate(QStyledItemDelegate):
         r.moveCenter(option.rect.center())
         return r
 
+    SEL_BAR = 3     # Akzentstrich links an der gewählten Zeile (unslop #3)
     SEL_GAP = 4     # gewählte Zeile einer Häkchen-Tabelle: Lücke zwischen den Zellen als Spaltentrenner (Nutzerwunsch)
 
     def paint(self, painter, option, index):
-        self._paint(painter, option, index)
+        if option.state & QStyle.State_Selected:             # Auswahl selbst zeichnen: gleich auf allen Systemen
+            painter.fillRect(option.rect, QColor(colors()["sel"]))   # (Windows: blaue Kästchen-Spalte, gerastertes
+            o = QStyleOptionViewItem(option)                 # Blau unter Rich-Text, Bericht pre-1.5.0)
+            o.state &= ~QStyle.State_Selected
+            self._paint(painter, o, index)
+        else:
+            self._paint(painter, option, index)
         w = option.widget
         if option.state & QStyle.State_Selected and w is not None and w.property("selgap"):
             v, r, half = w.horizontalHeader().visualIndex(index.column()), option.rect, self.SEL_GAP // 2
@@ -347,6 +358,11 @@ class _CellDelegate(QStyledItemDelegate):
                 painter.fillRect(r.x(), r.y(), half, r.height(), col)
             if v < w.horizontalHeader().count() - 1:
                 painter.fillRect(r.right() + 1 - half, r.y(), half, r.height(), col)
+        hh = getattr(w, "horizontalHeader", None)            # Listen: eine Spalte
+        if option.state & QStyle.State_Selected and w is not None \
+                and index.column() == (hh().logicalIndexAt(0) if hh is not None else 0):
+            r = option.rect                                  # gewählte Zeile: Akzentstrich links (Fläche leise, unslop #3)
+            painter.fillRect(r.x(), r.y(), self.SEL_BAR, r.height() - 1, QColor(colors()["accent"]))
         painter.save()                                       # feine Linie unter jeder Zeile statt eines Gitters:
         painter.setPen(QColor(colors()["border"]))           # alle Tabellen sehen gleich aus (Nutzerwunsch)
         painter.drawLine(option.rect.bottomLeft(), option.rect.bottomRight())
@@ -1260,19 +1276,8 @@ TILE_SEL, TILE_SLOT_H = 3, 5        # Auswahlrahmen 3 px außen um die Vorschau;
 METHOD_COLORS = {"syn": "#BD6062", "nmr": "#BB6546", "irms": "#B36D2A", "hrms": "#A57710", "eps": "#918112",
                  "overlay": "#778A2D", "uvkin": "#57914A", "fluo": "#2B9667", "cv": "#009783", "sec": "#00959C",
                  "hcell": "#0090B1", "epr": "#2B88C0", "xray": "#5480C7", "dft": "#7377C6", "other": "#8C6EBD"}
-TILE_TINT = 0.14
-
-
 def method_color(key):
     return METHOD_COLORS.get(key, METHOD_COLORS["other"])
-
-
-def method_tint(key, mode=None):
-    """Hintergrund der Vorschaufläche: TILE_TINT der Datenart-Farbe über der Kartenfarbe (hell/dunkel)."""
-    from PySide6.QtGui import QColor
-    a, b = QColor(method_color(key)), QColor(COLORS[mode or _mode]["card"])
-    mix = lambda x, y: round(TILE_TINT * x + (1 - TILE_TINT) * y)     # noqa: E731
-    return QColor(mix(a.red(), b.red()), mix(a.green(), b.green()), mix(a.blue(), b.blue())).name()
 
 
 INNER_W = COLUMN_W - 2 * COL_PAD - 2 * CARD_PAD     # Karteninhalt: Beschriftung + Abstand + Wertespalte
@@ -2165,7 +2170,7 @@ class SciLabel(QLabel):
         if short != getattr(self, "_short", None):
             self._short = short
             self.setAlignment(Qt.AlignCenter if short else Qt.AlignLeft | Qt.AlignTop)
-            self.setStyleSheet("font-size: 15px; color: gray;" if short else "")
+            self.setStyleSheet("font-size: 15px; " + HINT_CSS if short else "")
             if self.empty:
                 self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         _set_sci(self, shown)
@@ -2951,6 +2956,35 @@ def hint_when_disabled(group, text):
     return _DisabledHint(group, text)
 
 
+class DashedFrame(QWidget):
+    """Gestrichelter Rahmen mit runden Ecken über einem Widget (Ablageflächen, „Neue Verbindung“): selbst gezeichnet,
+    weil Qt-Stylesheets gestrichelte runde Ränder an Ecken und Kanten unregelmäßig zeichnen (Windows, Bericht pre-1.5.0).
+    Farbe `color` aus COLORS beim Zeichnen: folgt dem Designwechsel."""
+
+    def __init__(self, host, radius, color="border_strong", width=1):
+        super().__init__(host)
+        self.radius, self.color, self.pen_w = radius, color, width
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        host.installEventFilter(self)
+        self.setGeometry(host.rect())
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Resize:
+            self.setGeometry(obj.rect())
+            self.raise_()
+        return False
+
+    def paintEvent(self, _ev):
+        from PySide6.QtGui import QPen
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        pen = QPen(QColor(colors()[self.color]), self.pen_w)
+        pen.setDashPattern([4, 3])
+        p.setPen(pen)
+        h = self.pen_w / 2
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(h, h, -h, -h), self.radius, self.radius)
+
+
 class ColumnFit(QObject):
     """Linke Spalte fest COLUMN_W breit (alle Tabs gleich, Trennlinie nicht verschiebbar, Nutzerwunsch); breiter nur,
     wenn der Inhalt sonst abgeschnitten würde – nie waagerecht scrollen, der Rest geht an die Abbildung. Beobachtet den
@@ -3139,7 +3173,7 @@ def apply(mode, cache_dir: Path):
     for role, key in ((QPalette.Window, "window"), (QPalette.WindowText, "text"), (QPalette.Base, "field"),
                       (QPalette.AlternateBase, "alt"), (QPalette.Text, "text"), (QPalette.Button, "button"),
                       (QPalette.ButtonText, "text"), (QPalette.Highlight, "accent"),
-                      (QPalette.HighlightedText, "on_accent"), (QPalette.PlaceholderText, "disabled"),
+                      (QPalette.HighlightedText, "on_accent"), (QPalette.PlaceholderText, "muted"),
                       (QPalette.ToolTipBase, "card"), (QPalette.ToolTipText, "text"), (QPalette.Link, "accent"),
                       (QPalette.Mid, "border_strong"), (QPalette.Midlight, "border"), (QPalette.Dark, "border_strong"),
                       (QPalette.Light, "card"), (QPalette.Shadow, "border_strong"), (QPalette.BrightText, "on_accent")):
@@ -3173,13 +3207,12 @@ _HEX = re.compile(r"#[0-9A-Fa-f]{3}(?:[0-9A-Fa-f]{3})?(?![0-9A-Fa-f])")
 
 def _hex_map(old, new):
     """Hex old -> new mode for colours baked into widget stylesheets and rich text: palette roles whose old value is
-    unique (light card/button/on_accent share #FFFFFF), swatch border, step dot, tile tints."""
+    unique (light card/button/on_accent share #FFFFFF), swatch border, step dot."""
     o, n = COLORS[old], COLORS[new]
     vals = [v.lower() for v in o.values()]
     m = {o[k].lower(): n[k] for k in o if vals.count(o[k].lower()) == 1}
     m[SWATCH_BORDER[old].lower()] = SWATCH_BORDER[new]
     m[MARK_COLORS[old].lower()] = MARK_COLORS[new]
-    m.update({method_tint(k, old).lower(): method_tint(k, new) for k in METHOD_COLORS})
     return {k: v for k, v in m.items() if k != v.lower()}
 
 
@@ -3253,7 +3286,7 @@ QLabel[formlabel="true"] {{ color: {c['text2']}; }}
 QLabel#valueStrong {{ font-weight: 600; }}                     /* Angabe aus der Verbindung (Summenformel, Molmasse): gut sichtbar */
 QGroupBox QLabel#valueStrong {{ font-weight: 600; }}
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
-    background: {c['field']}; border: 1px solid {c['border']}; border-radius: {FIELD_RADIUS}px;
+    background: {c['field']}; border: 1px solid {c['border_strong']}; border-radius: {FIELD_RADIUS}px;
     padding: 3px 10px; min-height: 18px; selection-background-color: {c['accent']}; }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {{ border-color: {c['accent']}; }}
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{
@@ -3273,13 +3306,13 @@ QComboBox::down-arrow {{ image: url("{a['down']}"); width: 11px; height: 11px; }
 QComboBox::down-arrow:disabled {{ image: url("{a['down_dis']}"); }}
 QComboBox QAbstractItemView {{ background: {c['card']}; border: 1px solid {c['border']};
     selection-background-color: {c['accent']}; selection-color: {c['on_accent']}; }}
-QPushButton {{ background: {c['button']}; border: 1px solid {c['border']}; border-radius: 8px;
+QPushButton {{ background: {c['button']}; border: 1px solid {c['border_strong']}; border-radius: 8px;
     padding: 5px 13px; min-height: 18px; font-weight: 500; }}
 QPushButton {{ icon-size: {BUTTON_ICON_PX}px; }}             /* Symbol links im 20-px-Feld: 8 px bis zum Text (icon) */
 QPushButton#crumb {{ icon-size: 18px; }}
-QPushButton:hover {{ background: {c['hover']}; border-color: {c['border_strong']}; }}
+QPushButton:hover {{ background: {c['hover']}; border-color: {c['check_border']}; }}
 QPushButton:pressed {{ background: {c['border']}; }}
-QPushButton:disabled {{ color: {c['disabled']}; background: {c['alt']}; }}
+QPushButton:disabled {{ color: {c['disabled']}; background: transparent; border-color: {c['border']}; }}   /* flach: klar „aus“ */
 QPushButton[accent="true"] {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
     font-weight: 600; }}
 QPushButton[accent="true"]:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
@@ -3305,7 +3338,7 @@ QHeaderView::section {{ background: {c['card']}; color: {c['text2']}; border: no
     border-bottom: 1px solid {c['border']}; padding: 4px 6px; }}        /* kein Gitter, auch nicht im Kopf */
 QHeaderView {{ background: {c['card']}; }}                     /* Fläche rechts der letzten Spalte wie der Kopf */
 QTableCornerButton::section {{ background: {c['card']}; border: none; border-bottom: 1px solid {c['border']}; }}
-QPlainTextEdit, QTextEdit {{ padding: 2px 8px; }}             /* Text 13 px vom Rand wie in den einzeiligen Feldern */
+QPlainTextEdit, QTextEdit {{ padding: 2px 8px; border-color: {c['border_strong']}; }}   /* Rahmen wie Felder (Windows hell) */             /* Text 13 px vom Rand wie in den einzeiligen Feldern */
 QGroupBox {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 12px;
     margin-top: 0; padding: 2.1em 4px 4px 4px; }}
 QGroupBox::title {{ subcontrol-origin: padding; subcontrol-position: top left; left: 12px; top: 9px;
@@ -3318,7 +3351,9 @@ QCheckBox::indicator:checked, QAbstractItemView::indicator:checked, QGroupBox::i
     background: {c['accent']}; border-color: {c['accent']}; image: url("{a['check']}"); }}
 QCheckBox::indicator:indeterminate, QAbstractItemView::indicator:indeterminate {{
     background: {c['accent']}; border-color: {c['accent']}; image: url("{a['dash']}"); }}
-QAbstractItemView::indicator:checked:selected {{ border-color: {c['on_accent']}; }}   /* sonst Blau auf Blau: nur der Haken */
+/* gewählte Zeile leise (unslop #3, Nutzerwunsch 2026-11-27): graue Fläche wie ein gewählter Reiter, Text bleibt Textfarbe,
+   3-px-Akzentstrich links (_CellDelegate.paint); Blau bleibt nur für die Textauswahl in Feldern */
+QTableWidget, QTableView, QListWidget, QTreeWidget {{ selection-background-color: {c['sel']}; selection-color: {c['text']}; }}
 QCheckBox::indicator:disabled, QAbstractItemView::indicator:disabled {{ background: {c['alt']};
     border-color: {c['border_strong']}; }}
 QCheckBox::indicator:checked:disabled, QAbstractItemView::indicator:checked:disabled {{
@@ -3409,11 +3444,12 @@ QPushButton#segBtn {{ background: transparent; border: none; border-radius: 6px;
 QPushButton#segBtn:checked {{ background: {c['hover']}; color: {c['text']}; font-weight: 600; }}
 QCheckBox::indicator {{ background: {c['button']}; border: 1px solid {c['border_strong']}; }}
 QCheckBox[chip="true"] {{ spacing: 0; padding: 0 11px; min-height: 24px; max-height: 24px; min-width: 20px; border-radius: 13px;
-    border: 1px solid {c['border_strong']}; color: {c['text2']}; background: transparent; }}
+    border: 1px solid {c['border']}; color: {c['text2']}; background: transparent; }}
 QCheckBox[chip="true"][tight="1"] {{ padding: 0 7px; }}
 QCheckBox[chip="true"]::indicator {{ width: 0; height: 0; border: none; margin: 0; background: transparent; image: none; }}
-QCheckBox[chip="true"]:hover {{ border-color: {c['accent']}; color: {c['text']}; }}
-QCheckBox[chip="true"]:checked {{ background: {_mix(c['accent'], c['card'], 0.16)}; border-color: {c['accent']}; color: {c['text']}; }}
+QCheckBox[chip="true"]:hover {{ border-color: {c['border_strong']}; color: {c['text']}; }}
+/* an/aus über Fläche und Text, nicht nur über den Rand (unslop #4, Variante A, Nutzerwunsch 2026-11-27) */
+QCheckBox[chip="true"]:checked {{ background: {c['sel']}; border-color: {c['border_strong']}; color: {c['text']}; }}
 QCheckBox[chip="true"]:disabled {{ color: {c['disabled']}; border-color: {c['border']}; background: transparent; }}
 QLabel#chainStep {{ padding: 0 10px; min-height: 24px; max-height: 24px; border-radius: 13px;
     border: 1px solid {c['border']}; color: {c['disabled']}; background: transparent; }}
@@ -3433,7 +3469,7 @@ QFrame#panelFoot {{ border: none; border-top: 1px solid {c['border']}; border-ra
 QFrame#jobRow {{ border: none; border-bottom: 1px solid {c['border']}; background: transparent; }}
 QPushButton#ghost {{ background: transparent; border: none; border-radius: 7px; color: {c['text2']}; padding: 0 10px; min-height: 30px; max-height: 30px; }}
 QPushButton#ghost:hover {{ background: {c['hover']}; color: {c['text']}; }}
-QPushButton#addCard {{ background: transparent; border: 1px dashed {c['border_strong']}; border-radius: 12px; color: {c['text2']}; }}
+QPushButton#addCard {{ background: transparent; border: none; border-radius: 12px; color: {c['text2']}; }}   /* Rand: DashedFrame */
 QPushButton#addCard:hover {{ background: {c['card']}; color: {c['text']}; }}
 QPushButton#addCard QLabel {{ background: transparent; }}
 QWidget#matrixPanel, QFrame#matrixPanel {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 12px; }}
@@ -3452,7 +3488,7 @@ QFrame#tileSel {{ background: transparent; border: 2px solid transparent; border
 QFrame#tileSel[current="true"] {{ border-color: {c['border_strong']}; }}
 QLabel#tileThumb {{ background: {c['card']}; border: 1px solid {c['border']}; border-radius: 6px; }}
 QLabel#tileThumb[placeholder="true"] {{ background: {c['card']}; }}
-QLabel#tileCap {{ font-size: 10.5px; font-weight: 600; background: transparent; }}
+QLabel#tileCap {{ font-size: 10.5px; font-weight: 600; color: {c['text2']}; background: transparent; }}
 QLabel#tileDot {{ border-radius: 2px; }}
 QLabel#tileLegend {{ font-size: 10.5px; color: {c['text2']}; background: transparent; }}
 QLabel#tileName {{ font-size: 11.5px; background: transparent; }}
@@ -3460,12 +3496,12 @@ QLabel#tileGroupLinks {{ font-size: 11px; background: transparent; border: none;
 QLabel#tileGroup {{ font-size: 12px; font-weight: 600; background: transparent; border: none;
     border-bottom: 1px solid {c['border']}; padding: 8px 0 3px 0; }}
 QLabel#tileCount {{ min-height: 18px; max-height: 18px; padding: 0 9px; border-radius: 9px; font-size: 11px;
-    font-weight: 600; background: {c['accent']}; color: {c['on_accent']}; }}
+    font-weight: 600; background: {c['sel']}; color: {c['text2']}; }}             /* Zählmarken grau (unslop #1) */
 QLabel#segCount {{ min-height: 16px; max-height: 16px; padding: 0 6px; border-radius: 8px; font-size: 10px;
-    font-weight: 600; background: {c['accent']}; color: {c['on_accent']}; }}
+    font-weight: 600; background: {c['sel']}; color: {c['text2']}; }}
 QPushButton#siPill {{ min-height: 18px; max-height: 18px; padding: 0 9px; border-radius: 9px; border: none;
     font-size: 11px; font-weight: 600; background: {c['sel']}; color: {c['text2']}; }}
-QPushButton#siPill:checked {{ background: {c['accent']}; color: {c['on_accent']}; }}
+QPushButton#siPill:checked {{ background: {c['text2']}; color: {c['card']}; }}
 QPushButton#siPill:disabled {{ background: {c['sel']}; color: {c['disabled']}; }}
 QLabel#statusOk {{ color: {c['ok']}; font-size: 12px; font-weight: bold; background: transparent; }}
 QLabel#statusOpen, QLabel#recentHint {{ color: {c['text2']}; font-size: 12px; background: transparent; }}

@@ -4346,6 +4346,12 @@ def _g_epr_kinetics(ctx):
             cap_e = t_e.si_caption("TEST-1")
             assert cap_e.startswith("X-Band EPR spectr") and "<b>TEST-1<sup>•+</sup></b> in THF (1 mM)." in cap_e \
                 and "2\u2009×\u2009<sup>1</sup>H: 12." in cap_e and "<i>g</i> = 2.003" in cap_e and "referenced to a standard" in cap_e, cap_e
+            # Spezies-Feld mit B, I, X₂, X² (unslop #19): altes „^{…}“ wird gelesen, gespeichert wird Mathtext
+            w.epr_state.update(cap_species="TEST-1$^{•+}$")
+            assert "<b>TEST-1<sup>•+</sup></b> in THF" in t_e.si_caption("TEST-1"), t_e.si_caption("TEST-1")
+            ed_sp_, _f = TABS._cap_edit(lambda: None, "TEST-1^{•+}")
+            assert ed_sp_.text() == "TEST-1$^{•+}$" and not ed_sp_.toPlainText().count("^"), ed_sp_.text()
+            ed_sp_.deleteLater(), _f.deleteLater()
             w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
             # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
             A_ = EPRMOD.iso_spectrum(Bt, mw_, 2.0030, [(1, 1.0, 1.4)], 0.2)
@@ -7950,7 +7956,8 @@ def _g_dft(ctx):
             w.dft_state["si_conv"] = False                                             # Teile abschaltbar
             assert "Energy change" not in DFT.si_plain(t_d.si_of(e_o))
             w.dft_state["si_conv"] = True
-            assert T("dft_w_solv_cpcm") in t_d.lbl_warn.text() and t_d.btn_si_copy.isEnabled()
+            assert T("dft_w_solv_cpcm") in t_d.lbl_solv.text() and T("dft_w_solv_cpcm") not in t_d.lbl_warn.text() \
+                and t_d.btn_si_copy.isEnabled()                              # Hinweis, keine Warnung (unslop #10)
             files = t_d.export_to(out / "dft" / "dft_calc")
             names_ = {f_.name for f_ in files}
             assert {"dft_calc_SI.docx", "dft_calc_SI.txt"} <= names_, names_
@@ -20116,16 +20123,18 @@ def _g_lanes(ctx):
             report.append("Empty compound drawing: no structure, eps/fluorescence/NMR drop it and take it back, "
                           "file kept, no error: OK")
         with section:
-            # Häkchen-Tabelle mit Auswahl (Karte Beschriftungen): ganze Zeile blau samt Häkchen-Spalte, schmale Lücke als
-            # Spaltentrenner; ohne Auswahl bleibt alles wie bisher
+            # Häkchen-Tabelle mit Auswahl (Karte Beschriftungen): ganze Zeile grau samt Häkchen-Spalte, Akzentstrich links
+            # (unslop #3), schmale Lücke als Spaltentrenner; ohne Auswahl bleibt alles wie bisher
             from PySide6.QtGui import QColor as QC_s3
-            t_s3 = STYLE.check_table(["Text"])
+            t_s3 = STYLE.check_table(["Text", "Element"])            # drei Spalten wie die Karte, Text als Rich-Text
+            t_s3.setItemDelegateForColumn(1, STYLE.RichDelegate(t_s3, STYLE.sci))
             t_s3.setSelectionMode(QAbstractItemView.SingleSelection)
             t_s3.setSelectionBehavior(QAbstractItemView.SelectRows)
-            it_s3 = STYLE.check_row(t_s3, "a", ["Label"])
+            it_s3 = STYLE.check_row(t_s3, "a", ["λ = 268 nm", "Label"])
             assert it_s3.flags() & Qt.ItemIsSelectable and t_s3.property("selgap")
-            t_s3.item(0, 1).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)     # wie LabelCard.fill
-            t_s3.resize(300, 120)
+            for c_s3 in (1, 2):
+                t_s3.item(0, c_s3).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)   # wie LabelCard.fill
+            t_s3.resize(420, 120)
             t_s3.show()
             t_s3.selectRow(0)
             QApplication.processEvents()
@@ -20139,11 +20148,20 @@ def _g_lanes(ctx):
             def px_s3(x_):
                 return img_s3.pixelColor(int(x_ * dpr_s3), int(y_s3 * dpr_s3)).rgb()
             sel_s3 = px_s3(x0_s3 + t_s3.columnWidth(1) // 2 + 30)    # Textzelle (neben dem Text)
-            assert sel_s3 != field_s3 and px_s3(3) == sel_s3, (hex(sel_s3), hex(px_s3(3)))   # Häkchen-Spalte ebenso blau
+            assert sel_s3 != field_s3 and px_s3(STYLE._CellDelegate.SEL_BAR + 1) == sel_s3, \
+                (hex(sel_s3), hex(px_s3(4)))                         # Häkchen-Spalte ebenso grau
+            assert sel_s3 == QC_s3(STYLE.colors()["sel"]).rgb(), hex(sel_s3)           # leise: Fläche wie gewählter Reiter
+            assert px_s3(1) == QC_s3(STYLE.colors()["accent"]).rgb(), hex(px_s3(1))    # Akzentstrich links
             assert px_s3(x0_s3 - 1) == field_s3 and px_s3(x0_s3) == field_s3, "no gap between selected cells"
+            x2_s3 = t_s3.columnViewportPosition(2)                  # dritte Spalte (Element) ebenso grau
+            assert px_s3(x2_s3 + t_s3.columnWidth(2) - 6) == sel_s3, hex(px_s3(x2_s3 + t_s3.columnWidth(2) - 6))
+            acc_s3 = {QC_s3(STYLE.colors()["accent"]).rgb(), QApplication.palette().highlight().color().rgb()}
+            hit_s3 = [x_ for x_ in range(x0_s3 + 3, x0_s3 + t_s3.columnWidth(1) - 3) if px_s3(x_) in acc_s3]
+            assert not hit_s3, ("rich-text cell painted with the style's highlight (Windows dither)", hit_s3[:5])
             t_s3.close()
             t_s3.deleteLater()
-            report.append(f"Check table selection: whole row incl. check column, {STYLE._CellDelegate.SEL_GAP} px gap: OK")
+            report.append(f"Check table selection (3 columns, rich-text cell painted by the delegate): whole row grey incl. check column, accent bar, "
+                          f"{STYLE._CellDelegate.SEL_GAP} px gap: OK")
         with section:
             # Startfenster passt samt Titelleiste in den freien Bildschirmbereich (150 %: Titelleiste über dem Rand)
             from PySide6.QtCore import QRect as QR_g3
@@ -20848,14 +20866,23 @@ def _g_lanes(ctx):
                 assert not trash_ft, trash_ft
             finally:
                 QF_ft.moveToTrash = keep_trash_ft
-            # Kachel: gewählt = Vorschau eingedrückt (Rand + Bild 92 %), Ring im Rand TILE_SEL; abgewählt unverändert
+            # Kachel (unslop #1/#2, 2026-11-27): gewählt = grauer Haken auf unveränderter Vorschau, abgewählt = blasse
+            # Vorschau + grauer Name; kein Ring, nicht eingedrückt, Fläche neutral; Haken-Schicht über der Vorschau
             c_, o_ft = card_ft("fluo:decay"), card_ft("cv")
-            assert c_.selected and "margin" in c_.pic.styleSheet() and c_.sel.property("selected")
-            assert "margin" not in o_ft.pic.styleSheet() and not o_ft.sel.property("selected")
-            if c_._pm is not None and c_.pic.pixmap() is not None and not c_.pic.pixmap().isNull():
-                assert c_.pic.pixmap().width() < c_._pm.width(), (c_.pic.pixmap().width(), c_._pm.width())
-            dx_ft, dy_ft = TILES_ft.Ring.inset()
-            assert STYLE.TILE_SEL + dy_ft - (3 + 2.5) >= 0 and dx_ft >= dy_ft > 0, (dx_ft, dy_ft)
+            assert c_.check_ui and c_.selected and not o_ft.selected
+            assert not c_.pic.styleSheet() and not o_ft.pic.styleSheet(), (c_.pic.styleSheet(), o_ft.pic.styleSheet())
+            assert not c_.name.styleSheet() and STYLE.colors()["disabled"] in o_ft.name.styleSheet()
+            kids_ft = c_.children()
+            assert kids_ft.index(c_.sel) > kids_ft.index(c_.pic), "tick layer below the preview"
+            for t_, on_ in ((c_, True), (o_ft, False)):
+                if t_._pm is not None and t_.pic.pixmap() is not None and not t_.pic.pixmap().isNull():
+                    assert t_.pic.pixmap().size() == t_._pm.size(), (t_.pic.pixmap().size(), t_._pm.size())
+                    im_ = t_.pic.pixmap().toImage()
+                    a_ = max(im_.pixelColor(x_, y_).alpha() for x_ in range(0, im_.width(), 7)
+                             for y_ in range(0, im_.height(), 7))
+                    assert (a_ > 200) == on_, (on_, a_)          # abgewählt: höchstens FADE Deckkraft
+            assert not any(t_.check_ui for t_ in w.findChildren(TILES_ft.Tile) if t_.objectName() == "tile"
+                           and not isinstance(t_, type(c_)))       # Projekt-Kacheln öffnen nur, kein Haken
             # Orbital-Symbol: d-Kleeblatt mittig, graues Atom in der Mitte, Phasen voll (oben rechts) / hell (oben links)
             img_ft = TILES_ft.kind_pixmap("lobes", "overlay", 4).toImage().convertToFormat(QI_ft.Format_ARGB32)
             xs_ft = [x_ for x_ in range(img_ft.width()) for y_ in range(0, img_ft.height(), 4)
@@ -20887,7 +20914,7 @@ def _g_lanes(ctx):
             report.append("Export footer (decisions 182-184): per-card selection saved (undo, None one step, own flags), "
                           "old tab switch kept until the first click, showing writes nothing; four equal buttons, greyed "
                           "with a reason; every card feeds its buttons (images/tables only their files, nothing trashed, "
-                          "PPTX, SI and whole SI follow the card); pressed tile + ring; d-orbital icon; minimum width: OK")
+                          "PPTX, SI and whole SI follow the card); tile tick / pale when off; d-orbital icon; minimum width: OK")
         with section:
             # Spur klein 4: dunkler Canvas, Helligkeit in int32 (in int16 lief die Summe ab 128 über -> weiße Säume)
             from elucida.app import canvas_theme as CT_k4

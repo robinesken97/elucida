@@ -319,7 +319,7 @@ class ExportCard(Tile):
         self.setFixedHeight(self.height() + self.name.fontMetrics().lineSpacing())   # eine Zeile mehr als die Kachel sonst
 
     def set_thumb(self, path):
-        """Vorschau aus dem Bild, sonst Platzhalter je Art in der Farbe der Datenart."""
+        """Vorschau aus dem Bild, sonst grauer Platzhalter je Art."""
         from elucida.app.tiles import tile_pixmap
         self.set_pixmap(tile_pixmap(path, self.pic) if path else None)
 

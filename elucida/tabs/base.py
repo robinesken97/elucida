@@ -248,6 +248,37 @@ def _label_edit(done):
     return _LABEL_EDIT(done)
 
 
+def cap_mathtext(text):
+    """Gespeicherter Text eines formatierten Unterschrift-Felds als Abbildungstext (Mathtext); altes Format
+    „3b^{•+}“ (ohne $) wird gelesen."""
+    text = str(text or "")
+    return text if "$" in text else re.sub(r"\^\{([^}]*)\}", r"$^{\1}$", text)
+
+
+def _cap_edit(done, text):
+    """Feld der Bildunterschrift mit B, I, X₂, X² statt Syntax (EPR-Spezies, unslop #19): derselbe Editor wie
+    „Eigener Text“, eine Zeile hoch. Liefert (Feld, Zeile mit Knöpfen); `text()` gibt den Abbildungstext."""
+    from elucida.tabs import synthesis as SYN
+    ed = _label_edit(done)
+    ed.setFixedHeight(ed.fontMetrics().lineSpacing() + 18)
+    h = FT.to_html(cap_mathtext(text)) if text else None
+    if h is None:
+        ed.setPlainText(text or "")
+    else:
+        ed.setHtml(SYN.simple_to_qt(h))
+    ed.text = lambda: FT.from_html(SYN.doc_html(ed)).replace("\n", " ").strip()
+    field = QWidget()
+    fv = QVBoxLayout(field)
+    fv.setContentsMargins(0, 0, 0, 0)
+    row = QHBoxLayout()
+    for b in SYN.format_buttons(ed):
+        row.addWidget(b)
+    row.addStretch(1)
+    fv.addLayout(row)
+    fv.addWidget(ed)
+    return ed, field
+
+
 def _row_kind(r):
     """Spalte „Element“ der Karte „Beschriftungen im Bild“: Label, eigenes Label oder die Stelle eines festen Texts
     (Rolle aus core.figtexts: 'x', 'inset.head', 'r.y', 'cbar.y', 'ax2.x' …); Einträge „nicht im Bild“ mit Zusatz."""
@@ -475,6 +506,7 @@ class LabelCard(QObject):
                                                    _row_kind(r)], checked=not r["hidden"])
             it = self.table.item(self.table.rowCount() - 1, 1)
             it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            self.table.item(self.table.rowCount() - 1, 2).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)  # ganze Zeile grau
             if r.get("stale"):                               # nicht im Bild: Häkchen ohne Wirkung, Hinweis im Tooltip
                 self.table.item(self.table.rowCount() - 1, 0).setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 it.setForeground(QColor("#8a8a8a"))
@@ -1356,7 +1388,8 @@ def _card_title(w):
 
 
 class StepButton(QPushButton):
-    """Schritt der linken Spalte: Nummer im Kreis, Name, Punkt = dort weicht etwas vom Standard ab."""
+    """Schritt der linken Spalte: Nummer im Kreis, Name, Punkt = dort weicht etwas vom Standard ab. Einziger Schritt
+    (`no` None, Tab Export): nur der Name links, keine Nummer, keine Wahlfläche (unslop #15, Nutzerwunsch 2026-11-27)."""
 
     def __init__(self, no, label):
         super().__init__(objectName="segBtn", checkable=True)
@@ -1373,6 +1406,14 @@ class StepButton(QPushButton):
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QFont, QPainter, QPen
         from PySide6.QtWidgets import QStyle, QStyleOptionButton, QStylePainter
+        if self.no is None:
+            p = QPainter(self)
+            f = QFont(self.font())
+            f.setWeight(QFont.DemiBold)
+            p.setFont(f)
+            p.setPen(QColor(STYLE.colors()["text"]))
+            p.drawText(self.rect().adjusted(12, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, self.label)
+            return
         p = QStylePainter(self)
         o = QStyleOptionButton()
         self.initStyleOption(o)
@@ -1462,7 +1503,7 @@ class StepColumn(QObject):
             h.setSpacing(0)
             grp = QButtonGroup(seg)
             for k, n in enumerate(used):
-                b = StepButton(k + 1, T(labels[n]))
+                b = StepButton(k + 1 if len(used) > 1 else None, T(labels[n]))
                 grp.addButton(b, k)
                 h.addWidget(b, 1)
                 self.buttons.append(b)
@@ -3158,6 +3199,7 @@ class FigureTab(QWidget):
 
     CAP_FIELDS: tuple = ()               # Felder der Bildunterschrift -> st["cap_<Feld>"] (Konzentration, Lösungsmittel …)
     CAP_REMEMBER: tuple = ()             # Felder, die für neue Projekte gemerkt werden (Leitsalz)
+    CAP_RICH: tuple = ()                 # Felder mit B, I, X₂, X² (gespeichert als Mathtext, siehe cap_mathtext)
 
     def caption_box(self):
         """Gruppe „Bildunterschrift (SI-Export)“: Freitextfelder + Vorschau der fertigen Unterschrift."""
@@ -3171,13 +3213,16 @@ class FigureTab(QWidget):
         for key in self.CAP_FIELDS:
             if key in self.CAP_REMEMBER and not st.get("cap_" + key):
                 st["cap_" + key] = str(self.main.settings.value(f"cap_{key}", "") or "")
-            ed = STYLE.ChemEdit(st.get("cap_" + key, ""))    # CH₂Cl₂ schon im Feld mit tiefgestellten Ziffern
+            if key in self.CAP_RICH:
+                ed, field = _cap_edit(self.cap_edited, st.get("cap_" + key, ""))
+            else:
+                ed = field = STYLE.ChemEdit(st.get("cap_" + key, ""))    # CH₂Cl₂ schon im Feld tiefgestellt
+                ed.editingFinished.connect(self.cap_edited)
             ph = f"{self.STATE_KEY}_cap_{key}_ph"
             ed.setPlaceholderText(T(ph if ph in TEXTS else f"cap_{key}_ph"))
-            ed.editingFinished.connect(self.cap_edited)
             self.ed_cap[key] = ed
             lab = f"{self.STATE_KEY}_cap_{key}"
-            f.addRow(T(lab if lab in TEXTS else f"cap_{key}"), ed)
+            f.addRow(T(lab if lab in TEXTS else f"cap_{key}"), field)
         self.lbl_cap = STYLE.SiText()
         self.lbl_cap.setStyleSheet(HINT_CSS)
         f.addRow(self.lbl_cap)

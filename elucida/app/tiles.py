@@ -5,7 +5,8 @@ stehen über die volle Breite.
 
 Kante (Robin): Kopfzeile, ihre Linie, Legende, Kartenkante (Vorschau), Name und Marke beginnen an derselben linken Kante
 `EDGE`; die Kachel reicht um ihren Auswahlrahmen (STYLE.TILE_SEL) darüber hinaus, der Rahmen liegt also außen.
-Verbindung: oben Punkt + Datenart in ihrer Farbe (STYLE.method_color), Vorschau im Ton der Datenart, Pille „SI“.
+Verbindung: oben Punkt in der Farbe der Datenart (STYLE.method_color) + Name grau, Vorschau neutral, Auswahl als
+Haken/leerer Kreis (Ring, unslop #1/#2 1.5.0).
 Projekt: oben rechts die Zahl der Abbildungen in der SI, unten an der Vorschau ein Farbstreifen mit festen Plätzen je
 Datenart (vorhanden = Farbe, sonst Linienfarbe), darunter Nummer + Summenformel."""
 import math
@@ -81,8 +82,8 @@ def _tile_pixmap(path, label, structure=False):
 
 
 def kind_pixmap(kind, key, ratio=1.0, scale=1.0):
-    """Platzhalter je Art in der Farbe der Datenart (eine Funktion, hell/dunkel gleich; Formen der Skizze
-    export-skizze-2): stick (NMR, IR, MS, PXRD), band (UV-Vis, TD-DFT, SEC, NICS), twopeaks (Fluoreszenz), decay
+    """Platzhalter je Art, grau (`disabled` des Designs; bis 1.4 in der Farbe der Datenart, unslop #2); Formen der
+    Skizze export-skizze-2: stick (NMR, IR, MS, PXRD), band (UV-Vis, TD-DFT, SEC, NICS), twopeaks (Fluoreszenz), decay
     (Kinetik, Abklingkurve), loop (CV, H-Cell), derivative (EPR), molecule (Struktur, Packung, Geometrie), lobes
     (Orbitale, Spindichte, Hyperfein, NTO), table (Tabellen), arrow (Synthese A → B), page (Berichte), curve (sonst).
     Entwurf 64 × 40, `scale` vergrößert ihn als Ganzes (Tile.symbol_scale)."""
@@ -94,7 +95,7 @@ def kind_pixmap(kind, key, ratio=1.0, scale=1.0):
     p = QPainter(pm)
     p.setRenderHint(QPainter.Antialiasing)
     p.scale(scale, scale)
-    col = QColor(STYLE.method_color(key))
+    col = QColor(STYLE.colors()["disabled"])             # grau: Farbe trägt nur die Abbildung (unslop #2)
     p.setPen(QPen(col, 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
 
     def path(*pts):                                      # (x, y) und Kurven ((c1, c2, end))
@@ -258,35 +259,40 @@ class Legend(QWidget):
         self._arrange(len(self.items) if total <= room else (len(self.items) + 1) // 2)
 
 
-PRESS = 0.92                                              # gewählte Kachel: Vorschau eingedrückt auf 92 % (Entwurf A)
+FADE = 0.35                                               # abgewählte Kachel: Vorschau mit 35 % Deckkraft
+CHECK_D = 16                                              # Haken bzw. leerer Kreis oben links auf der Vorschau (px)
 
 
 class Ring(QFrame):
-    """Rahmen um die Vorschau einer Kachel: Fokus (`current`) über das Stylesheet; gewählt ein blauer Ring 2,5 px mit
-    3 px Abstand um die eingedrückte Vorschau (Entscheidung 182), innerhalb des Rands TILE_SEL."""
+    """Schicht über der Vorschau einer Kachel: Fokus (`current`) als Rahmen über das Stylesheet; bei Kacheln mit Auswahl
+    (`check_ui`) oben links ein grauer Haken (gewählt) bzw. ein leerer Kreis (abgewählt) – ohne blauen Ring, alle gewählt
+    bleibt ruhig (unslop #1, Nutzerwunsch 2026-11-27; vorher Ring + eingedrückte Vorschau, Entscheidung 182)."""
 
     def __init__(self, tile):
         super().__init__(tile, objectName="tileSel")
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-    @staticmethod
-    def inset():
-        """Einzug der eingedrückten Vorschau je Seite (px): 4 % der Mindestbreite bzw. der Höhe (5 / 3)."""
-        return round(STYLE.TILE_W * (1 - PRESS) / 2), round(STYLE.TILE_THUMB_H * (1 - PRESS) / 2)
-
     def paintEvent(self, ev):
         super().paintEvent(ev)
-        if not self.property("selected"):
+        tile = self.parentWidget()
+        if not getattr(tile, "check_ui", False):
             return
-        s, w = STYLE.TILE_SEL, 2.5
-        dx, dy = self.inset()
-        o = 3 + w / 2                                     # 3 px Lücke, Linienmitte
-        r = QRectF(self.rect()).adjusted(s + dx - o, s + dy - o, -(s + dx - o), -(s + dy - o))
+        c, s = STYLE.colors(), STYLE.TILE_SEL
+        r = QRectF(s + 6, s + 6, CHECK_D, CHECK_D)
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.setPen(QPen(QColor(STYLE.colors()["accent"]), w))
-        p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(r, 6 + o, 6 + o)
+        if tile.selected:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(c["text2"]))
+            p.drawEllipse(r)
+            p.setPen(QPen(QColor(c["card"]), 1.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+            p.setBrush(Qt.NoBrush)
+            p.drawPolyline([QPointF(r.x() + 4.2, r.y() + 8.3), QPointF(r.x() + 7, r.y() + 11),
+                            QPointF(r.x() + 12, r.y() + 5.3)])
+        else:
+            p.setPen(QPen(QColor(c["border_strong"]), 1.3))
+            p.setBrush(QColor(c["card"]))
+            p.drawEllipse(r.adjusted(0.6, 0.6, -0.6, -0.6))
 
 
 class Tile(QWidget):
@@ -299,6 +305,7 @@ class Tile(QWidget):
         self.setObjectName("tile")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.selectable, self.selected = selectable, False
+        self.check_ui = mark is not None                 # Verbindung › Export wählt aus; Projekt-Kacheln öffnen nur
         self.setCursor(Qt.PointingHandCursor if selectable else Qt.ArrowCursor)
         self.setToolTip(tip)
         self.setFixedHeight(STYLE.TILE_H + 2 * STYLE.TILE_SEL)
@@ -313,21 +320,16 @@ class Tile(QWidget):
             dot.setFixedSize(8, 8)
             dot.setStyleSheet(f"background: {STYLE.method_color(mark[1])};")
             cap.addWidget(dot)
-            m = QLabel(mark[0], objectName="tileCap")
-            m.setStyleSheet(f"color: {STYLE.method_color(mark[1])};")
-            cap.addWidget(m)
+            cap.addWidget(QLabel(mark[0], objectName="tileCap"))      # Text grau, nur der Punkt in der Datenart-Farbe
         cap.addStretch(1)
         capw = QWidget()
         capw.setFixedHeight(STYLE.TILE_CAP_H)
         capw.setLayout(cap)
         v.addWidget(capw)
-        self.sel = Ring(self)                             # Auswahlrahmen nur um die Vorschau, 3 px außen (Entwurf)
+        self.sel = Ring(self)                             # Fokusrahmen um die Vorschau, Haken/Kreis darauf
         self.pic = QLabel(objectName="tileThumb", alignment=Qt.AlignCenter)
         self.pic.setFixedHeight(STYLE.TILE_THUMB_H)
-        self._pic_css, self._pm, self._sym = "", None, None
-        if mark is not None:                             # Vorschaufläche im Ton der Datenart (Entscheidung 99)
-            self._pic_css = f"background: {STYLE.method_tint(mark[1])};"
-            self.pic.setStyleSheet(self._pic_css)
+        self._pm, self._sym = None, None                 # Vorschaufläche neutral (unslop #2; vorher Ton der Datenart)
         v.addWidget(self.pic)
         self.slotbar = SlotBar(slots, self) if slots else None   # nicht über den Canvas-Effekt der Vorschau
         from elucida.app.welcome import EndElided
@@ -354,7 +356,7 @@ class Tile(QWidget):
         self.set_selected(False)
 
     def set_thumb(self, pixmap, kind=None, key="other"):
-        """Vorschau (QPixmap) oder Platzhalter der Art `kind` in der Farbe von `key` (kind_pixmap)."""
+        """Vorschau (QPixmap) oder grauer Platzhalter der Art `kind` (kind_pixmap)."""
         self._sym = None
         if pixmap is None or pixmap.isNull():
             self.pic.setProperty("placeholder", True)
@@ -369,13 +371,19 @@ class Tile(QWidget):
         return min(0.7 * min(w, h) / 40, 0.85 * w / 64)
 
     def _show_pm(self):
-        """Vorschau; gewählt: eingedrückt (Fläche und Bild 92 %, Entscheidung 182 „ganze Karte schrumpft + Ring“)."""
+        """Vorschau; abgewählt (nur Kacheln mit Auswahl): blass (FADE) und Name grau."""
+        off = self.check_ui and not self.selected
+        self.name.setStyleSheet(f"color: {STYLE.colors()['disabled']};" if off else "")
         pm = self._pm
-        if pm is not None and self.selected:
-            r = pm.devicePixelRatio()
-            pm = pm.scaled(round(pm.width() * PRESS), round(pm.height() * PRESS), Qt.KeepAspectRatio,
-                           Qt.SmoothTransformation)
-            pm.setDevicePixelRatio(r)
+        if pm is not None and off:
+            faded = QPixmap(pm.size())
+            faded.setDevicePixelRatio(pm.devicePixelRatio())
+            faded.fill(Qt.transparent)
+            p = QPainter(faded)
+            p.setOpacity(FADE)
+            p.drawPixmap(0, 0, pm)
+            p.end()
+            pm = faded
         if pm is not None:
             self.pic.setPixmap(pm)
 
@@ -386,8 +394,6 @@ class Tile(QWidget):
         self.setProperty("selected", on)
         self.sel.setProperty("selected", on)
         if changed:
-            dx, dy = Ring.inset()
-            self.pic.setStyleSheet(self._pic_css + (f" margin: {dy}px {dx}px;" if on else ""))
             self._show_pm()
         self.sel.style().unpolish(self.sel)
         self.sel.style().polish(self.sel)
@@ -404,7 +410,7 @@ class Tile(QWidget):
         s = STYLE.TILE_SEL
         self.layout().activate()                         # Vorschau an ihrem Platz, bevor der Rahmen ihr folgt
         self.sel.setGeometry(self.pic.geometry().adjusted(-s, -s, s, s))
-        self.sel.lower()
+        self.sel.raise_()                                # über der Vorschau (durchsichtig bis auf Haken/Kreis)
         if self._sym is not None and abs(self.symbol_scale() - self._sym[2]) > 0.01:   # Symbol folgt der Fläche
             Tile.set_thumb(self, None, *self._sym[:2])        # nicht die überschriebene (ExportCard: Pfad)
         if self.slotbar is not None:                     # am unteren Rand der Vorschau, innerhalb ihres Rahmens

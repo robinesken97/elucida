@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleS
 from elucida.core import tables as TBL
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
+from elucida.core import figtexts as FT
 from elucida.tabs import epr_calc as CALC
 from elucida.app.i18n import T
 from elucida.app import project as PRJ
@@ -902,6 +903,7 @@ class EPRTab(TABS.FigureTab):
     STATE_KEY = "epr"
     GUIDE, GUIDE_ACTION = "epr", ("guide_add", "add_exp")
     CAP_FIELDS = ("species", "solvent", "conc")
+    CAP_RICH = ("species",)                # B, I, X₂, X² statt „^{…}“ (unslop #19)
     SI_CAPTION = "EPR spectra of {name}."
     X_RANGE = (0.0, 20000.0, 1, 1.0)
     XRANGE_TEXT = "epr_xrange"
@@ -1574,7 +1576,7 @@ class EPRTab(TABS.FigureTab):
         from elucida.si.lines import chem_html
         st = self.st
         sp = st.get("cap_species") or name
-        sp = re.sub(r"\^\{([^}]*)\}", r"<sup>\1</sup>", html.escape(sp, quote=False))
+        sp = FT.to_html(TABS.cap_mathtext(sp)) or html.escape(sp, quote=False)    # altes „3b^{•+}“ wird gelesen
         where = (" in " + chem_html(st["cap_solvent"]) if st.get("cap_solvent") else "") + \
             (f" ({chem_html(st['cap_conc'])})" if st.get("cap_conc") else "")
         vis = [e for e in st["entries"] if e["visible"]]
