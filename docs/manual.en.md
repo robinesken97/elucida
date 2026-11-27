@@ -880,8 +880,10 @@ this can no longer be set up here. Stacking stays (spectra of the same compound 
   Gaussian cubegen (`Pop=(NTO,SaveNTO)`); the weight is taken from the NTO block when it lists that pair, otherwise
   enter it as given by your calculation or leave it empty. "Pairs from" (Molden), isovalue (empty = 80% of the
   orbital density) and "Into the SI" (figure per state with caption, also in the export as `…_NTO_S1`). Dragging in the
-  figure rotates hole and particle together (own view per state, used in export and SI); **Reset view** (row **View**)
-  restores the automatic view, likewise in NBO, ACID, 3D NICS and the EPR calculation.
+  figure rotates hole and particle together (own view per state, used in export and SI); the arrangement (side by side
+  or stacked) stays that of the automatic view. **Reset view** (card "NTO Display", Display step, row **View**)
+  restores the automatic view, likewise in NBO, ACID, 3D NICS and the EPR calculation; greyed out while the start view
+  applies.
 
 ## UV-Vis kinetics tab
 

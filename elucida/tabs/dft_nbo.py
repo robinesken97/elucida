@@ -130,6 +130,17 @@ class NboFigure(XRAY.XrayFigure):
         return super()._anchor(k)
 
     def _labels(self):
+        """Platziert wird in Pixeln bei fester dpi (`TABS.PREVIEW_DPI` wie Export und SI): die Vorschau hat eine
+        dynamische dpi, sonst lagen die Labels nach jedem Neuaufbau (Drehen, Startansicht) anders als im ersten Bild
+        (Windows-Bericht pre-1.5.0, 2b)."""
+        dpi = self.fig.dpi
+        self.fig._set_dpi(TABS.PREVIEW_DPI, forward=False)
+        try:
+            self._place_labels()
+        finally:
+            self.fig._set_dpi(dpi, forward=False)
+
+    def _place_labels(self):
         """Atom- und Bindungslabels gemeinsam platzieren (eigene Platzierung statt der des X-Ray-Bilds, damit beide
         Sorten einander ausweichen): gespeicherte Versätze zuerst, dann die Bindungslabels (nur quer zur Bindung,
         etwas entlang verschiebbar), dann die Atomlabels (16 Richtungen). Kosten: Überlappung mit Atomen, Bindungen,
@@ -248,7 +259,7 @@ class _Mouse:
 
     def _store(self, **kw):
         self.p.st.update(kw)
-        self.p.changed()
+        self.p.figure_changed()
 
     def view_changed(self, R):
         self._store(view=[round(float(v), 6) for v in np.asarray(R).ravel()])
@@ -286,6 +297,24 @@ class NboPage:
         if self._loading:
             return
         self.sync()
+        self.tab.main.push_undo()
+
+    def figure_changed(self):
+        """Drehen, Verschieben, gezogene Labels, Startansicht: nur die Bilder neu (Abbildung und die Resonanzstrukturen,
+        die der Ansicht folgen); Tabellen und Karten hängen nicht von der Ansicht ab (ihr Neuaufbau nach jedem Ziehen
+        hielt das Fenster an, Windows-Bericht pre-1.5.0)."""
+        if self._loading:
+            return
+        cur = self.entry()
+        d = self.data(cur)[0] if cur else None
+        if d is None:
+            return self.changed()
+        self._figure(d)
+        structs = self.structures(cur, d)[0]
+        if structs:
+            self.build_rs(self.rs_fig, d, structs)
+            self.rs_host.set_figure_size(*self.rs_fig.get_size_inches())
+            self.rs_canvas.draw_idle()
         self.tab.main.push_undo()
 
     def entry(self):
@@ -395,7 +424,7 @@ class NboPage:
         self.cb_hlab = QCheckBox(T("nbo_h_labels"))
         f.addRow(self.cb_h)
         f.addRow(self.cb_hlab)
-        f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.st, self.changed))
+        f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.st, self.figure_changed))
         self.display = g
         for w in (self.cmb_atoms, self.cmb_spin):
             w.currentIndexChanged.connect(self.collect)
@@ -823,6 +852,22 @@ class NboPage:
         finally:
             self._loading = False
 
+    def _figure(self, d):
+        """Abbildung (Kugel-Stab mit Ladungen und Bindungsordnungen) neu aufbauen."""
+        if self.mouse is not None:
+            self.mouse.disconnect()
+            self.mouse = None
+        try:
+            self.F = self.build(self.fig, d)
+            self.mouse = XRAY.XrayMouse(self.F, _Mouse(self))
+            self.lbl_fig.setText(T("nbo_fig_hint"))
+        except Exception as ex:
+            self.F = None
+            self.fig.clear()
+            self.lbl_fig.setText("⚠ " + str(ex))
+        self.host.set_figure_size(*self.fig.get_size_inches())
+        self.canvas.draw_idle()
+
     def _fill(self, d, structs):
         if self.mouse is not None:
             self.mouse.disconnect()
@@ -834,15 +879,7 @@ class NboPage:
             return
         st = self.st
         keep = {self.pg_fig, self.pg_npa, self.pg_si}
-        try:
-            self.F = self.build(self.fig, d)
-            self.mouse = XRAY.XrayMouse(self.F, _Mouse(self))
-            self.lbl_fig.setText(T("nbo_fig_hint"))
-        except Exception as ex:
-            self.fig.clear()
-            self.lbl_fig.setText("⚠ " + str(ex))
-        self.host.set_figure_size(*self.fig.get_size_inches())
-        self.canvas.draw_idle()
+        self._figure(d)
         if structs:
             keep.add(self.pg_rs)
             self.build_rs(self.rs_fig, d, structs)

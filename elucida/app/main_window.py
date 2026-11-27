@@ -2287,6 +2287,8 @@ class MainWindow(QMainWindow):
         return None
 
     def _update_undo_actions(self):
+        from elucida.tabs import xray as XRAY
+        XRAY.sync_view_buttons()                       # „Startansicht“ grau, wenn schon automatisch (1.5.0)
         if hasattr(self, "act_undo"):
             path = bool(self.active_reaction_path())
             cmp_ = self.active_comparison()

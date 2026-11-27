@@ -386,8 +386,9 @@ class Volume:
 TILE = 8                                                        # Pixel je Kachel für die Tiefenbereiche
 
 
-def _trace(vol, iso, R, center, zoff, X, Y, top, floor, cp, cm, alpha, max_layers, step, budget):
-    """Strahlen (Bildschirm X, Y; von top bis floor, z zum Betrachter) -> (Farbe vormultipliziert N×3, Deckkraft N)."""
+def _trace(vol, iso, R, center, zoff, X, Y, top, floor, cp, cm, alpha, max_layers, step, budget, cancel=None):
+    """Strahlen (Bildschirm X, Y; von top bis floor, z zum Betrachter) -> (Farbe vormultipliziert N×3, Deckkraft N).
+    cancel: wird je Strahlenbündel gerufen und wirft `Cancelled`, wenn die Rechnung überholt ist."""
     N = len(X)
     C = np.zeros((N, 3), np.float32)
     A = np.zeros(N, np.float32)
@@ -399,6 +400,8 @@ def _trace(vol, iso, R, center, zoff, X, Y, top, floor, cp, cm, alpha, max_layer
     base_all = vol.index_of(np.column_stack([X, Y, np.zeros(N)]) @ R + center)
     pos = 0
     while pos < N:
+        if cancel is not None:
+            cancel()
         # Strahlen ähnlicher Schrittzahl zusammen (aufsteigend; Speicher etwa ≤ budget Stützstellen)
         cnt = max(1, budget // int(nst[order[pos]]))
         while cnt > 1 and cnt * int(nst[order[min(pos + cnt, N) - 1]]) > budget:
@@ -464,11 +467,12 @@ AA_EDGE = 0.03                                  # Kantenglättung: Pixel mit Spr
 
 
 def render(vol: Volume, iso, R, center, zoff, xlim, ylim, W, H, cplus, cminus, alpha=ORB_ALPHA, occ=None,
-           max_layers=MAX_LAYERS, step_frac=0.5, budget=3_000_000, occ2=None, aa=True):
+           max_layers=MAX_LAYERS, step_frac=0.5, budget=3_000_000, occ2=None, aa=True, cancel=None):
     """Orbital als RGBA-Bild (H×W×4, Zeile 0 unten, gerade Deckkraft).
     Bildschirm s = R·(p − center) (Å, z zum Betrachter); zoff: Tiefe der Szenenmitte relativ dazu (Aufhellung).
     occ: Tiefe des vordersten Atoms je Pixel (H×W, −inf = frei); nur Flächen davor zählen. aa: Kanten (Silhouetten,
-    Schichtwechsel, Atomränder) mit 2×2 Unterabtastung wie IboViews doppelte Auflösung; occ2 = Verdeckung in 2W×2H."""
+    Schichtwechsel, Atomränder) mit 2×2 Unterabtastung wie IboViews doppelte Auflösung; occ2 = Verdeckung in 2W×2H.
+    cancel: Abbruchprüfung der Hintergrundrechnung (siehe `background`)."""
     img = np.zeros((H, W, 4), np.float32)
     if iso <= 0 or W < 1 or H < 1:
         return img
@@ -507,7 +511,7 @@ def render(vol: Volume, iso, R, center, zoff, xlim, ylim, W, H, cplus, cminus, a
     floor = np.maximum(occ[iy, ix], lo) if occ is not None else lo
     cp, cm = np.array(cplus[:3], np.float32), np.array(cminus[:3], np.float32)
     args = (vol, iso, R, center, zoff)
-    rest = (cp, cm, alpha, max_layers, step, budget)
+    rest = (cp, cm, alpha, max_layers, step, budget, cancel)
     C, A = _trace(*args, (ix + 0.5) * px + xlim[0], (iy + 0.5) * py + ylim[0], hi, floor, *rest)
     pre = np.zeros((H, W, 4), np.float32)
     pre[iy, ix, :3], pre[iy, ix, 3] = C, A
@@ -1051,21 +1055,113 @@ DRAG_INTERP = "bilinear"                        # beim Drehen weich hochskaliert
 from matplotlib.image import AxesImage  # noqa: E402
 
 
+# ---------------------------------------------------------------------------- Rechnung im Hintergrund
+class Cancelled(Exception):
+    """Hintergrundrechnung überholt (neuere Ansicht angefordert oder Programmende)."""
+
+
+_BG = {"n": 0, "jobs": {}}                      # Pool, Relais, offene Aufträge (GUI-Seite), Programmende
+
+
+def _relay():
+    """QObject im GUI-Thread: Ergebnisse der Hintergrundrechnung kommen über sein Signal (queued) dort an."""
+    if "relay" not in _BG:
+        from concurrent.futures import ThreadPoolExecutor
+        from PySide6.QtCore import QCoreApplication, QObject, Signal
+
+        class _Relay(QObject):
+            ready = Signal(object)
+        r = _Relay()
+        r.ready.connect(_finish)
+        _BG.update(relay=r, pool=ThreadPoolExecutor(max_workers=1, thread_name_prefix="elucida-3d"))
+        app = QCoreApplication.instance()
+        if app is not None:                                       # Programmende: laufende Rechnung sofort abbrechen
+            app.aboutToQuit.connect(lambda: _BG.update(stop=True))
+    return _BG["relay"]
+
+
+def _finish(msg):
+    """GUI-Thread: Ergebnis eines Auftrags an seinen Besitzer, wenn kein neuerer Auftrag kam."""
+    jid, res = msg
+    cell, gen, done = _BG["jobs"].pop(jid)
+    _BG["n"] -= 1
+    if res is not Cancelled and cell[0] == gen:
+        done(res)
+
+
+def background(owner, work, done):
+    """work(cancel) im Hintergrund-Thread (nur numpy, keine matplotlib-/Qt-Objekte) -> done(Ergebnis) im GUI-Thread
+    (Fehler: done(Exception)). Ein neuer Auftrag desselben owner macht ältere ungültig (Generationszähler): eine laufende
+    Rechnung bricht bei der nächsten Prüfung ab (`cancel()` wirft `Cancelled`), ein spätes Ergebnis wird verworfen.
+    Der Hintergrund-Thread hält weder owner noch done (Qt-Objekte dürfen nur im GUI-Thread freigegeben werden)."""
+    relay = _relay()
+    cell = owner.__dict__.setdefault("_bg_cell", [0])
+    cell[0] += 1
+    gen, jid = cell[0], object()
+    _BG["jobs"][jid] = (cell, gen, done)
+    _BG["n"] += 1
+
+    def cancel():
+        if cell[0] != gen or _BG.get("stop"):
+            raise Cancelled
+
+    def run():
+        try:
+            res = work(cancel)
+        except Cancelled:
+            res = Cancelled
+        except Exception as ex:                                   # noqa: BLE001 – im GUI-Thread gemeldet
+            res = ex
+        relay.ready.emit((jid, res))
+    _BG["pool"].submit(run)
+
+
+def drop(owner):
+    """Laufende/wartende Hintergrundrechnung von owner verwerfen (z. B. beim Ziehen: das Ziehbild gilt)."""
+    owner.__dict__.setdefault("_bg_cell", [0])[0] += 1
+
+
+def busy():
+    """Noch offene Hintergrundrechnungen (Selbsttest, Warten vor dem Lesen der Vorschau)."""
+    return _BG["n"] > 0
+
+
+_COLLECT = []                                   # aktive Sammelliste (`collecting`): Aufträge statt Rechnen
+
+
+class collecting:
+    """`with collecting(jobs):` – Bilder rechnen nicht, sondern legen (Bild, Schlüssel, fn, args, kw) in jobs ab
+    (NTO: Figuren im GUI-Thread, Raster im Hintergrund, danach `OrbitalImage.show`)."""
+
+    def __init__(self, jobs):
+        self.jobs = jobs
+
+    def __enter__(self):
+        _COLLECT.append(self.jobs)
+        return self.jobs
+
+    def __exit__(self, *exc):
+        _COLLECT.remove(self.jobs)
+
+
 class OrbitalImage(AxesImage):
     """Orbital als Bild über den Atomen. Gerechnet wird erst beim Zeichnen, in der Auflösung des Ziels (Vorschau:
-    Bildschirmpixel, Export: dpi, höchstens ORB_MAX_DPI) und neu nur, wenn Ansicht oder Größe sich ändern."""
+    Bildschirmpixel, Export: dpi, höchstens ORB_MAX_DPI) und neu nur, wenn Ansicht oder Größe sich ändern.
+    Volles Bild einer sichtbaren Vorschau mit `canvas.orb_background` (XrayMouse) im Hintergrund (1.5.0, Fenster bleibt
+    bedienbar): bis zum Ergebnis bleibt das vorige Bild stehen. Speichern (Export, SI, Kacheln) und Ziehen: synchron."""
 
     def __init__(self, ax, fig_obj, orb):
         super().__init__(ax, origin="lower", interpolation="bilinear")
         self.F, self.orb = fig_obj, orb
         self.drag = False
-        self._key = None
+        self._key = self._want = None
         self.set_data(np.zeros((2, 2, 4), np.float32))
         x0, x1 = ax.get_xlim()
         y0, y1 = ax.get_ylim()
         self.set_extent((x0, x1, y0, y1))
 
-    def make_image(self, renderer, magnification=1.0, unsampled=False):
+    def _target(self, magnification):
+        """-> (W, H, key) des Bilds für dieses Zeichnen."""
         ax = self.axes
         bb = ax.bbox
         # Zielpixel (Agg: Bildschirm/PNG; PDF/SVG: Punkte × Vergrößerung = dpi des Exports) -> wirksame dpi begrenzen
@@ -1076,20 +1172,75 @@ class OrbitalImage(AxesImage):
             f /= max(DRAG_SCALE, np.sqrt(bb.width * bb.height * (magnification * f) ** 2 / DRAG_PX))
         W = max(2, int(round(bb.width * magnification * f)))
         H = max(2, int(round(bb.height * magnification * f)))
-        xl, yl = tuple(ax.get_xlim()), tuple(ax.get_ylim())
-        key = (W, H, self.F.R.tobytes(), xl, yl)
         self.set_interpolation(DRAG_INTERP if self.drag else "bilinear")
-        if key != self._key:
-            self._key = key
+        return W, H, (W, H, self.F.R.tobytes(), tuple(ax.get_xlim()), tuple(ax.get_ylim()))
+
+    def make_image(self, renderer, magnification=1.0, unsampled=False):
+        W, H, key = self._target(magnification)
+        if key != self._key and key != self._want:
+            xl, yl = key[3], key[4]
             o = self.orb
             occ, zoff = self.F.occluder(xl, yl, W, H)
             occ2 = None if self.drag else self.F.occluder(xl, yl, 2 * W, 2 * H)[0] - zoff
-            img = render(o["vol"], o["iso"], self.F.R, self.F.center, zoff, xl, yl, W, H, o["plus"], o["minus"],
-                         o.get("alpha", ORB_ALPHA), occ - zoff, occ2=occ2, aa=not self.drag,
-                         step_frac=DRAG_STEP if self.drag else 0.5)
-            self.set_data(img)
-            self.set_extent((xl[0], xl[1], yl[0], yl[1]))
+            o["vol"].grad()                                       # Zwischenspeicher im GUI-Thread füllen
+            surface_points(o["vol"], o["iso"])
+            self._job(key, render, (o["vol"], o["iso"], self.F.R.copy(), np.array(self.F.center), zoff, xl, yl, W, H,
+                                    o["plus"], o["minus"]),
+                      dict(alpha=o.get("alpha", ORB_ALPHA), occ=occ - zoff, occ2=occ2, aa=not self.drag,
+                           step_frac=DRAG_STEP if self.drag else 0.5))
         return super().make_image(renderer, magnification, unsampled)
+
+    def show(self, key, img):
+        """Fertiges Bild für key übernehmen."""
+        self._key = key
+        self.set_data(img)
+        self.set_extent((key[3][0], key[3][1], key[4][0], key[4][1]))
+        canvas = self.figure.canvas if self.figure is not None else None
+        if canvas is not None:
+            canvas.__dict__["_orb_shown"] = self
+
+    def _job(self, key, fn, args, kw):
+        """Bild für key: fn(*args, cancel=…, **kw) -> RGBA. Gesammelt (`collecting`), im Hintergrund (sichtbare
+        Vorschau mit Freigabe, nicht beim Speichern oder Ziehen) oder sofort."""
+        if _COLLECT:
+            _COLLECT[-1].append((self, key, fn, args, kw))
+            return
+        canvas = self.figure.canvas
+        if (self.drag or not getattr(canvas, "orb_background", False) or canvas.is_saving()
+                or getattr(self, "_bg_failed", False) or not canvas.isVisible()):
+            drop(self)                                            # eine laufende Rechnung ist damit überholt
+            self._want = None
+            self.show(key, fn(*args, **kw))
+            return
+        self._adopt(canvas)
+        self._want = key
+
+        def done(res):
+            import shiboken6
+            if not shiboken6.isValid(canvas) or self.axes is None:  # Tab ersetzt oder Bild aus der Figur entfernt
+                return
+            if isinstance(res, Exception):                        # Rückfall: beim nächsten Zeichnen sofort rechnen
+                self._bg_failed = True
+                self._want = None
+            elif self._want == key:
+                self._want = None
+                self.show(key, res)
+            self.stale = True
+            canvas.draw_idle()
+        background(self, lambda cancel: fn(*args, cancel=cancel, **kw), done)
+
+    def _adopt(self, canvas):
+        """Neu aufgebaute Abbildung (Drehen speichert die Ansicht und baut sie neu): das zuletzt gezeigte Bild eines nicht
+        mehr gezeichneten Vorgängers bleibt Platzhalter, seine Rechnung ist überholt."""
+        prev = canvas.__dict__.get("_orb_shown")
+        if prev is None or prev is self or (prev.axes is not None and prev.axes in self.figure.axes
+                                            and prev in prev.axes.images):
+            return
+        drop(prev)
+        canvas.__dict__.pop("_orb_shown", None)
+        if self._key is None:
+            self.set_data(prev.get_array())
+            self.set_extent(prev.get_extent())
 
 
 def surface_points(vol: Volume, iso):

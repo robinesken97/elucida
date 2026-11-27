@@ -83,10 +83,6 @@ class NtoView:
         self.sp_iso.setSpecialValueText(T("nto_iso_auto", p=f"{ORB.ISO_FRACTION:g}"))
         self.sp_iso.setToolTip(T("nto_iso_tip"))
         f.addRow(T("nto_iso"), self.sp_iso)
-        self.btn_view = QPushButton(STYLE.icon("reset"), T("xr_reset_view"))
-        self.btn_view.setToolTip(T("nto_view_reset_tip"))
-        self.btn_view.setFixedWidth(STYLE.VALUE_W)            # einzelner Knopf: ganze Wertespalte wie die Dateiknöpfe
-        f.addRow(T("nto_view"), self.btn_view)
         self.cb_si = QCheckBox(T("nto_si"))
         self.cb_si.setToolTip(T("nto_si_tip"))
         f.addRow(self.cb_si)
@@ -94,6 +90,15 @@ class NtoView:
         si_elsewhere(f, self.cb_si, tab, "overlay", "NTO")
         lay.addWidget(g)
         self.card = g
+        # „Startansicht“ unter Darstellung wie bei DFT/EPR (1.5.0), grau, solange die automatische Ansicht gilt
+        self.display = QGroupBox(T("nto_display"))
+        fd = STYLE.make_form(self.display)
+        self.btn_view = XRAY.view_reset_button(lambda: self.item(), lambda: (self.refresh(), self.tab.main.push_undo()),
+                                               drop=True)
+        self.btn_view.setToolTip(T("nto_view_reset_tip"))
+        fd.addRow(T("view_row"), self.btn_view)
+        lay.addWidget(self.display)
+        self.display.hide()                                    # erst mit Bild
         from elucida.tabs.base import PageTexts               # feste Texte des Bilds („hole“, „particle“)
         self.text_rows = []
         self.texts = PageTexts(tab, lambda: "nto", self.refresh, "lab_card_nto")
@@ -103,7 +108,6 @@ class NtoView:
         self.btn_molden.clicked.connect(self.add_molden)
         self.btn_cubes.clicked.connect(self.add_cubes)
         self.btn_remove.clicked.connect(self.remove)
-        self.btn_view.clicked.connect(self.reset_view)
         self.sp_w.valueChanged.connect(self.weight_changed)
         for w in (self.sp_wmin, self.sp_iso):
             w.valueChanged.connect(self.changed)
@@ -198,7 +202,7 @@ class NtoView:
             w.setEnabled(on)
         it = self.item()
         self.btn_remove.setEnabled(it is not None)
-        self.btn_view.setEnabled(bool(it and it.get("view")))
+        self.btn_view.sync()
         # Gewicht von Hand nur für Cubes, deren Paar nicht im NTO-Block der Ausgabe steht
         self.sp_w.setEnabled(bool(it) and it["kind"] == "cube" and self.out_weight(self.current(), it) is None)
 
@@ -424,43 +428,89 @@ class NtoView:
         """RGBA-Bilder aller Orbitale (Loch, Teilchen je Paar): gleiche Ansicht, gleicher Maßstab, gleicher Ausschnitt."""
         return self.rendered(pairs, s)["imgs"]
 
-    def rendered(self, pairs, s=None):
-        """-> dict(imgs, R, ext, crop (x0, y0) in Pixeln des vollen Bilds); Ansicht = eigene Drehung des Zustands
-        (`view` im Eintrag) oder automatisch."""
+    def _img_key(self, pairs, s, auto=False):
         srcs = [p[r] for p in pairs for r in ("hole", "particle")]
-        view = (self.item(s) or {}).get("view")
-        key = ("ntoimg", repr(srcs), float(self.st.get("iso", 0.0)), repr(view))
+        view = None if auto else (self.item(s) or {}).get("view")
+        return ("ntoimg", repr(srcs), float(self.st.get("iso", 0.0)), repr(view)), srcs, view
 
-        def make():
-            R = np.array(view, float).reshape(3, 3) if view and len(view) == 9 else None
-            ext, figs = [0.0, 0.0], []
-            for src in srcs:                                      # 1) gemeinsame Ansicht und Ausdehnung
-                els, xyz = self.geometry(src)
-                vol = self.volume(src)
-                fig = MplFigure(figsize=(4, 4), dpi=IMG_DPI / 2)
-                FigureCanvasAgg(fig)
-                F, R = self._orbital_figure(els, xyz, vol, self.iso(vol), R, fig)
-                ext = [max(ext[0], F.ext[0]), max(ext[1], F.ext[1])]
-                figs.append((els, xyz, vol))
-            e = max(ext)
-            out = []
-            for els, xyz, vol in figs:                            # 2) zeichnen mit derselben Ausdehnung
-                fig = MplFigure(figsize=(4, 4), dpi=IMG_DPI / 2)
-                FigureCanvasAgg(fig)
-                self._orbital_figure(els, xyz, vol, self.iso(vol), R, fig, ext=(e, e))
-                buf = io.BytesIO()
-                fig.savefig(buf, format="png", transparent=True, dpi=IMG_DPI)
-                from PIL import Image
-                out.append(np.asarray(Image.open(buf).convert("RGBA")).copy())
-            alpha = np.max([im[:, :, 3] for im in out], axis=0)    # gemeinsamer Ausschnitt um alles Sichtbare
-            y, x = np.nonzero(alpha)
-            y0 = x0 = 0
-            if len(x):
-                pad = 6
-                y0, y1, x0, x1 = max(0, y.min() - pad), y.max() + pad + 1, max(0, x.min() - pad), x.max() + pad + 1
-                out = [im[y0:y1, x0:x1] for im in out]
-            return dict(imgs=out, R=R, ext=(e, e), crop=(int(x0), int(y0)), full=alpha.shape[:2])
-        return self.tab.cache(key, make)
+    def rendered(self, pairs, s=None, auto=False):
+        """-> dict(imgs, R, ext, crop (x0, y0) in Pixeln des vollen Bilds); Ansicht = eigene Drehung des Zustands
+        (`view` im Eintrag) oder automatisch (auto: immer die automatische, sie legt die Anordnung fest)."""
+        key, srcs, view = self._img_key(pairs, s, auto)
+        return self.tab.cache(key, lambda: self._finish(self._prepare(srcs, view)))
+
+    def _prepare(self, srcs, view):
+        """Figuren aller Orbitale (GUI-Thread): gemeinsame Ansicht und Ausdehnung."""
+        R = np.array(view, float).reshape(3, 3) if view and len(view) == 9 else None
+        ext, mols = [0.0, 0.0], []
+        for src in srcs:                                          # 1) gemeinsame Ansicht und Ausdehnung
+            els, xyz = self.geometry(src)
+            vol = self.volume(src)
+            fig = MplFigure(figsize=(4, 4), dpi=IMG_DPI / 2)
+            FigureCanvasAgg(fig)
+            F, R = self._orbital_figure(els, xyz, vol, self.iso(vol), R, fig)
+            ext = [max(ext[0], F.ext[0]), max(ext[1], F.ext[1])]
+            mols.append((els, xyz, vol))
+        e = max(ext)
+        figs = []
+        for els, xyz, vol in mols:                                # 2) Figuren mit derselben Ausdehnung
+            fig = MplFigure(figsize=(4, 4), dpi=IMG_DPI / 2)
+            FigureCanvasAgg(fig)
+            self._orbital_figure(els, xyz, vol, self.iso(vol), R, fig, ext=(e, e))
+            figs.append(fig)
+        return dict(figs=figs, R=R, e=e)
+
+    @staticmethod
+    def _png(fig):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", transparent=True, dpi=IMG_DPI)
+        return buf
+
+    def _finish(self, prep):
+        """Figuren zeichnen (Orbitalbilder schon da oder jetzt gerechnet) -> Ergebnis von `rendered`."""
+        from PIL import Image
+        out = [np.asarray(Image.open(self._png(fig)).convert("RGBA")).copy() for fig in prep["figs"]]
+        alpha = np.max([im[:, :, 3] for im in out], axis=0)        # gemeinsamer Ausschnitt um alles Sichtbare
+        y, x = np.nonzero(alpha)
+        y0 = x0 = 0
+        if len(x):
+            pad = 6
+            y0, y1, x0, x1 = max(0, y.min() - pad), y.max() + pad + 1, max(0, x.min() - pad), x.max() + pad + 1
+            out = [im[y0:y1, x0:x1] for im in out]
+        e = prep["e"]
+        return dict(imgs=out, R=prep["R"], ext=(e, e), crop=(int(x0), int(y0)), full=alpha.shape[:2])
+
+    def _render_later(self, pairs, s):
+        """Bilder der eigenen und der automatischen Ansicht im Hintergrund (1.5.0, Fenster bleibt bedienbar; bis dahin
+        bleibt das bisherige Bild stehen): Figuren hier, Raster im Hintergrund, danach Bilder einsetzen, fertig zeichnen
+        und `refresh` aus dem Zwischenspeicher. Neues Drehen/Startansicht macht die Rechnung ungültig."""
+        cache, todo, jobs = self.tab.main.extra_cache, [], []
+        for auto in (False, True):
+            key, srcs, view = self._img_key(pairs, s, auto)
+            if key in cache or any(k == key for k, _ in todo):
+                continue
+            prep = self._prepare(srcs, view)
+            with ORB.collecting(jobs):                            # Orbitalbilder nur anmelden, nicht rechnen
+                for fig in prep["figs"]:
+                    self._png(fig)
+            todo.append((key, prep))
+
+        calls = [(fn, a, kw) for _, _, fn, a, kw in jobs]          # nur numpy in den Hintergrund-Thread
+
+        def work(cancel):
+            return [fn(*a, cancel=cancel, **kw) for fn, a, kw in calls]
+
+        def done(res):
+            import shiboken6
+            if not shiboken6.isValid(self.canvas):            # Tab inzwischen ersetzt (Rückgängig, Öffnen)
+                return
+            if not isinstance(res, Exception):
+                for (art, key, *_), img in zip(jobs, res):
+                    art.show(key, img)
+            for key, prep in todo:                                # Fehler: hier synchron nachrechnen
+                self.tab.cache(key, lambda p=prep: self._finish(p))
+            self.refresh()
+        ORB.background(self, work, done)
 
     @staticmethod
     def wide(imgs):
@@ -469,12 +519,20 @@ class NtoView:
         h, w = imgs[0].shape[:2]
         return w > 1.6 * h
 
-    def draw(self, fig, pairs, imgs):
+    def is_wide(self, pairs, s=None):
+        """Anordnung aus der automatischen Ansicht (1.5.0): eine eigene Drehung ändert sie nicht (vorher sprang das Bild
+        beim Drehen von übereinander nach nebeneinander)."""
+        return self.wide(self.rendered(pairs, s, auto=True)["imgs"])
+
+    def draw(self, fig, pairs, imgs, wide=None):
         """Je Paar Loch → Teilchen mit Gewicht über dem Pfeil. Normal: Paare untereinander (Loch | Pfeil | Teilchen);
-        langgestreckt: Paare nebeneinander (Loch über Pfeil über Teilchen). Köpfe „hole“/„particle“."""
+        langgestreckt: Paare nebeneinander (Loch über Pfeil über Teilchen). Köpfe „hole“/„particle“. Ohne `wide`
+        aus diesen Bildern (die Vorschau gibt die Anordnung der automatischen Ansicht mit)."""
+        if wide is None:
+            wide = self.wide(imgs)
         fig.clear()
         ims = []
-        n, fs, wide = len(pairs), 11, self.wide(imgs)
+        n, fs = len(pairs), 11
         if wide:
             gs = fig.add_gridspec(3, n, height_ratios=[1, 0.3, 1], left=0.07, right=0.99, top=0.99, bottom=0.01,
                                   wspace=0.06, hspace=0.02)
@@ -512,10 +570,10 @@ class NtoView:
         self.text_rows = FT.apply(fig, None, self.tab.st.get("text_over"), {})
         return ims
 
-    def fig_size(self, n, imgs, w_cm=16.0):
+    def fig_size(self, n, imgs, wide, w_cm=16.0):
         """Exportgröße: 16 cm breit, Höhe aus Seitenverhältnis der Bilder und Anordnung (wie `draw`)."""
         h, w = imgs[0].shape[:2]
-        if self.wide(imgs):
+        if wide:
             col = (w_cm * 0.92 - 0.3 * (n - 1)) / n
             return w_cm / 2.54, (2.35 * col * h / w + 0.3) / 2.54
         img = w_cm * 0.98 / 2.36
@@ -531,9 +589,17 @@ class NtoView:
         self.lbl_names.setText("; ".join(files) if files else "–")
         self.lbl_file.setText("\n".join(notes))
         self.texts.box.setVisible(bool(pairs))
+        self.display.setVisible(bool(pairs))
         self._pending = bool(pairs) and not self.page.isVisible()
         if self._pending:                                     # Bilder (Raycasting) erst beim Anzeigen der Seite
             return
+        if (pairs and self._ims and self._drag_key and self._drag_key[0] == s["key"] and self.canvas.isVisible()
+                and any(self._img_key(pairs, s, a)[0] not in self.tab.main.extra_cache for a in (False, True))):
+            try:                                              # gleicher Zustand, neue Ansicht/Isowert: im Hintergrund
+                self._render_later(pairs, s)
+                return
+            except Exception:                                 # noqa: BLE001 – unten synchron mit Meldung
+                pass
         self._ims = []
         if not pairs:
             self.fig.clear()
@@ -544,7 +610,8 @@ class NtoView:
             self.canvas.draw_idle()
             return
         try:
-            imgs = self.images(pairs, s)
+            self._shown_r = self.rendered(pairs, s)
+            imgs, wide = self._shown_r["imgs"], self.is_wide(pairs, s)
         except Exception as ex:
             self.tab.main.log_signal.emit(f"NTO: {ex}")
             self.canvas.hide()
@@ -553,7 +620,7 @@ class NtoView:
             return
         self.lbl_empty.hide()
         self.canvas.show()
-        self._ims = self.draw(self.fig, pairs, imgs)
+        self._ims = self.draw(self.fig, pairs, imgs, wide)
         self.texts.fill(self)
         self._drag_key = (s["key"], repr(pairs), float(self.st.get("iso", 0.0)), repr(self.item(s).get("view")))
         self.canvas.draw_idle()
@@ -588,7 +655,7 @@ class NtoView:
         if lev:
             txt += f" at the {html.escape(lev)} level of theory"
         try:
-            wide = self.wide(self.images(pairs, s))
+            wide = self.is_wide(pairs, s)
         except Exception:
             wide = False
         txt += ": hole (top) and particle (bottom)" if wide else ": hole (left) and particle (right)"
@@ -605,10 +672,10 @@ class NtoView:
         pairs = self.pairs(s)[0] if s else []
         if not pairs:
             return []
-        imgs = self.images(pairs, s)
-        fig = MplFigure(figsize=self.fig_size(len(pairs), imgs), dpi=100)
+        imgs, wide = self.images(pairs, s), self.is_wide(pairs, s)
+        fig = MplFigure(figsize=self.fig_size(len(pairs), imgs, wide), dpi=100)
         FigureCanvasAgg(fig)
-        self.draw(fig, pairs, imgs)
+        self.draw(fig, pairs, imgs, wide)
         out = []
         for ext in ("png", "svg"):
             p = Path(f"{path_stem}.{ext}")
@@ -652,7 +719,7 @@ class NtoView:
             got = self.export_figure(Path(out_dir) / f"{core.safe_name(name)}_NTO_{s['name']}", s)
             if not got:
                 continue
-            w_in, h_in = self.fig_size(len(pairs), self.images(pairs, s))
+            w_in, h_in = self.fig_size(len(pairs), self.images(pairs, s), self.is_wide(pairs, s))
             out += [("image", got[0], w_in * 2.54, h_in * 2.54, got[1]), ("figcap", self.caption_html(s, pairs, name))]
         return out
 
@@ -696,11 +763,15 @@ class _DragView:
         pairs = v.pairs(s)[0] if s else []
         if not pairs or not v._ims:
             return False
-        self._pairs, self._r = pairs, v.rendered(pairs, s)
-        self.R = self._r["R"].copy()
+        self._pairs = pairs
+        self._r = getattr(v, "_shown_r", None) or v.rendered(pairs, s)   # Maßstab/Ausschnitt des gezeigten Bilds
+        view = (v.item(s) or {}).get("view")                   # Drehung: zuletzt gewählte (Bild evtl. noch in Arbeit)
+        self.R = np.array(view, float).reshape(3, 3) if view and len(view) == 9 else self._r["R"].copy()
         return True
 
     def set_drag(self, on):
+        if on:
+            ORB.drop(self.v)                                  # Ziehen überholt eine laufende Hintergrundrechnung
         if not on or self._for == self.v._drag_key:
             return
         v, r = self.v, self._r

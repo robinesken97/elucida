@@ -1823,6 +1823,201 @@ def _g_uvvis(ctx):
                           "export follows, reset view pixel-equal, undo; reset view button for NBO/ACID/NICS/EPR): OK")
 
         with section:
+            # 3D im Hintergrund (1.5.0, Windows-Bericht pre-1.5.0 Punkte 1/2): volles Orbitalbild einer sichtbaren Vorschau
+            # im Hintergrund-Thread (Fenster bleibt bedienbar), eine neue Ansicht bricht die veraltete Rechnung ab, Ziehen
+            # und Speichern (Export/SI/Kacheln) rechnen synchron in voller bzw. Zieh-Aufloesung; NTO im Hintergrund und
+            # Anordnung aus der automatischen Ansicht; "Startansicht" grau, solange automatisch; NBO-Labels unabhaengig
+            # von der dpi der Vorschau
+            import copy as copy_bg
+            import io as io_bg
+            import threading as th_bg
+            import time as t_bg
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as QTC_bg
+            from elucida.app import demo as DEMO_bg
+            from elucida.core import orbitals as ORB_bg
+            from elucida.formats import nbo as NBO_bg
+            from elucida.formats.calc import read_text as rt_bg
+            from elucida.tabs import nto as NTOV_bg
+            real_bg, calls_bg = ORB_bg.render, []
+            main_th_bg = th_bg.current_thread()
+
+            def fake_bg(*a, cancel=None, **kw):
+                # Attrappe: 1.2 s mit Abbruchpruefung je 20 ms, danach das echte Bild; merkt Thread und Ausgang
+                me_ = dict(W=a[7], H=a[8], aa=kw.get("aa", True), R=np.array(a[2]), main=th_bg.current_thread() is main_th_bg,
+                           state="run")
+                calls_bg.append(me_)
+                if not me_["main"]:
+                    for _ in range(60):
+                        try:
+                            cancel()
+                        except ORB_bg.Cancelled:
+                            me_["state"] = "cancelled"
+                            raise
+                        t_bg.sleep(0.02)
+                img_ = real_bg(*a, cancel=cancel, **kw)
+                me_["state"] = "done"
+                return img_
+
+            def started_bg(limit=5.0):
+                # wartet, bis der Worker die Rechnung angefangen hat (sonst Wettlauf mit dem Thread-Start)
+                t0_ = t_bg.perf_counter()
+                while not calls_bg and t_bg.perf_counter() - t0_ < limit:
+                    QApplication.processEvents()
+                    t_bg.sleep(0.005)
+                assert calls_bg, "background render did not start"
+
+            def idle_bg(limit=20.0):
+                t0_ = t_bg.perf_counter()
+                gap_, last_ = 0.0, t0_
+                while (ORB_bg.busy() or t_bg.perf_counter() - t0_ < 0.1) and t_bg.perf_counter() - t0_ < limit:
+                    QApplication.processEvents()
+                    now_ = t_bg.perf_counter()
+                    gap_, last_ = max(gap_, now_ - last_), now_
+                    t_bg.sleep(0.005)
+                assert not ORB_bg.busy(), "background render did not finish"
+                pump(0.2)
+                return gap_
+
+            cub_bg = ORB_bg.read_cube(ORB_bg.make_test_cube(out / "input" / "bg_test.cube", n=24))
+            vol_bg = ORB_bg.Volume(cub_bg["data"][0], cub_bg["origin"], cub_bg["axes"])
+            v_bg = w.ov_tab.nto
+            fig_bg = MplFigure(figsize=(4, 4), dpi=100)
+            can_bg = QTC_bg(fig_bg)
+            ov_bg = w.ov_tab.st
+            old_bg = copy_bg.deepcopy(dict(ov_bg))
+            ORB_bg.render = fake_bg
+            try:
+                F_bg, R_bg = v_bg._orbital_figure(list(cub_bg["els"]), np.asarray(cub_bg["xyz"], float), vol_bg,
+                                                  ORB_bg.iso_for_fraction(vol_bg.data, ORB_bg.ISO_FRACTION), None, fig_bg)
+                can_bg.resize(400, 400)
+                can_bg.show()
+                can_bg.orb_background = True                 # wie XrayMouse
+                art_bg = F_bg.orb_art
+                # 1) sichtbare Vorschau: Zeichnen kehrt ohne Raster zurueck, Bild kommt aus dem Hintergrund-Thread
+                t0_bg = t_bg.perf_counter()
+                can_bg.draw()
+                dt_bg = t_bg.perf_counter() - t0_bg
+                assert ORB_bg.busy() and dt_bg < 1.0, (dt_bg, calls_bg)
+                started_bg()
+                assert not calls_bg[-1]["main"], calls_bg
+                gap_bg = idle_bg()
+                assert calls_bg[-1]["state"] == "done" and calls_bg[-1]["aa"] and art_bg._want is None, calls_bg
+                assert gap_bg < 0.25, f"GUI blocked {gap_bg:.3f} s while rendering in the background"
+                assert art_bg._key is not None and art_bg.get_array().shape[:2] == (art_bg._key[1], art_bg._key[0])
+                # 2) neue Ansicht waehrend der Rechnung: die alte bricht ab, das Bild gehoert zur neuen Ansicht
+                del calls_bg[:]
+                F_bg.set_view(XRAY.rot("y", 0.6) @ R_bg)
+                can_bg.draw()
+                started_bg()
+                F_bg.set_view(XRAY.rot("x", 0.5) @ R_bg)
+                can_bg.draw()
+                idle_bg()
+                assert [c_["state"] for c_ in calls_bg] == ["cancelled", "done"], calls_bg
+                assert np.allclose(calls_bg[-1]["R"], F_bg.R) and art_bg._key[2] == F_bg.R.tobytes()
+                # 3) Speichern waehrend einer laufenden Rechnung: synchron, volle Aufloesung (nie das Ziehbild)
+                del calls_bg[:]
+                F_bg.set_view(XRAY.rot("y", -0.4) @ R_bg)
+                can_bg.draw()
+                started_bg()
+                buf_bg = io_bg.BytesIO()
+                fig_bg.savefig(buf_bg, format="png", dpi=150)
+                sv_bg = [c_ for c_ in calls_bg if c_["main"]]
+                assert len(sv_bg) == 1 and sv_bg[0]["state"] == "done" and sv_bg[0]["aa"], calls_bg
+                assert sv_bg[0]["W"] > 1.2 * calls_bg[0]["W"], (sv_bg, calls_bg[0])   # 150 dpi statt Bildschirm
+                idle_bg()
+                # 4) Ziehen: Ziehbild sofort im GUI-Thread, eine laufende Rechnung ist ueberholt
+                del calls_bg[:]
+                F_bg.set_view(XRAY.rot("y", 0.3) @ R_bg)
+                can_bg.draw()
+                started_bg()
+                F_bg.set_drag(True)
+                F_bg.set_view(XRAY.rot("y", 0.35) @ R_bg)
+                can_bg.draw()
+                assert calls_bg[-1]["main"] and not calls_bg[-1]["aa"] and calls_bg[-1]["state"] == "done", calls_bg
+                idle_bg()
+                assert calls_bg[0]["state"] == "cancelled", calls_bg
+                F_bg.set_drag(False)
+                can_bg.draw()
+                idle_bg()
+                assert calls_bg[-1]["state"] == "done" and calls_bg[-1]["aa"] and not calls_bg[-1]["main"], calls_bg
+                can_bg.close()
+                # 5) NTO: Anordnung aus der automatischen Ansicht, neue Drehung im Hintergrund, Knopf unter Darstellung
+                tn_bg = DEMO_bg.tddft_out(out / "input" / "nto_bg.out", [(400.0, 0.80)], parts=[[(0, 1, 0.90)]],
+                                          n_occ=1, nto=[[(7, 8, 0.91)]])
+                c1_bg = ORB_bg.make_test_cube(out / "input" / "nto_bg.mo7a.cube", n=24)
+                c2_bg = out / "input" / "nto_bg.mo8a.cube"
+                shutil.copy(c1_bg, c2_bg)
+                ov_bg.update(entries=[dict(kind="calc", file=str(tn_bg), label="calc.", color="#1764e8", visible=True,
+                                           own_norm=False, nlo=250.0, nhi=500.0, fwhm=0.3, shift=0.0)],
+                             mode="norm", stack=False, nlo=250.0, nhi=500.0)
+                k_bg = NTOV_bg.state_key({"file": str(tn_bg)}, 0)
+                f_bg, n_bg = NTOV_bg.NtoView.cube_pair([str(c1_bg), str(c2_bg)])
+                ov_bg["nto"] = dict(items={k_bg: dict(kind="cube", files=f_bg, mos=n_bg, state="S1", weight=None)},
+                                    sel=k_bg, wmin=10.0, iso=0.0, si=True)
+                v_bg.sync()
+                assert v_bg.display.isAncestorOf(v_bg.btn_view) and not v_bg.btn_view.isEnabled()
+                assert "NTO-Darstellung" in TABS.STEP_TITLES[2] and T("nto_display") == v_bg.display.title()
+                pr_bg = v_bg.pairs()[0]
+                auto_bg = v_bg.rendered(pr_bg, auto=True)["imgs"]
+                wide_bg = NTOV_bg.NtoView.__dict__["wide"]          # das staticmethod-Objekt, nicht die Funktion
+                NTOV_bg.NtoView.wide = staticmethod(lambda imgs: imgs is auto_bg)   # nur die automatische ist "breit"
+                try:
+                    w.show()
+                    w.main_tabs.setCurrentIndex(w._tab_keys.index("overlay"))
+                    pump()
+                    rtab_bg = w.ov_tab.right_tabs
+                    rtab_bg.setCurrentIndex(next(j_ for j_ in range(rtab_bg.count())
+                                                 if rtab_bg.widget(j_).isAncestorOf(v_bg.page)))
+                    pump(0.5)
+                    assert len(v_bg._ims) == 2, (v_bg.page.isVisible(), v_bg._pending)
+                    del calls_bg[:]
+                    v_bg.view_changed(XRAY.rot("y", 1.1) @ v_bg.rendered(pr_bg)["R"])
+                    assert ORB_bg.busy() and all(not c_["main"] for c_ in calls_bg), calls_bg
+                    assert v_bg.btn_view.isEnabled()
+                    idle_bg()
+                    assert calls_bg and all(not c_["main"] and c_["state"] == "done" for c_ in calls_bg), calls_bg
+                    assert v_bg._img_key(pr_bg, None)[0] in w.extra_cache and len(v_bg._ims) == 2
+                    assert v_bg.is_wide(pr_bg) and "hole (top)" in v_bg.caption_html()
+                    v_bg.btn_view.click()                    # Startansicht: Eintrag ohne view, Knopf wieder grau
+                    pump(0.2)
+                    assert "view" not in v_bg.item() and not v_bg.btn_view.isEnabled()
+                finally:
+                    NTOV_bg.NtoView.wide = wide_bg
+                # 6) Baustein "Startansicht": grau, solange automatisch; sync_view_buttons nach jeder Aenderung
+                d_bg = dict(view=None, zoom=1.0, pan=[0.0, 0.0])
+                b_bg = XRAY.view_reset_button(lambda: d_bg, lambda: None)
+                b_bg.sync()
+                assert not b_bg.isEnabled()
+                d_bg["zoom"] = 1.5
+                XRAY.sync_view_buttons()
+                assert b_bg.isEnabled()
+                b_bg.click()
+                assert d_bg["zoom"] == 1.0 and not b_bg.isEnabled()
+                # 7) NBO: Labels unabhaengig von der dpi der Vorschau (vorher anders nach jedem Neuaufbau, Bericht 2b)
+                m_bg, P_bg = DEMO_bg.mol_3d(DEMO_bg.COMPOUNDS["S3"]["smiles"], DEMO_bg.COMPOUNDS["S3"].get("twist"))
+                d_nb_ = NBO_bg.parse_nbo(rt_bg(DEMO_bg.make_nbo(out / "input" / "bg_nbo.out", "bg_nbo", m_bg, P_bg)))
+                offs_bg = []
+                for dpi_ in (TABS.PREVIEW_DPI, 157.0):
+                    f_ = MplFigure(figsize=(6.3, 4.3), dpi=dpi_)
+                    FigureCanvasAgg(f_)
+                    F_ = w.dft_tab.nbo.build(f_, d_nb_)
+                    offs_bg.append({k_: tuple(np.round(a_.xyann, 6)) for k_, a_ in F_.ann_items.items()})
+                assert offs_bg[0] and offs_bg[0] == offs_bg[1], "NBO labels depend on the preview dpi"
+            finally:
+                ORB_bg.render = real_bg
+                try:
+                    idle_bg()
+                except AssertionError:
+                    pass
+                ov_bg.clear()
+                ov_bg.update(old_bg)
+                w.ov_tab.right_tabs.setCurrentIndex(0)
+                w.ov_tab.render()
+            report.append("3D in the background (no freeze, stale render cancelled, save and drag synchronous, NTO in "
+                          "the background with fixed arrangement, reset view greyed when automatic, NBO labels "
+                          "independent of preview dpi): OK")
+
+        with section:
             # Export ins Projekt inkl. Excel-Report
             w.open_csv(csv, ask=False)
             w.series["TEST-A"]["mw"] = 95.1
@@ -8154,6 +8349,15 @@ def _g_dft(ctx):
             assert "HOMO" not in t_d.cmb_orb.currentText() and "MO 7" in t_d.cmb_orb.currentText()
             assert not t_d.cmb_style.isEnabled()
             t_d.canvas.draw()
+
+            def orb_wait_():
+                # sichtbare Vorschau: das volle Bild kommt aus dem Hintergrund-Thread
+                t0_ = time.time()
+                while ORB.busy() and time.time() - t0_ < 30:
+                    QApplication.processEvents()
+                    time.sleep(0.005)
+                QApplication.processEvents()
+            orb_wait_()
             assert t_d.F.orb_art.get_array().shape[0] > 50 and t_d.F.orb_art.get_array()[..., 3].max() > 0.5
             t_d.F.set_drag(True)
             t_d.F.set_view(XRAY.rot("y", 0.3) @ t_d.F.R)
@@ -8161,6 +8365,7 @@ def _g_dft(ctx):
             small_ = t_d.F.orb_art.get_array().shape[1]
             t_d.F.set_drag(False)
             t_d.canvas.draw()
+            orb_wait_()
             assert t_d.F.orb_art.get_array().shape[1] > 2 * small_                 # beim Ziehen gröber gerechnet
             # passender zweiter Cube hängt an derselben Geometrie, Farben je Orbital wie IboView
             cub2_ = ddir / "eth.mo8a.cube"

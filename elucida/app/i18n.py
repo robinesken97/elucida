@@ -6624,7 +6624,7 @@ TEXTS.update({                                      # Spur s1vergleich: Hinweise
 TEXTS.update({"cmp_uk_fits": ("Fits zeigen", "Show fits")})   # Spur s1vergleich: Kinetik-Vergleich (Robin 2026-11-27)
 # NTO-Strukturen drehbar (1.5.0, Spur s2bnto)
 TEXTS.update({
-    "nto_view": ("Ansicht", "View"),
+    "nto_display": ("NTO-Darstellung", "NTO Display"),
     "view_row": ("Ansicht", "View"),
     "view_reset_tip": ("Drehung, Zoom und Verschiebung des Bilds auf die automatische Ansicht (Ziehen im Bild dreht, "
                        "Mausrad zoomt).", "Rotation, zoom and shift of the figure back to the automatic view (drag in the "

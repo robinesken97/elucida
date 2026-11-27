@@ -1381,7 +1381,7 @@ STEP_TITLES = {
         "Beschriftung", "Abschnitte", "Spindichte und Hyperfein", "NICS-Abbildung",
         "ACID-Abbildung", "ACID-Pfeile", "Packung", "PXRD-Abbildung", "NBO-Darstellung",
         "Beschriftungen: NICS-Scan", "Beschriftungen: PXRD", "Beschriftungen: Abklingkurve",   # PageTexts (s3texte)
-        "Beschriftungen: NTO"),
+        "Beschriftungen: NTO", "NTO-Darstellung"),
 }
 # Karten links, die eine Ergebnisseite rechts ändern (i18n-Schlüssel Karte -> Schlüssel der Reiter): die Karte nennt
 # den Reiter, und eine Eingabe dort markiert ihn, solange er nicht angezeigt ist (`ResultTabs.mark`; nie selbst wechseln)
@@ -1392,7 +1392,7 @@ CARD_PAGES = {
     "pxrd_fig_card": ("pxrd_page",), "xr_calc": ("xr_tables",), "fluo_tau_data": ("fluo_tau_page",),
     "fluo_tau_fit": ("fluo_tau_page", "fluo_tau_props"), "epr_calc_box": ("epr_calc_tab_spin", "epr_calc_tab_hfc"),
     "epr_calc_assign": ("epr_calc_tab_hfc",), "epr_calc_display": ("epr_calc_tab_spin", "epr_calc_tab_hfc"),
-    "nto_card": ("nto_page",), "mr_card": ("rp_multireference",),
+    "nto_card": ("nto_page",), "nto_display": ("nto_page",), "mr_card": ("rp_multireference",),
     "lab_card_nics": ("dft_nics",), "lab_card_pxrd": ("pxrd_page",), "lab_card_decay": ("fluo_tau_page",),
     "lab_card_nto": ("nto_page",),
 }

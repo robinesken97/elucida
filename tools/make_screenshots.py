@@ -39,8 +39,9 @@ SHOTS = tuple((name, key, ("dark",), step) for name, key, step in (
 
 
 def pump(sec=0.6):
+    from elucida.core import orbitals as ORB
     t0 = time.time()
-    while time.time() - t0 < sec:
+    while time.time() - t0 < sec or (ORB.busy() and time.time() - t0 < 30):   # 3D-Bilder kommen aus dem Hintergrund
         QApplication.processEvents()
         time.sleep(0.02)
 

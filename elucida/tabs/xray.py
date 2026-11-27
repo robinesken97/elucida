@@ -3333,6 +3333,7 @@ class XrayMouse:
         for ann in F.ann_items.values():
             ann.draggable(True, use_blit=True)
         c = F.fig.canvas
+        c.orb_background = True                            # interaktive Vorschau: volle Orbitalbilder im Hintergrund (1.5.0)
         self.cids = [c.mpl_connect("button_press_event", self.press),
                      c.mpl_connect("motion_notify_event", self.move),
                      c.mpl_connect("button_release_event", self.release),
@@ -3474,6 +3475,7 @@ class XrayMouse:
             self.tab.view_changed(self.F.R)
         else:
             self.tab.pan_changed(self.F.pan)
+        sync_view_buttons()
 
     def scroll(self, ev):
         if ev.x is None:
@@ -3494,6 +3496,7 @@ class XrayMouse:
             self._zoom_timer.start()
         self.F.fig.canvas.draw_idle()
         self.tab.zoom_changed(z)
+        sync_view_buttons()
 
     def _zoom_done(self):
         if self.mode is None:                             # nicht mitten im Ziehen (das setzt beim Loslassen selbst zurück)
@@ -3758,20 +3761,48 @@ def previous_view(tab):
     tab.main.statusBar().showMessage(T("xr_prev_view_none"), 4000)
 
 
-def view_reset_button(store, done):
-    """„Startansicht“ für 3D-Seiten mit eigener Ansicht im Zustand (view/zoom/pan: NBO, ACID, 3D-NICS, EPR-Rechnung):
-    Drehung, Zoom und Verschiebung auf automatisch; `done` zeichnet neu und legt den Rückgängig-Schritt an."""
+_VIEW_BUTTONS = __import__("weakref").WeakSet()
+
+
+def view_reset_button(store, done, drop=False):
+    """„Startansicht“ für 3D-Seiten mit eigener Ansicht im Zustand (view/zoom/pan: NBO, ACID, 3D-NICS, EPR-Rechnung, NTO):
+    Drehung, Zoom und Verschiebung auf automatisch; `done` zeichnet neu und legt den Rückgängig-Schritt an. Grau, solange
+    schon die automatische Ansicht gilt (`b.sync()`, für alle über `sync_view_buttons` nach jeder Änderung). drop:
+    Schlüssel entfernen statt auf automatisch setzen (NTO: `view` steht nur nach eigener Drehung im Eintrag)."""
     b = QPushButton(STYLE.icon("reset"), T("xr_reset_view"))
     b.setToolTip(T("view_reset_tip"))
     b.setFixedWidth(STYLE.VALUE_W)                     # einzelner Knopf: ganze Wertespalte
 
+    def custom():
+        try:
+            d = store() or {}
+        except Exception:                              # noqa: BLE001 – Zustand (noch) nicht da: nichts zurückzusetzen
+            return False
+        return bool(d.get("view") or float(d.get("zoom") or 1.0) != 1.0 or any(d.get("pan") or ()))
+
     def go():
-        d = store()
-        if d.get("view") or float(d.get("zoom") or 1.0) != 1.0 or any(d.get("pan") or ()):
-            d.update(view=None, zoom=1.0, pan=[0.0, 0.0])
+        if custom():
+            d = store()
+            if drop:
+                for k in ("view", "zoom", "pan"):
+                    d.pop(k, None)
+            else:
+                d.update(view=None, zoom=1.0, pan=[0.0, 0.0])
             done()
+        b.sync()
+    b.sync = lambda: b.setEnabled(custom())
     b.clicked.connect(go)
+    _VIEW_BUTTONS.add(b)
+    QTimer.singleShot(0, b, b.sync)                    # nach dem Aufbau des Tabs (Zustand geladen)
     return b
+
+
+def sync_view_buttons():
+    """Alle „Startansicht“-Knöpfe nach dem Zustand grau/aktiv (nach Drehen, Rückgängig, Öffnen)."""
+    import shiboken6
+    for b in list(_VIEW_BUTTONS):
+        if shiboken6.isValid(b):
+            b.sync()
 
 
 def reset_buttons(tab):

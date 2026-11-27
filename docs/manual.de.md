@@ -923,8 +923,9 @@ Tab), neu einrichten lässt sich das hier nicht mehr. Stapeln bleibt (Spektren d
   dieses Paar nennt, sonst wie in der Rechnung angegeben eintragen oder leer lassen. „Paare ab“ (Molden), Isowert
   (leer = 80 % der Orbitaldichte) und „In die SI“ (Abbildung je Zustand mit Unterschrift, auch im Export als
   `…_NTO_S1`). Ziehen im Bild dreht Loch und Teilchen gemeinsam (eigene Ansicht je Zustand, gilt für Export und SI);
-  **Startansicht** (Zeile **Ansicht**) stellt die automatische Ansicht wieder her, ebenso in NBO, ACID, 3D-NICS und der
-  EPR-Rechnung.
+  die Anordnung (nebeneinander oder übereinander) bleibt die der automatischen Ansicht. **Startansicht** (Karte
+  „NTO-Darstellung“, Schritt Darstellung, Zeile **Ansicht**) stellt die automatische Ansicht wieder her, ebenso in NBO,
+  ACID, 3D-NICS und der EPR-Rechnung; ausgegraut, solange die Startansicht gilt.
 
 ## UV-Vis-Kinetik-Tab
 

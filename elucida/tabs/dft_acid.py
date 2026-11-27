@@ -70,10 +70,10 @@ def orbital_selection(c) -> bool:
     return bool(re.search(r"10/93=2", " ".join(c.get("keywords") or []).lower()))
 
 
-def _raster(V, A, W, H, chunk=3_000_000):
+def _raster(V, A, W, H, chunk=3_000_000, cancel=None):
     """Dreiecke V [N,3,3] (x, y in Pixeln, z = Tiefe, größer = näher) mit Ecken-Attributen A [N,3,C] -> Tiefe [H,W]
     (−inf = leer) und Attribute [H,W,C] des vordersten Dreiecks (baryzentrisch interpoliert). Zwei Durchgänge
-    (Tiefe, dann Gewinner), Dreiecke nach Größe gebündelt, alles in numpy."""
+    (Tiefe, dann Gewinner), Dreiecke nach Größe gebündelt, alles in numpy. cancel: Abbruchprüfung je Bündel."""
     C = A.shape[2]
     zb = np.full(H * W, -np.inf, np.float32)
     out = np.zeros((H * W, C), np.float32)
@@ -100,6 +100,8 @@ def _raster(V, A, W, H, chunk=3_000_000):
             ox, oy = o % k, o // k
             n = max(1, chunk // (k * k))
             for i in range(0, len(idx), n):
+                if cancel is not None:
+                    cancel()
                 t = idx[i:i + n]
                 PX = x0[t, None] + ox + 0.5
                 PY = y0[t, None] + oy + 0.5
@@ -140,7 +142,7 @@ def _arrow_tris(S, r_shaft, r_head, cs, ch):
     return tris, cols
 
 
-def mesh_render(mesh, R, center, xl, yl, W, H, occ, color, alpha, arrows=None, field=None):
+def mesh_render(mesh, R, center, xl, yl, W, H, occ, color, alpha, arrows=None, field=None, cancel=None):
     """Isofläche (Dreiecksnetz mit Normalen) + Pfeile als RGBA-Bild (H×W×4, Zeile 0 unten, gerade Deckkraft) in der
     Ansicht R; occ = Tiefe des vordersten Atoms je Pixel (nur Davorliegendes zählt). arrows: (S [M,3,3] Welt,
     r_shaft, r_head, Farbe Schaft, Farbe Kopf); field: (Richtung, Farbe) – Symbol unten links im Bild."""
@@ -162,7 +164,7 @@ def mesh_render(mesh, R, center, xl, yl, W, H, occ, color, alpha, arrows=None, f
         T_, Cc = _arrow_tris(S, rs, rh, arrows[3], arrows[4])
         Aa = np.concatenate([np.zeros(T_.shape[:2] + (3,)), np.zeros(T_.shape[:2] + (1,)), Cc], -1)
         V, A = np.concatenate([V, T_]), np.concatenate([A, Aa])
-    zb, at = _raster(V.astype(np.float64), A.astype(np.float32), W, H)
+    zb, at = _raster(V.astype(np.float64), A.astype(np.float32), W, H, cancel=cancel)
     img = np.zeros((H, W, 4), np.float32)
     hit = np.isfinite(zb) & (zb > occ)
     surf = hit & (at[..., 3] > 0.5)
@@ -213,6 +215,19 @@ def mesh_render(mesh, R, center, xl, yl, W, H, occ, color, alpha, arrows=None, f
     return img
 
 
+def _mesh_image(mesh, R, center, xl, yl, W, H, s, occ, color, alpha, arrows, field, cancel=None):
+    """`mesh_render` in s-facher Auflösung, auf W×H gemittelt (2×2-Unterabtastung für glatte Kanten)."""
+    img = mesh_render(mesh, R, center, xl, yl, s * W, s * H, occ, color, alpha, arrows, field, cancel=cancel)
+    if s == 2:                                            # gerade Deckkraft: Farbe gewichtet mitteln
+        a = img[..., 3:4]
+        pre = np.concatenate([img[..., :3] * a, a], -1).reshape(H, 2, W, 2, 4).mean((1, 3))
+        img = np.zeros_like(pre)
+        ok = pre[..., 3] > 0
+        img[ok, :3] = pre[ok, :3] / pre[ok, 3:4]
+        img[ok, 3] = pre[ok, 3]
+    return img
+
+
 class MeshImage:
     """Bild der AICD-Fläche über den Atomen einer XrayFigure (wie `OrbitalImage`: gerechnet beim Zeichnen in
     Zielauflösung, beim Drehen gröber, 2×2-Unterabtastung für glatte Kanten)."""
@@ -223,34 +238,14 @@ class MeshImage:
 
         class _Img(ORB.OrbitalImage):
             def make_image(self, renderer, magnification=1.0, unsampled=False):
-                ax = self.axes
-                bb = ax.bbox
-                w_in = ax.get_position().width * ax.figure.get_figwidth()
-                dpi = bb.width * magnification / max(w_in, 1e-9)
-                f = min(1.0, ORB.ORB_MAX_DPI / max(dpi, 1e-9))
-                if self.drag:
-                    f /= max(ORB.DRAG_SCALE, np.sqrt(bb.width * bb.height * (magnification * f) ** 2 / ORB.DRAG_PX))
-                W = max(2, int(round(bb.width * magnification * f)))
-                H = max(2, int(round(bb.height * magnification * f)))
-                xl, yl = tuple(ax.get_xlim()), tuple(ax.get_ylim())
-                key = (W, H, self.F.R.tobytes(), xl, yl)
-                self.set_interpolation(ORB.DRAG_INTERP if self.drag else "bilinear")
-                if key != self._key:
-                    self._key = key
+                W, H, key = self._target(magnification)
+                if key != self._key and key != self._want:
+                    xl, yl = key[3], key[4]
                     s = 1 if self.drag or W * H > 4_000_000 else 2
                     occ, zoff = self.F.occluder(xl, yl, s * W, s * H)
                     o = self.orb
-                    img = mesh_render(o["mesh"], self.F.R, self.F.center, xl, yl, s * W, s * H, occ - zoff,
-                                      o["color"], o["alpha"], o["arrows"], o["field"])
-                    if s == 2:                            # gerade Deckkraft: Farbe gewichtet mitteln
-                        a = img[..., 3:4]
-                        pre = np.concatenate([img[..., :3] * a, a], -1).reshape(H, 2, W, 2, 4).mean((1, 3))
-                        img = np.zeros_like(pre)
-                        ok = pre[..., 3] > 0
-                        img[ok, :3] = pre[ok, :3] / pre[ok, 3:4]
-                        img[ok, 3] = pre[ok, 3]
-                    self.set_data(img)
-                    self.set_extent((xl[0], xl[1], yl[0], yl[1]))
+                    self._job(key, _mesh_image, (o["mesh"], self.F.R.copy(), np.array(self.F.center), xl, yl, W, H, s,
+                                                 occ - zoff, o["color"], o["alpha"], o["arrows"], o["field"]), {})
                 return super(ORB.OrbitalImage, self).make_image(renderer, magnification, unsampled)
 
         art = _Img(F.ax, F, spec)
