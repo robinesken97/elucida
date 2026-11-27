@@ -524,7 +524,9 @@ class PublicationPage(QWidget):
         self.lbl_sub.setText(sub or T("pub_info_missing"))
         self.info_page.load(data)
         complete, gaps = 0, {}
-        groups = PUB.grouped(self.pdir)
+        from elucida.app import quick_compare as QC
+        hide = QC.file_dirs(self.pdir)                    # Dateien eines Schnellvergleichs: stehen in dessen Karte
+        groups = [(g, [d for d in ds if d.resolve() not in hide]) for g, ds in PUB.grouped(self.pdir)]
         with_heads = any(g is not None for g, _ in groups)   # Überschriften nur, wenn es Gruppen gibt
         num = 0
         for g, ds in groups:

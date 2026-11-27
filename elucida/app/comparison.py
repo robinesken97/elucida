@@ -26,7 +26,7 @@ import yaml
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QGroupBox,
-                               QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+                               QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMainWindow, QMenu, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
@@ -41,10 +41,14 @@ from elucida.tabs import base as TABS
 
 SNAP_FILE = "compare.json"
 SNAP_VERSION = 1
-SOURCES = ("eps", "cv", "fluo", "epr", "irms", "xray", "dft", "nmr")   # Zustandsschlüssel der Tabs mit Stand
+SOURCES = ("eps", "cv", "fluo", "epr", "irms", "xray", "dft", "nmr",   # Zustandsschlüssel der Tabs mit Stand
+           "overlay", "uvkin", "sec", "hcell", "hrms", "syn")           # (1.5.0: Overlay, Kinetik, SEC, H-Zelle, HRMS,
+#                                                                            Ausbeute der Synthese)
+CURVE_POINTS = 600                                  # glatte Kurven (TD-DFT verbreitert): weniger Punkte genügen
 MAX_POINTS = 1500                                  # Kurven im Stand: höchstens so viele Punkte (Datei bleibt klein)
 MAX_CYCLES = 10                                    # CV: Zyklen 1 … 10 je Messung im Stand (dazu der ausgewertete)
-KINDS = ("cv", "spectra", "table")
+KINDS = ("cv", "spectra", "hcell", "uvkin", "table")   # Reihenfolge im Menü „Neuer Vergleich …“
+KIND_SOURCES = {"cv": ("cv",), "hcell": ("hcell",), "uvkin": ("uvkin",), "table": SOURCES}    # ohne Zustand des Vergleichs: alles, was er lesen könnte
 NORM_MIN = 0.02                                    # Normierungsbereich: Maximum darin mindestens 2 % des Spektrenmaximums
 EPR_NU_TOL = 2e-4                                  # gleiche Mikrowellenfrequenz (relativ), wie der EPR-Tab beim Dunkelspektrum
 
@@ -59,6 +63,21 @@ def _rel_strings(obj, root):
     if isinstance(obj, str) and obj.startswith(root):
         return Path(obj).relative_to(root).as_posix()
     return obj
+
+
+def fp_part(state, key):
+    """Was den Eintrag eines Tabs bestimmt: sein Zustand, dazu was er aus anderen Teilen liest (SEC mit Referenz aus
+    dem CV-Tab: dessen Zustand; HRMS: Formel und Zeichnung der Verbindung). Gleich in `write_snapshot` und
+    `read_compound`, sonst bliebe ein Eintrag nach einer Änderung dort gültig."""
+    part = (state or {}).get(key)
+    if key == "sec" and (part or {}).get("ref_from_cv"):
+        return {"sec": part, "cv": state.get("cv")}
+    if key == "hrms":
+        c = state.get("compound") or {}
+        return {"hrms": part, "formula": c.get("formula"), "structure": c.get("structure")}
+    if key == "syn":                                      # Ausbeute: die Angabe beim Namen der Verbindung
+        return {"proc": (part or {}).get("proc"), "name": (state.get("compound") or {}).get("name")}
+    return part
 
 
 def fingerprint(part, pdir, key=None) -> str:
@@ -85,6 +104,20 @@ def has_data(key, st) -> bool:
         return bool(st.get("ir_file") or st.get("ir_pdf") or st.get("ir_doc") and st.get("ir_doc_sel"))
     if key == "nmr":
         return bool((st.get("text") or "").strip())
+    if key == "overlay":                               # verknüpfte ε- und SEC-Kurven stehen in deren Einträgen
+        return any(e.get("visible", True) and (e.get("kind") in ("calc", "esd")
+                                               or (e.get("kind") == "exp" and not e.get("link")))
+                   for e in st.get("entries") or [])
+    if key == "uvkin":
+        return any(e.get("use", True) for e in st.get("entries") or [])
+    if key == "sec":
+        return bool(st.get("spec_files"))
+    if key == "hcell":
+        return any(e.get("visible", True) for e in st.get("entries") or [])
+    if key == "hrms":
+        return bool(st.get("ms_file") or st.get("ms_raw") or st.get("found_manual"))
+    if key == "syn":
+        return bool((st.get("proc") or "").strip())
     return False
 
 
@@ -341,9 +374,189 @@ def _nmr_entry(main):
     return {"signals": sigs}
 
 
+def _ov_entry(main):
+    """Overlay: je sichtbarer TD-DFT-Rechnung die verbreiterte Kurve (ε in M⁻¹ cm⁻¹ mit FWHM und Verschiebung des
+    Eintrags, wie die Kurve im Bild vor der Normierung) und die Übergänge wie die Anregungstabelle (E, λ, f ohne
+    Verschiebung, Multiplizität wie gelesen); ESD nur normiert (Intensität ohne Einheit); gemessene Spektren aus
+    Dateien als Absorbanz wie gemessen (Basislinie wie im Tab). Verknüpfte ε- und SEC-Kurven nicht (eigene Einträge)."""
+    from elucida.core import tddft as X
+    from elucida.formats import calc as CALC
+    tab = main.ov_tab
+    st = tab.st
+    out = []
+    for e in st.get("entries") or []:
+        if not e.get("visible", True):
+            continue
+        base = {"uid": e.get("uid") or e.get("file") or "", "label": e.get("label", ""), "kind": e["kind"]}
+        if e["kind"] == "calc":
+            E, f, mult = tab.calc_data(e)
+            lam, eps, _, _ = X.broaden(E, f, e.get("fwhm", 0.3), e.get("shift", 0.0))
+            x, y = _thin(lam, eps, CURVE_POINTS)
+            trans = [[_num(E_), _num(1239.84198 / E_) if E_ > 0 else None, _num(f_), m]
+                     for E_, f_, m in zip(E, f, mult) if f_ > 0 or m == 3]
+            out.append(dict(base, x=x, y=y, fwhm=e.get("fwhm", 0.3), shift=e.get("shift", 0.0), trans=trans))
+        elif e["kind"] == "esd":
+            r = tab.esd_data(e)
+            x, y = _thin(CALC.esd_shift(r["nm"], e.get("shift", 0.0)), r["total"], CURVE_POINTS)
+            out.append(dict(base, x=x, y=y, shift=e.get("shift", 0.0)))
+        elif e["kind"] == "exp" and not e.get("link"):
+            s_ = tab.sample(e["file"], e.get("sample"))
+            if s_ is None:
+                continue
+            xs, ys = np.asarray(s_["x"], float).copy(), np.asarray(s_["y"], float).copy()
+            if st.get("baseline", True):
+                tmp = [{"x": xs, "y": ys, "c": 1.0}]
+                core.apply_baseline(tmp, dict(core.deep_merge(core.DEFAULTS, {}), baseline_nm="auto",
+                                              baseline_mode="simple", conc_unit="mM"))
+                ys = tmp[0]["y"]
+            x, y = _thin(xs, ys)
+            out.append(dict(base, x=x, y=y))
+    return {"entries": out} if out else None
+
+
+def _uvkin_entry(main):
+    """UV-Vis-Kinetik: je Reihe A(λ) gegen die Zeit wie die Messpunkte des Tabs (Zeit in s ab dem ersten Spektrum) und
+    die Zusammenfassung als Text wie die Tabelle (Einheit des Tabs); Titration: A(λ) gegen Äquivalente und die
+    isosbestischen Punkte wie die Ansicht „Titration“ (unabhängig von der gewählten Ansicht)."""
+    from elucida.tabs import uvkin as UVK
+    from elucida.tabs.epr import sci_range, sci_signed
+    tab = main.uvkin_tab
+    st = tab.st
+    out = {"series": [], "titr": None, "cap": {k: st.get("cap_" + k, "") for k in ("solvent", "conc", "reagent")}}
+    data, lam, unit = tab.trace()
+    fits = tab.fit_series(data)                             # Modell immer (Chip „Fits zeigen“ im Vergleich)
+    u = UVK.UNIT_S[unit]
+    if lam is not None:
+        out.update(lam=core.fmt_lam(lam), lam_v=_num(lam), unit=unit, y=st.get("y", "abs"))
+    for name, d in data.items():
+        if not len(d["t"]):
+            continue
+        s = {"name": name, "t": [_num(v) for v in d["t"]], "a": [_num(v) if np.isfinite(v) else None for v in d["A"]],
+             "rel": [_num(v) if np.isfinite(v) else None for v in d["rel"]],
+             "t_rest": UVK.fmt_pct(d["rel"][-1]), "t_dur": UVK.fmt_t(d["t"][-1] / u), "n": len(d["t"]),
+             "t_a0": f"{d['A'][0]:.3f}", "t_a1": f"{d['A'][-1]:.3f}", "fit": None, "model": None}
+        f = fits.get(name)
+        if f is not None:
+            s["model"] = {"k": _num(f["k"]), "I0": _num(f["I0"])}
+        if f is not None and st.get("fit"):                                   # Stellen wie die Zusammenfassung des Tabs
+            k, ci = f["k"] * u, f["ci_k"]
+            half = np.log(2) / k if k > 0 else None
+            s["fit"] = {"k": _num(f["k"]), "I0": _num(f["I0"]), "t_k": sci_signed(k),
+                        "t_ci": sci_range(ci[0] * u, ci[1] * u) if ci else "",
+                        "t_half": f"{half:.3g}" if half is not None else ""}
+        out["series"].append(s)
+    rows = tab.titr_rows()
+    if rows:
+        lam_t = st["lam"] if st["lam"] > 0 else tab.auto_lam(rows)
+        A = [UVK.value_at(r["x"], r["y"], lam_t, st["win"]) for r in rows]
+        xs = np.concatenate([r["x"] for r in rows])
+        x0, x1 = (float(xs.min()), float(xs.max())) if st["x_auto"] else (st["x_min"], st["x_max"])
+        iso = UVK.isosbestic(rows, st["iso_tol"], x0, x1)
+        out["titr"] = {"lam": core.fmt_lam(lam_t), "eq": [_num(r["eq"]) for r in rows],
+                       "a": [_num(a) if np.isfinite(a) else None for a in A],
+                       "labels": [r["e"]["label"] for r in rows], "iso": [core.fmt_lam(p["lam"]) for p in iso]}
+    return out if out["series"] or out["titr"] else None
+
+
+def _sec_entry(main):
+    """SEC: erstes, letztes und die hervorgehobenen Zwischenspektren des gezeigten Bereichs (Basislinie wie im Tab,
+    Messgröße wie gemessen: Absorbanz oder Rohsignal – Rohsignal nie ins Overlay), Potentiale auf der Achse des Tabs
+    (Referenz wie dort, Text wie die Legende); scheinbare Nernst-Werte nur, wenn der Tab sie zeigt (A gegen E mit Fit).
+    Ohne Potentiale (keine Zeit, keine bestätigte Zuordnung) keine Potentiale, nie erfunden."""
+    from elucida.tabs import cv as CV
+    tab = main.sec_tab
+    st = tab.st
+    sp, E = tab.series()
+    if not sp:
+        return None
+    sel = tab.selection(len(sp))
+    off, ref = tab.e_offset()
+    Eax = None if E is None else E - off
+    lam0 = sp[sel[0]]["lam"]
+    bl = (lam0 >= 780) & (lam0 <= 820)                      # Nullpunkt wie der Tab: Mittel 780–820 nm
+
+    def on_grid(s):
+        y = np.interp(lam0, s["lam"], s["A"])
+        return y - float(np.mean(y[bl])) if (st["baseline"] and bl.any()) else y
+    marked = [("start", sel[0])] + [("mid", i) for i in (tab.mid_indices(sel, Eax) if st["highlight"] else [])]
+    marked += [("end", sel[-1])] if sel[-1] != sel[0] else []
+    spectra = []
+    for role, i in marked:
+        x, y = _thin(lam0, on_grid(sp[i]), CURVE_POINTS)          # Spektren glatt: 600 Punkte genügen
+        spectra.append({"role": role, "n": i + 1, "x": x, "y": y,
+                        "e": _num(Eax[i]) if Eax is not None else None,
+                        "t_e": CV._fmt_e(Eax[i], 2) if Eax is not None else ""})
+    fits = []
+    if st["mode"] == "trace" and st["fit"]:
+        _quiet(tab.figure_spec)
+        fits = [{"lam": f"{lam:g}", "t_e12": CV._fmt_e(fit["e12"]), "t_n": f"{fit['n']:.2f}",
+                 "t_r2": core.r2_text(fit["r2"])} for lam, fit in tab.fits]
+    return {"spectra": spectra, "quantity": st.get("quantity", "abs"), "ref": ref, "n": len(sel),
+            "apparent_fits": fits, "cap": {k: st.get("cap_" + k, "") for k in ("solvent", "start", "end")}}
+
+
+def _hcell_entry(main):
+    """H-Zelle: je sichtbarer, lesbarer Messung die Zyklen wie die Tabelle des Tabs (Kapazität in mAh, Anteil nur mit
+    Q_theo dieser Messung, Coulomb-Effizienz) und die Zusammenfassung als Text wie dort; keine Potentialkurven."""
+    from elucida.tabs import hcell as HC
+    tab = main.hcell_tab
+    f = HC.HCellTab._f
+    out = []
+    for e, _d, rows, s, q, src in _quiet(tab.evaluate):
+        cyc = lambda c: f"{c['q_dis']:.3f}" if c is not None else ""          # noqa: E731
+        out.append({"uid": e["uid"], "label": e.get("label", ""), "q_theo": _num(q) if q else None, "q_src": src,
+                    "t_q": f"{q:.3f}" if q else "",
+                    "cycles": [[r["cycle"]] + [_num(r[k]) if r[k] is not None else None
+                                               for k in ("q_ch", "q_dis", "pct_ch", "pct_dis", "ce")] for r in rows],
+                    "t_first": cyc(s["first"]), "t_last": cyc(s["last"]),
+                    "t_ret": f(s["retention"], ".1f") if s["retention"] is not None else "",
+                    "t_ce": f(s["ce_mean"], ".1f") if s["ce_mean"] is not None else "", "n": s["n"],
+                    "t_hours": f(s["hours"], ".1f") if s["hours"] is not None else ""})
+    st = tab.st
+    return {"cells": out, "cap": {k: st.get(k, "") for k in ("cap_conc", "cap_solvent", "ref")}} if out else None
+
+
+def _hrms_entry(main):
+    """HRMS: Ion, calc. und found wie die Prüftabelle des Tabs (vier Stellen, Abweichung wie `dev_text`, ≤ 5 ppm an
+    der gedruckten Zahl); ohne Formel oder ohne zugeordneten Wert nur, was es gibt."""
+    from elucida.tabs import hrms as HR
+    tab = main.hrms_tab
+    _quiet(tab._update_ms)
+    vals = getattr(tab, "_ms_vals", None)
+    if not vals:
+        return None
+    adduct, calc, found = vals
+    dev = HR.ppm(found, calc) if found is not None else None
+    return {"ion": HR.adduct_ui(adduct), "calc": f"{calc:.4f}", "found": f"{found:.4f}" if found is not None else "",
+            "dev": HR.dev_text(dev) if dev is not None else "", "ok": HR.dev_ok(dev) if dev is not None else None,
+            "line": (tab._ms_line or ("", ""))[0]}
+
+
+def _syn_entry(main):
+    """Synthese: Ausbeute so, wie sie in der Vorschrift steht („87“ aus „… (1.03 g, 4.35 mmol, 87%)“) – nur eindeutig:
+    die Angabe bei der Verbindung selbst, sonst die einzige Ausbeute der Vorschrift; mehrere ohne Namen -> leer."""
+    from elucida.tabs import synthesis as SYN
+    items = [it for it in SYN.parse_amounts((main.syn_state or {}).get("proc", "")) if it["yld"]]
+    name = (main.compound or {}).get("name") or Path(main.project_dir).name
+    own = [it for it in items if it["name"].strip("*") == name]
+    it = own[0] if len(own) == 1 else items[0] if len(items) == 1 and not own else None
+    m = re.search(SYN._NUM + r"\s*%", it["raw"]) if it else None      # Zahl wie geschrieben
+    return {"yield": m.group(1).strip() if m else ""}
+
+
 ENTRY = {"eps": _eps_entry, "cv": _cv_entry, "fluo": _fluo_entry, "epr": _epr_entry, "irms": _ir_entry,
-         "xray": _xray_entry, "dft": _dft_entry, "nmr": _nmr_entry}
-TAB_KEY = {"cv": "cv", "fluo": "fluo", "epr": "epr", "irms": "irms", "xray": "xray", "dft": "dft"}   # -> Tab (gebaut?)
+         "xray": _xray_entry, "dft": _dft_entry, "nmr": _nmr_entry, "overlay": _ov_entry, "uvkin": _uvkin_entry,
+         "sec": _sec_entry, "hcell": _hcell_entry, "hrms": _hrms_entry, "syn": _syn_entry}
+TAB_KEY = {"cv": "cv", "fluo": "fluo", "epr": "epr", "irms": "irms", "xray": "xray", "dft": "dft",   # -> Tab (gebaut?)
+           "overlay": "overlay", "uvkin": "uvkin", "sec": "sec", "hcell": "hcell", "hrms": "hrms"}
+
+
+def _ready(main, key, st) -> bool:
+    """Darf der Eintrag jetzt ausgelesen werden? Sein Tab ist gebaut (ε und NMR: nur der Zustand), SEC mit Referenz
+    aus dem CV-Tab auch dieser (beim Speichern wird nie ein Tab gebaut)."""
+    if key in TAB_KEY and not main._built(TAB_KEY[key]):
+        return False
+    return not (key == "sec" and (st or {}).get("ref_from_cv") and not main._built("cv"))
 
 
 def snapshot_path(pdir) -> Path:
@@ -366,13 +579,12 @@ def write_snapshot(main, state):
     old = load_snapshot(pdir).get("tabs") or {}
     tabs, done = {}, []
     for key in SOURCES:
-        fp = fingerprint(state.get(key), pdir, key)
+        fp = fingerprint(fp_part(state, key), pdir, key)
         prev = old.get(key)
         if prev and prev.get("fp") == fp:
             tabs[key] = prev
             continue
-        built = key not in TAB_KEY or main._built(TAB_KEY[key])          # ε und NMR: nur der Zustand
-        if not built:
+        if not _ready(main, key, state.get(key)):
             if prev:
                 tabs[key] = prev
             continue
@@ -421,7 +633,7 @@ def read_compound(cdir, rel=None) -> dict:
         e = snap.get(key)
         if e is None:
             missing.append(key)
-        elif e.get("fp") != fingerprint(state.get(key), cdir, key):
+        elif e.get("fp") != fingerprint(fp_part(state, key), cdir, key):
             stale.append(key)
         else:
             tabs[key] = e
@@ -431,13 +643,43 @@ def read_compound(cdir, rel=None) -> dict:
             "tabs": tabs, "stale": stale, "missing": missing}
 
 
-def needs(kind) -> tuple:
-    return {"cv": ("cv",), "spectra": ("eps", "fluo", "irms", "epr"), "table": SOURCES}.get(kind, ())
+SPECTRA_SOURCES = {"eps": ("eps",), "abs_norm": ("eps",), "em": ("fluo",), "abs_em": ("eps", "fluo"), "ir": ("irms",),
+                   "epr": ("epr",), "epr_g": ("epr",), "sec": ("sec",), "td": ("overlay",)}
 
 
-def status(rec, kind) -> str:
+def col_source(key):
+    """Stand, aus dem eine Tab-Spalte der Tabelle liest (None: Projektdatei der Verbindung)."""
+    if key in ("formula", "mw", "mp"):
+        return None
+    if key == "ir_band":
+        return "irms"
+    if key == "nmr_shift":
+        return "nmr"
+    if re.fullmatch(r"cv(\d+_\w+|_ref)", key):
+        return "cv"
+    pre = {"uv": "eps", "fl": "fluo", "epr": "epr", "xr": "xray", "dft": "dft", "hrms": "hrms", "hc": "hcell",
+           "uk": "uvkin", "sec": "sec", "td": "overlay", "syn": "syn"}
+    return pre.get(re.split(r"[_:]", key, maxsplit=1)[0])
+
+
+def needs(kind, st=None) -> tuple:
+    """Stände, die ein Vergleich liest: die Tabelle nur die ihrer Tab-Spalten, Spektren die des Inhalts; ohne Zustand
+    alles, was die Art lesen könnte. Danach richten sich „veraltet“/„fehlt“ und „Aktualisieren“."""
+    if kind == "table" and st is not None:
+        cols = (st.get("table") or {}).get("cols") or []
+        return tuple(dict.fromkeys(src for c in cols if c.get("kind") == "auto" and (src := col_source(c["key"]))))
+    if kind == "spectra":
+        if st is not None:
+            return SPECTRA_SOURCES.get(st.get("content", "eps"), ())
+        return tuple(dict.fromkeys(k for v in SPECTRA_SOURCES.values() for k in v))
+    return KIND_SOURCES.get(kind, ())
+
+
+def status(rec, kind, st=None) -> str:
     """„ok“, „outdated“ (Stand passt nicht mehr), „missing“ (Daten ohne Stand) oder „none“ (keine Daten)."""
-    keys = needs(kind)
+    keys = needs(kind, st)
+    if kind == "table" and st is not None and not keys:   # nur Formel/M/Smp. oder eigene Spalten: Projektdatei, immer aktuell
+        return "ok"
     if any(k in rec["stale"] for k in keys):
         return "outdated"
     if any(k in rec["missing"] for k in keys):
@@ -456,7 +698,7 @@ def refresh_compounds(main, pdir, dirs, keys=SOURCES):
         for d in dirs:
             if not main.open_project(d, recent=False):
                 continue
-            for key in keys:
+            for key in tuple(keys) + (("cv",) if "sec" in keys else ()):  # SEC liest evtl. die Referenz des CV-Tabs
                 if key in TAB_KEY:
                     getattr(main, main._tab_spec(TAB_KEY[key])[0])        # baut den Tab
             main.autosave(force=True)
@@ -538,13 +780,30 @@ def auto_columns(records) -> dict:
     if "dft" in have:
         out.update({k: (FIXED_HEADS[k], T("cmp_col_" + k)) for k in ("dft_method", "dft_eel", "dft_g", "dft_homo",
                                                                       "dft_lumo")})
+    for src, keys in NEW_COLS.items():                    # 1.5.0: Overlay, Kinetik, SEC, H-Zelle, HRMS, Ausbeute
+        if src in have:
+            out.update({k: (FIXED_HEADS[k], T("cmp_col_" + k)) for k in keys})
     return out
+
+
+NEW_COLS = {"syn": ("syn_yield",), "hrms": ("hrms_ion", "hrms_calc", "hrms_found", "hrms_dev"),
+            "overlay": ("td_lam", "td_f", "td_E"), "uvkin": ("uk_lam", "uk_rest", "uk_half"),
+            "sec": ("sec_e12", "sec_ref"),
+            "hcell": ("hc_q", "hc_first", "hc_last", "hc_ret", "hc_ce", "hc_n", "hc_h")}
 
 
 # Köpfe der neuen Tab-Werte (englisch wie die Ausgabe)
 FIXED_HEADS = {"ir_band": "*ṽ* / cm^{−1}", "dft_method": "Method (DFT)", "dft_eel": "*E*_{el} / E_{h}",
                "dft_g": "*G* / E_{h}", "dft_homo": "*E*_{HOMO} / eV", "dft_lumo": "*E*_{LUMO} / eV",
-               "xr_sg": "Space group", "xr_system": "Crystal system"}
+               "xr_sg": "Space group", "xr_system": "Crystal system",
+               # 1.5.0 (Köpfe wie die Tabellen der Tabs, englisch wie die Ausgabe)
+               "syn_yield": "Yield / %", "hrms_ion": "Ion (HRMS)", "hrms_calc": "*m*/*z* calc.",
+               "hrms_found": "*m*/*z* found", "hrms_dev": "Δ / ppm", "td_lam": "*λ* (TD-DFT) / nm",
+               "td_f": "*f* (TD-DFT)", "td_E": "*E* (TD-DFT) / eV", "uk_lam": "*λ* (kinetics) / nm",
+               "uk_rest": "Remaining / %", "uk_half": "*t*_{1/2}", "sec_e12": "*E*_{1/2} (SEC, apparent) / V",
+               "sec_ref": "Reference (SEC)", "hc_q": "*Q*_{theo} / mAh", "hc_first": "Discharge, first cycle / mAh",
+               "hc_last": "Discharge, last cycle / mAh", "hc_ret": "Retention / %", "hc_ce": "Mean CE / %",
+               "hc_n": "Cycles", "hc_h": "Duration / h"}
 XR_UNIT = {"bond": "Å", "angle": "°", "torsion": "°"}
 MARKUP_KEYS = ("xr_sg",)                             # Tab-Werte, die schon Markup sind (Raumgruppe kursiv, tiefgestellt)
 IR_TOL, NMR_TOL_H, NMR_TOL = 15.0, 0.5, 2.0          # Vorgaben der Toleranz (cm⁻¹, ppm ¹H, ppm andere Kerne)
@@ -621,11 +880,13 @@ def ref_plain(ref):
 def default_chapter(item):
     """Kapitel der Gesamt-SI nach Art: CV-Stapel → Cyclic Voltammetry, Spektren nach Inhalt (UV-Vis, IR, EPR),
     Tabelle → eigene Überschrift am Ende (wie „Weitere“ mit `new:<Überschrift>`)."""
-    if item.get("kind") == "cv":
-        return "cv"
+    if item.get("kind") in ("cv", "hcell"):
+        return item["kind"]
+    if item.get("kind") == "uvkin":
+        return "uvvis"
     if item.get("kind") == "spectra":
         c = (item.get("st") or {}).get("content", "eps")
-        return "irms" if c == "ir" else "epr" if c in ("epr", "epr_g") else "uvvis"
+        return "irms" if c == "ir" else "epr" if c in ("epr", "epr_g") else "sec" if c == "sec" else "uvvis"
     return "new"
 
 
@@ -653,6 +914,35 @@ def cycle_of(f, member):
         if c is not None:
             return c["x"], c["y"], False, n
     return f["x"], f["y"], True, f.get("cycle")
+
+
+def _ppm_bad(text) -> bool:
+    """Abweichung (Text wie `dev_text`) über 5 ppm an der gedruckten Zahl."""
+    try:
+        return abs(float(str(text).replace("−", "-").replace("+", ""))) > 5
+    except ValueError:
+        return False
+
+
+def hc_cell(rec, member):
+    cs = (rec["tabs"].get("hcell") or {}).get("cells") or []
+    return next((c for c in cs if c["uid"] == (member or {}).get("hc_cell")), cs[0] if cs else None)
+
+
+def uk_series(rec, member):
+    ss = (rec["tabs"].get("uvkin") or {}).get("series") or []
+    return next((s for s in ss if s["name"] == (member or {}).get("uk_series")), ss[0] if ss else None)
+
+
+def td_calc(rec, member):
+    cs = [e for e in (rec["tabs"].get("overlay") or {}).get("entries") or [] if e["kind"] == "calc"]
+    return next((c for c in cs if c["uid"] == (member or {}).get("td_calc")), cs[0] if cs else None)
+
+
+def strongest(calc):
+    """Stärkster Übergang einer TD-DFT-Rechnung [E, λ, f, Mult.] (Werte wie gelesen) oder None."""
+    tr = [t for t in (calc or {}).get("trans") or [] if t[2] > 0]
+    return max(tr, key=lambda t: t[2]) if tr else None
 
 
 def eps_series(rec, member):
@@ -716,6 +1006,35 @@ def auto_value(key, rec, member, col=None) -> str:
         f = cv_file(rec, member)
         c = next((c for c in (f or {}).get("couples", []) if c["n"] == int(m.group(1))), None)
         return "" if c is None or c["edge"] else c["t_" + m.group(2)]     # Peak am Fensterrand: kein Ergebnis
+    if key == "syn_yield":
+        return (t.get("syn") or {}).get("yield", "")
+    if key.startswith("hrms_"):
+        return (t.get("hrms") or {}).get(key[5:], "")
+    if key.startswith("hc_"):
+        c = hc_cell(rec, member)
+        return "" if c is None else str(c["n"]) if key == "hc_n" else c["t_" + {"hc_q": "q", "hc_first": "first",
+                                                                                 "hc_last": "last", "hc_ret": "ret",
+                                                                                 "hc_ce": "ce", "hc_h": "hours"}[key]]
+    if key.startswith("uk_"):
+        u = t.get("uvkin") or {}
+        s = uk_series(rec, member)
+        if key == "uk_lam":
+            return u.get("lam", "") if s else ""
+        if key == "uk_rest":
+            return s["t_rest"] if s else ""
+        f = (s or {}).get("fit") or {}
+        return f"{f['t_half']} {u.get('unit', '')}" if f.get("t_half") else ""   # Einheit je Verbindung: nie umgerechnet
+    if key.startswith("sec_"):
+        sc = t.get("sec") or {}
+        if key == "sec_ref":
+            return ref_plain(sc.get("ref")) if sc else ""
+        fits = sc.get("apparent_fits") or []
+        return "; ".join(f["t_e12"] + (f" ({f['lam']} nm)" if len(fits) > 1 else "") for f in fits)
+    if key.startswith("td_"):
+        tr = strongest(td_calc(rec, member))
+        if tr is None:
+            return ""
+        return core.fmt_lam(tr[1]) if key == "td_lam" else f"{tr[2]:.3f}" if key == "td_f" else f"{tr[0]:.2f}"
     e = t.get("epr") or {}
     if key == "epr_g":
         return ", ".join(s["g"] for s in e.get("species", []))
@@ -819,7 +1138,13 @@ class CompareTab(TABS.FigureTab):
         # auf die Karte (wie bei den Reaktionspfaden)
         g = QGroupBox(T("pub_compare_tab"))
         v = QVBoxLayout(g)
-        if page.item is not None:
+        if page.item is not None and self.quick:          # Schnellvergleich: Name der Gruppe, keine Gesamt-SI
+            f = make_form()
+            self.ed_name = QLineEdit(page.quick_name())
+            self.ed_name.editingFinished.connect(lambda: page.quick_rename(self.ed_name.text()))
+            f.addRow(T("cmp_name"), self.ed_name)
+            v.addLayout(f)
+        elif page.item is not None:
             f = make_form()
             self.ed_name = QLineEdit(page.item["name"])
             self.ed_name.editingFinished.connect(lambda: page.rename(self.ed_name.text()))
@@ -847,11 +1172,89 @@ class CompareTab(TABS.FigureTab):
             v.addLayout(f)
             self.sync_si()
         self.lv.addWidget(g)
+        if self.quick:
+            self._quick_cards()
         if self.KIND is None:
             return
         self._members_card()
         self.kind_controls()
         self.show_member()                                    # Karten der Art entstehen nach der Liste
+
+    # -- 1.5.0: Schnellvergleich (Dateien ablegen; jede Datei eine Einzelauswertung) ------------------
+    @property
+    def quick(self):
+        return (self.page.item or {}).get("quick")
+
+    def quick_choose(self):
+        self.page.quick_choose(dirs=False)
+
+    def _quick_cards(self):
+        """Karte „Dateien hinzufügen“ (Ablagefläche, Dateien/Ordner wählen) und „Nicht erkannt“ (Datei, Grund, Art
+        wählen, wo zwei Arten in Frage kommen)."""
+        page = self.page
+        g = QGroupBox(T("qc_add"))
+        v = QVBoxLayout(g)
+        v.addWidget(QuickDrop(page.quick_add))
+        row = QHBoxLayout()
+        for key, dirs in (("qc_choose", False), ("qc_choose_dir", True)):
+            b = QPushButton(T(key))
+            b.clicked.connect(lambda _=False, d=dirs: page.quick_choose(dirs=d))
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.lv.addWidget(g)
+        unrec = page.quick_group().get("unrec") or []
+        if not unrec:
+            return
+        g = QGroupBox(T("qc_unrec"))
+        v = QVBoxLayout(g)
+        t = QTableWidget(len(unrec), 2)
+        t.setHorizontalHeaderLabels([T("qc_file"), T("qc_reason")])
+        t.verticalHeader().setVisible(False)
+        t.setWordWrap(True)
+        t.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        t.setSelectionBehavior(QAbstractItemView.SelectRows)
+        t.setSelectionMode(QAbstractItemView.SingleSelection)
+        for r, u in enumerate(unrec):
+            t.setItem(r, 0, QTableWidgetItem(u["file"]))
+            it = QTableWidgetItem(T(u["why"]))
+            it.setToolTip(T(u["why"]))
+            t.setItem(r, 1, it)
+        t.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        STYLE.fit_columns(t)
+        t.resizeRowsToContents()
+        STYLE.fit_check_table(t, 6)
+        v.addWidget(t)
+        # Art wählen (nur wo zwei Arten in Frage kommen) als Feld unter der Liste für die gewählte Zeile
+        f = make_form()
+        cmb = QComboBox()
+        f.addRow(T("qc_kind"), cmb)
+        v.addLayout(f)
+
+        def pick_row():
+            u = unrec[t.currentRow()] if 0 <= t.currentRow() < len(unrec) else {}
+            opts = QUICK_PICK.get(u.get("why"), ()) if u.get("path") else ()
+            cmb.blockSignals(True)
+            cmb.clear()
+            cmb.addItem(T("qc_pick") if opts else "–", None)
+            for src in opts:
+                cmb.addItem(T("qc_src_" + src), src)
+            cmb.setEnabled(bool(opts))
+            cmb.setToolTip("" if opts else T("qc_pick_none"))
+            cmb.blockSignals(False)
+        t.currentCellChanged.connect(lambda *_: pick_row())
+        cmb.currentIndexChanged.connect(lambda _i: cmb.currentData() and page.quick_add(
+            [unrec[t.currentRow()]["path"]], force=cmb.currentData()))
+        t.setCurrentCell(0, 0)
+        pick_row()
+        b = QPushButton(T("qc_unrec_clear"))
+        b.clicked.connect(page.quick_clear_unrec)
+        v.addWidget(b)                                    # ganze Breite (ui.md: keine losen Knöpfe am Rand)
+        h = STYLE.HintLabel(T("qc_unrec_hint"))
+        h.setWordWrap(True)
+        h.setStyleSheet(HINT_CSS)
+        v.addWidget(h)
+        self.lv.addWidget(g)
 
     def sync_si(self):
         """Kapitel nur, wenn der Vergleich in die Gesamt-SI kommt; die Überschrift nur beim eigenen Kapitel."""
@@ -875,7 +1278,7 @@ class CompareTab(TABS.FigureTab):
             self.page.changed()
 
     def _members_card(self):
-        g = QGroupBox(T("cmp_compounds"))
+        g = QGroupBox(T("qc_files") if self.quick else T("cmp_compounds"))
         v = QVBoxLayout(g)
         row = QHBoxLayout()                                   # eine Knopfzeile über der Liste wie in den Tabs: ↑ ↓ Aktualisieren
         if self.ORDERED:
@@ -883,6 +1286,23 @@ class CompareTab(TABS.FigureTab):
                 b = STYLE.list_button(txt)
                 b.clicked.connect(lambda _=False, d=d: self.move_row(self.tbl.currentRow(), self.tbl.currentRow() + d))
                 row.addWidget(b)
+            # 1.5.0: mehrere Messungen einer Verbindung = eigene Zeilen (Messung in der Karte darunter wählen)
+            self.btn_add_meas = QPushButton(T("cmp_add_meas"))
+            self.btn_add_meas.setToolTip(T("cmp_add_meas_tip"))
+            self.btn_add_meas.clicked.connect(self.add_measurement)
+            row.addWidget(self.btn_add_meas)
+            self.btn_del_meas = STYLE.list_button("−")
+            self.btn_del_meas.setToolTip(T("cmp_del_meas_tip"))
+            self.btn_del_meas.clicked.connect(self.remove_measurement)
+            row.addWidget(self.btn_del_meas)
+            if self.quick:                                    # eine Datei = eine Messung
+                self.btn_add_meas.hide()
+                self.btn_del_meas.hide()
+        if self.quick:                                        # Datei entfernen: ihre Einzelauswertung in den Papierkorb
+            b = STYLE.list_button(T("remove"))
+            b.setToolTip(T("qc_remove_tip"))
+            b.clicked.connect(lambda: self.page.quick_remove(self.current_member()))
+            row.addWidget(b)
         self.btn_refresh = QPushButton(STYLE.icon("reset"), T("cmp_refresh"))
         self.btn_refresh.setToolTip(T("cmp_refresh_tip"))
         self.btn_refresh.clicked.connect(self.page.refresh_snapshots)
@@ -890,7 +1310,8 @@ class CompareTab(TABS.FigureTab):
         row.addStretch(0)
         v.addLayout(row)
         self._refresh_row = row
-        heads = ["", T("cmp_compound")] + ([T("ov_color")] if self.COLORED else []) + [T("cmp_status")]
+        heads = ["", T("qc_file") if self.quick else T("cmp_compound")] + ([T("cmp_title")] if self.ORDERED else []) + \
+            ([T("ov_color")] if self.COLORED else []) + [T("cmp_status")]
         self.tbl = QTableWidget(0, len(heads))
         self.tbl.setHorizontalHeaderLabels(heads)
         self.tbl.verticalHeader().setVisible(False)
@@ -899,7 +1320,13 @@ class CompareTab(TABS.FigureTab):
         self.tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)      # Datenspalten gleich breit; die
         # Häkchenspalte bleibt schmal (check_columns)
         self.tbl.itemChanged.connect(self._member_edited)
+        if self.quick:                                        # Doppelklick auf die Datei: ihre Einzelauswertung öffnen
+            self.tbl.cellDoubleClicked.connect(
+                lambda r, c: c == 1 and 0 <= r < len(self.members()) and self.page.main.open_project(
+                    Path(self.page.pdir) / self.members()[r]["dir"]))
         self.tbl.currentCellChanged.connect(lambda *_: self.show_member())
+        if self.ORDERED:
+            self.tbl.currentCellChanged.connect(lambda *_: self._sync_del_meas())
         v.addWidget(self.tbl)
         if self.ORDERED:
             TABS.RowDrag(self.tbl, self.move_row)
@@ -928,10 +1355,11 @@ class CompareTab(TABS.FigureTab):
         if not st.get("structures", True):
             return []
         (x0, x1), (y0, y1) = cfg["xlim"], cfg["ylim"]
-        items = []
+        items, seen = [], set()
         for m, rec, x, y in traces:
-            if not rec["structure"]:
+            if not rec["structure"] or m["dir"] in seen:     # mehrere Messungen einer Verbindung: Struktur einmal
                 continue
+            seen.add(m["dir"])
             x, y = np.asarray(x, float), np.asarray(y, float)
             inside = (x >= min(x0, x1)) & (x <= max(x0, x1)) & np.isfinite(y)
             if not inside.any():
@@ -967,48 +1395,126 @@ class CompareTab(TABS.FigureTab):
     def fill_members(self):
         self._loading = True
         ms, recs = self.members(), self.page.records
+        qfiles = {f["dir"]: f for f in self.page.quick_group().get("files") or []} if self.quick else {}
+        files = {d: f["file"] for d, f in qfiles.items()}
         self.tbl.setRowCount(len(ms))
         for i, m in enumerate(ms):
             it = QTableWidgetItem()
             it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             it.setCheckState(Qt.Checked if m.get("on", True) else Qt.Unchecked)
             self.tbl.setItem(i, 0, it)
-            it = QTableWidgetItem(recs[m["dir"]]["name"])
+            it = QTableWidgetItem(files.get(m["dir"]) or recs[m["dir"]]["name"])   # Schnellvergleich: Dateiname
             it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             self.tbl.setItem(i, 1, it)
             c = 2
+            if self.ORDERED:                                  # Beschriftung im Bild (änderbar), zeigt die Messung
+                it = QTableWidgetItem(self.label_of(m))
+                it.setToolTip(T("cmp_title_tip"))
+                self.tbl.setItem(i, c, it)
+                c += 1
             if self.COLORED:
-                self.tbl.setCellWidget(i, 2, TABS.color_button(m["color"], lambda col, m=m: self._set_color(m, col),
+                self.tbl.setCellWidget(i, c, TABS.color_button(m["color"], lambda col, m=m: self._set_color(m, col),
                                                                 cell=True))
-                c = 3
-            stt = status(recs[m["dir"]], self.KIND)
+                c += 1
+            stt = status(recs[m["dir"]], self.KIND, self.st)
             it = QTableWidgetItem(T("cmp_st_" + stt))
             it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             if stt in ("outdated", "missing"):
                 it.setForeground(QColor("#c77c0e"))
                 it.setToolTip(T("cmp_st_tip"))
+            why = (qfiles.get(m["dir"]) or {}).get("why")
+            if why:                                           # Schnellvergleich: gelesen, aber ohne Werte -> Grund
+                it.setText(T("qc_st_novalues"))
+                it.setForeground(QColor("#c77c0e"))
+                it.setToolTip(T(why))
             self.tbl.setItem(i, c, it)
         self.tbl.resizeColumnToContents(0)
         if ms and self.tbl.currentRow() < 0:                  # erste Verbindung mit Daten gewählt
-            first = next((i for i, m in enumerate(ms) if status(recs[m["dir"]], self.KIND) != "none"), 0)
+            first = next((i for i, m in enumerate(ms) if status(recs[m["dir"]], self.KIND, self.st) != "none"), 0)
             self.tbl.setCurrentCell(first, 1)
         STYLE.check_columns(self.tbl)
+        if self.ORDERED:                                      # Datei/Beschriftung ganz lesbar (new-views.md)
+            STYLE.fit_columns(self.tbl)
         STYLE.fit_check_table(self.tbl, 8)
-        bad = [recs[m["dir"]]["name"] for m in ms if status(recs[m["dir"]], self.KIND) in ("outdated", "missing")]
+        bad = [recs[m["dir"]]["name"] for m in ms if status(recs[m["dir"]], self.KIND, self.st) in ("outdated", "missing")]
         self.lbl_status.setText(T("cmp_need_refresh", names=", ".join(bad)) if bad else "")
         self.btn_refresh.setVisible(bool(bad))                # nur wenn etwas zu erneuern ist (sonst ein toter Balken)
         self._refresh_row.setStretch(self._refresh_row.count() - 1, 0 if bad else 1)
+        if self.ORDERED:
+            self._sync_del_meas()
         self._loading = False
         self.show_member()
+
+    # -- 1.5.0: Beschriftung je Zeile, mehrere Messungen einer Verbindung --------------------------
+    def _sync_del_meas(self):
+        on = self._dup(self.current_member())
+        self.btn_del_meas.setEnabled(on)
+        self.btn_del_meas.setToolTip(T("cmp_del_meas_tip") if on else T("cmp_del_meas_off"))
+
+    def _dup(self, m):
+        return m is not None and sum(x["dir"] == m["dir"] for x in self.st["members"]) > 1
+
+    def measurement_of(self, m, rec) -> str:
+        """Welche Messung die Zeile zeigt (Kurztext je Art; leer = nicht unterscheidbar)."""
+        return ""
+
+    def label_of(self, m, rec=None) -> str:
+        """Beschriftung der Zeile in Bild, Legende und Unterschrift: eigene, sonst der Name der Verbindung; steht die
+        Verbindung mehrmals in der Liste, dazu die Messung (nie „S3, S3 und S3“)."""
+        rec = rec or self.page.records[m["dir"]]
+        if m.get("title"):
+            return m["title"]
+        if not self._dup(m):
+            return rec["name"]
+        what = self.measurement_of(m, rec)
+        same = [x for x in self.st["members"] if x["dir"] == m["dir"]]
+        return f"{rec['name']} · {what}" if what else f"{rec['name']} ({same.index(m) + 1})"
+
+    def add_measurement(self):
+        """Gewählte Zeile verdoppeln (gleiche Verbindung, nächste freie Farbe); die Messung wählt die Karte darunter."""
+        m = self.current_member()
+        if m is None:
+            return
+        used = {x["color"] for x in self.st["members"]}
+        color = next((c for c in TABS.PALETTE if c not in used), TABS.PALETTE[len(self.st["members"]) % len(TABS.PALETTE)])
+        new = {k: v for k, v in m.items() if k not in ("key", "color", "title")}
+        new.update(key=uuid.uuid4().hex[:8], color=color, on=True)
+        all_ = self.st["members"]
+        all_.insert(all_.index(m) + 1, new)
+        self.fill_members()
+        self.tbl.selectRow(self.members().index(new))
+        self.timer.start()
+
+    def remove_measurement(self):
+        """Weitere Zeile einer Verbindung wieder entfernen (die letzte Zeile einer Verbindung bleibt: abwählen)."""
+        m = self.current_member()
+        if not self._dup(m):
+            return
+        r = self.members().index(m)
+        self.st["members"].remove(m)
+        self.fill_members()
+        self.tbl.selectRow(min(r, len(self.members()) - 1))
+        self.timer.start()
 
     def _set_color(self, m, c):
         m["color"] = c
         self.timer.start()
 
     def _member_edited(self, item):
-        if self._loading or item.column() != 0:
+        if self._loading:
             return
         ms = self.members()
+        if self.ORDERED and item.column() == 2 and 0 <= item.row() < len(ms):   # eigene Beschriftung
+            m = ms[item.row()]
+            m.pop("title", None)
+            text = item.text().strip()
+            if text and text != self.label_of(m):
+                m["title"] = text
+            self.fill_members()
+            self.timer.start()
+            return
+        if item.column() != 0:
+            return
         if 0 <= item.row() < len(ms):
             ms[item.row()]["on"] = item.checkState() == Qt.Checked
             self.member_changed()
@@ -1036,7 +1542,10 @@ class CompareTab(TABS.FigureTab):
         pass
 
     def rec(self, m):
-        return self.page.records[m["dir"]]
+        """Stand der Verbindung der Zeile; „name“ ist die Beschriftung der Zeile (Bild, Legende, Unterschrift, Hinweise)."""
+        rec = self.page.records[m["dir"]]
+        lab = self.label_of(m, rec)
+        return rec if lab == rec["name"] else dict(rec, name=lab)
 
     # -- Gesamt-SI -----------------------------------------------------------------------
     def si_blocks(self, out_dir, item):
@@ -1069,6 +1578,45 @@ class CompareEmpty(CompareTab):
 
     def figure_spec(self):
         return None
+
+
+class QuickEmpty(CompareEmpty):
+    """Leerer Schnellvergleich: Anleitung mit „Dateien wählen …“, links die Ablagefläche."""
+    GUIDE, GUIDE_ACTION = "quick", ("qc_choose", "quick_choose")
+
+
+TABS.GUIDE_HEAD.setdefault("quick", TABS.GUIDE_HEAD["compare"])   # Hilfe-Link: Abschnitt „Vergleich“ des Handbuchs
+QUICK_PICK = {"qc_why_pdf": ("hrms", "irms")}           # nicht eindeutig: Arten, zwischen denen der Nutzer wählt
+
+
+class QuickDrop(QLabel):
+    """Ablagefläche des Schnellvergleichs (Dateien und Ordner)."""
+
+    def __init__(self, on_drop):
+        super().__init__(f"<b>{html.escape(T('qc_drop'))}</b><br><span style='font-size:11px'>"
+                         f"{html.escape(T('qc_drop_sub'))}</span>")
+        self.on_drop = on_drop
+        self.setAcceptDrops(True)
+        self.setAlignment(Qt.AlignCenter)
+        self.setWordWrap(True)
+        self.setMinimumHeight(96)
+        c = STYLE.colors()
+        self.setStyleSheet(f"QLabel {{ border: 2px dashed {c['text2']}; border-radius: 8px; color: {c['text2']};"
+                           f" padding: 10px; }}")
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasUrls():
+            ev.acceptProposedAction()
+
+    def dragMoveEvent(self, ev):
+        if ev.mimeData().hasUrls():
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev):
+        paths = [u.toLocalFile() for u in ev.mimeData().urls() if u.isLocalFile()]
+        ev.acceptProposedAction()
+        if paths:                                         # nach dem Ereignis: das Hinzufügen baut die Seite neu
+            QTimer.singleShot(0, lambda: self.on_drop(paths))
 
 
 def _fit_y(curves, lo_pad=0.08, hi_pad=0.12):
@@ -1131,6 +1679,14 @@ class CVStackTab(CompareTab):
         self.sp_gap.valueChanged.connect(self.changed)
         self.sp_sw.valueChanged.connect(self.changed)
         self.lv.addWidget(g)
+
+    def measurement_of(self, m, rec):
+        f = cv_file(rec, m)
+        if f is None:
+            return ""
+        n = cycle_of(f, m)[3]
+        rate = f"{f['rate']:g} mV s⁻¹" if f.get("rate") else f["label"]
+        return rate + (f", cycle {n}" if n != f["cycle"] else "")
 
     def collect(self):
         self.st.update(stack_gap=self.sp_gap.value(), struct_w=self.sp_sw.value(),
@@ -1218,7 +1774,7 @@ class CVStackTab(CompareTab):
             data.append((m, rec, dict(f, _evaluated=evaluated), x, y * fac, fac))
         span = max(float(np.nanmax(y) - np.nanmin(y)) for *_, y, _f in data) or 1.0
         n = len(data)
-        curves, labels, arrows, imgs = [], [], [], []
+        curves, labels, arrows, imgs, seen = [], [], [], [], set()
         for k, (m, rec, f, x, y, fac) in enumerate(data):
             off = (n - 1 - k) * st["stack_gap"] * span
             curves.append({"x": x, "y": y + off, "val": y, "color": m["color"], "label": rec["name"], "lw": 1.3,
@@ -1256,7 +1812,8 @@ class CVStackTab(CompareTab):
                 direction = 1.0 if np.gradient(x)[:5].mean() >= 0 else -1.0
                 arrows.append((f"arrow_scan_{m['key']}", float(x[0]), float(y[0] + off),
                                float(x[0] + direction * 0.08 * xr), m["color"]))
-            if structs and rec["structure"]:
+            if structs and rec["structure"] and m["dir"] not in seen:   # Struktur einmal je Verbindung
+                seen.add(m["dir"])
                 yc = (float(np.nanmedian(y)) + off - y0) / ((y1 - y0) or 1.0)
 
                 def near(X, Y, w_, h_, yc=yc):                    # neben der eigenen Kurve, rechts
@@ -1353,7 +1910,7 @@ class SpectraTab(CompareTab):
     DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], content="eps", stack=False, stack_gap=1.0,
                          ref_freq=0.0, structures=True, struct_color=True, struct_w=22.0,
                          norm_auto=True, nlo=300.0, nhi=500.0)
-    CONTENTS = ("eps", "abs_norm", "em", "abs_em", "ir", "epr", "epr_g")
+    CONTENTS = ("eps", "abs_norm", "em", "abs_em", "ir", "epr", "epr_g", "sec", "td")   # 1.5.0: SEC, TD-DFT
     RESET_KEEP = CompareTab.RESET_KEEP + ("ref_freq", "content")   # Referenzfrequenz wie im EPR-Tab, Inhalt = Datenauswahl
     EPR = ("epr", "epr_g")
     NORMED = ("abs_norm", "abs_em")                         # Absorption auf das Maximum normiert: Bereich wählbar
@@ -1424,6 +1981,10 @@ class SpectraTab(CompareTab):
         self.form_display.setRowVisible(self.sp_ref, st["content"] == "epr")
         self.form_display.setRowVisible(self.row_norm, st["content"] in self.NORMED)
 
+    def measurement_of(self, m, rec):
+        sr = eps_series(rec, m) if self.st.get("content", "eps") in ("eps", "abs_norm", "abs_em") else None
+        return sr["name"] if sr else ""
+
     def content_changed(self, *_):
         """EPR: normiert und gestapelt als Vorgabe; Referenzfrequenz nur bei der Feldachse."""
         k = self.cmb_content.currentData()
@@ -1490,6 +2051,8 @@ class SpectraTab(CompareTab):
             return self._ir_spec()
         if content in self.EPR:
             return self._epr_spec()
+        if content in ("sec", "td"):
+            return self._sec_td_spec(content)
         uv, em = content in ("eps", "abs_norm", "abs_em"), content in ("em", "abs_em")
         eps_mode = content == "eps"
         lo = core.DEFAULTS["peak_range_nm"][0]
@@ -1526,7 +2089,7 @@ class SpectraTab(CompareTab):
                            "--" if uv else "-"))
             if cs:
                 groups.append((m, rec, cs))
-            elif status(rec, "spectra") in ("outdated", "missing"):
+            elif status(rec, "spectra", self.st) in ("outdated", "missing"):
                 missing.append(rec["name"])
         if missing:
             self.add_note(T("cmp_missing_note", names=", ".join(missing)))
@@ -1597,7 +2160,7 @@ class SpectraTab(CompareTab):
             rec = self.rec(m)
             cu = (rec["tabs"].get("irms") or {}).get("curve")
             if not cu:
-                if status(rec, "spectra") in ("outdated", "missing"):
+                if status(rec, "spectra", self.st) in ("outdated", "missing"):
                     missing.append(rec["name"])
                 continue
             if mode0 is None:
@@ -1619,6 +2182,54 @@ class SpectraTab(CompareTab):
         cfg["images"] = self.struct_images(cfg, self._traces)
         return cfg, curves, [], []
 
+    def _sec_td_spec(self, content):
+        """SEC: Endspektrum der gezeigten Reihe je Verbindung (nur Absorbanz; Rohsignal abgelehnt, nie umgerechnet),
+        auf das Maximum normiert. TD-DFT: verbreitertes Spektrum der gewählten Rechnung wie im Overlay (ε)."""
+        groups, missing, refused = [], [], []
+        for m in self.drawn():
+            rec = self.rec(m)
+            if content == "sec":
+                sc = rec["tabs"].get("sec")
+                end = next((x for x in (sc or {}).get("spectra") or [] if x["role"] == "end"), None)
+                if sc and sc.get("quantity") != "abs":
+                    refused.append(rec["name"])
+                    continue
+                if end is not None:
+                    y = np.asarray([np.nan if v is None else v for v in end["y"]], float)
+                    top = np.nanmax(np.abs(y)) if np.isfinite(y).any() else 0.0
+                    groups.append((m, rec, np.asarray(end["x"], float), y / top if top > 0 else y))
+                    continue
+            else:
+                c = td_calc(rec, m)
+                if c is not None:
+                    groups.append((m, rec, np.asarray(c["x"], float), np.asarray(c["y"], float) / 1000.0))
+                    continue
+            if status(rec, "spectra", self.st) in ("outdated", "missing"):
+                missing.append(rec["name"])
+        self._refused_notes(missing, "cmp_sec_refused", refused)
+        if not groups:
+            return None
+        cfg = self.base_cfg()
+        span = max(float(np.nanmax(y) - np.nanmin(y)) for *_, y in groups) or 1.0
+        curves = self._stacked(groups, cfg, span)
+        seen = np.concatenate([x[np.isfinite(y) & (np.abs(y) > 0.01 * np.nanmax(np.abs(y)))] for _m, _r, x, y in groups])
+        cfg["xlim"] = self._xlim(seen if seen.size else np.concatenate([g[2] for g in groups]), False)   # keine Leerfläche
+        cfg["xlabel"] = "wavelength [nm]"
+        cfg["ylabel"] = "normalized absorbance" if content == "sec" else "$\\varepsilon$ [10$^3$ M$^{-1}$ cm$^{-1}$]"
+        cfg["images"] = self.struct_images(cfg, self._traces)
+        return cfg, curves, [], []
+
+    def _caption_sec_td(self):
+        spec = _quiet(self.figure_spec)
+        if spec is None:
+            return ""
+        names = [c["label"] for c in spec[1] if c.get("label")]
+        if self.st["content"] == "sec":
+            h = "Spectra of " + _join_names(names) + " at the end of the spectroelectrochemical series, normalized"
+        else:
+            h = "Calculated (TD-DFT) absorption spectra of " + _join_names(names) + ", broadened as in the overlay"
+        return h + (" (stacked)" if self.st["stack"] and len(names) > 1 else "") + "."
+
     def _epr_spec(self):
         """EPR normiert: Feldachse nur bei gleicher Mikrowellenfrequenz oder wie der EPR-Tab auf eine Referenzfrequenz
         skaliert (B·ν_ref/ν), sonst g-Achse (g = hν/µ_B·B); was nicht passt, wird abgelehnt (nie still gemischt)."""
@@ -1631,7 +2242,7 @@ class SpectraTab(CompareTab):
             ep = rec["tabs"].get("epr") or {}
             tr = epr_trace(rec, m)
             if tr is None:
-                if status(rec, "spectra") in ("outdated", "missing"):
+                if status(rec, "spectra", self.st) in ("outdated", "missing"):
                     missing.append(rec["name"])
                 continue
             B = np.asarray(tr["x"], float)
@@ -1674,6 +2285,8 @@ class SpectraTab(CompareTab):
         st = self.st
         if st["content"] == "ir" or st["content"] in self.EPR:
             return self._caption_ir_epr()
+        if st["content"] in ("sec", "td"):
+            return self._caption_sec_td()
         ms = [m for m in self.drawn()]
         if st["content"] in self.NORMED and not st.get("norm_auto", True):   # ohne Bande im Bereich nicht im Bild
             spec = _quiet(self.figure_spec)
@@ -2190,6 +2803,9 @@ class TableTab(CompareTab):
                 if role == "over":
                     it.setForeground(QColor("#c77c0e"))
                     it.setToolTip(T("cmp_over_tip", v=(tv.get((rk, ck)) or ("", "", ""))[2] or "–"))
+                if role == "auto" and ck in self._dev_cols() and _ppm_bad(t):   # HRMS wie die Prüftabelle: > 5 ppm
+                    it.setForeground(QColor("#c77c0e"))
+                    it.setToolTip(T("cmp_hrms_dev_tip"))
                 self.grid.setItem(i, j, it)
         # gleiche Gruppen nebeneinander (bzw. untereinander, gedreht) zusammenfassen
         if self.tb.get("transpose"):
@@ -2212,6 +2828,9 @@ class TableTab(CompareTab):
             if b - a > 1:
                 setter(a, b - a)
             a = b
+
+    def _dev_cols(self):
+        return {c["id"] for c in self.tb["cols"] if c.get("kind") == "auto" and c["key"] == "hrms_dev"}
 
     def _cell_key(self, item):
         role, rk, ck = item.data(Qt.UserRole) if item is not None else (None, None, None)
@@ -2377,7 +2996,290 @@ class TableTab(CompareTab):
         return [docx, xlsx, csv_p]
 
 
-TAB_CLASS = {None: CompareEmpty, "cv": CVStackTab, "spectra": SpectraTab, "table": TableTab}
+class HCellCompareTab(CompareTab):
+    """H-Zelle (1.5.0): Kapazität gegen Zyklus je Zeile wie der Tab (Laden voll, Entladen offen, CE als Dreieck auf
+    der rechten Achse, Legende als Block je Zeile); Prozent nur, wenn jede gezeigte Messung ihr Q_theo hat."""
+    KIND = "hcell"
+    SI_PAGE = True
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“: Achsentitel, Legende … (core.figtexts) wie alle Tabs
+    DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], unit="pct", show_ce=True)
+
+    def build(self, fig):
+        from elucida.tabs import hcell as HC
+        return HC.HCellTab.build(self, fig)                  # gleiche Abbildung (zweite Achse, Streupunkte) wie der Tab
+
+    def kind_controls(self):
+        st = self.st
+        self.det = QGroupBox(T("cmp_member"))
+        f = make_form(self.det)
+        self.cmb_cell = QComboBox()
+        self.cmb_cell.currentIndexChanged.connect(self.detail_changed)
+        f.addRow(T("cmp_measurement"), self.cmb_cell)
+        self.lv.addWidget(self.det)
+        g = QGroupBox(T("cv_display"))
+        f = make_form(g)
+        self.cmb_unit = QComboBox()
+        self.cmb_unit.addItem("%", "pct")
+        self.cmb_unit.addItem("mAh", "mAh")
+        self.cmb_unit.setCurrentIndex(max(0, self.cmb_unit.findData(st["unit"])))
+        self.cmb_unit.currentIndexChanged.connect(self.changed)
+        f.addRow(T("cmp_hc_unit"), self.cmb_unit)
+        self.cb_ce = QCheckBox(T("cmp_hc_ce"))
+        self.cb_ce.setChecked(bool(st["show_ce"]))
+        self.cb_ce.toggled.connect(self.changed)
+        f.addRow(self.cb_ce)
+        self.lv.addWidget(g)
+
+    def collect(self):
+        self.st.update(unit=self.cmb_unit.currentData(), show_ce=self.cb_ce.isChecked())
+
+    def show_member(self):
+        if not hasattr(self, "cmb_cell"):
+            return
+        m = self.current_member()
+        self._loading = True
+        self.cmb_cell.clear()
+        rec = self.rec(m) if m else None
+        for c in ((rec["tabs"].get("hcell") or {}).get("cells") or []) if rec else []:
+            self.cmb_cell.addItem(c["label"] or c["uid"], c["uid"])
+        c = hc_cell(rec, m) if rec else None
+        if c is not None:
+            self.cmb_cell.setCurrentIndex(max(0, self.cmb_cell.findData(c["uid"])))
+        self.det.setEnabled(c is not None)
+        self._loading = False
+
+    def detail_changed(self, *_):
+        m = self.current_member()
+        if self._loading or m is None:
+            return
+        m["hc_cell"] = self.cmb_cell.currentData()
+        self.timer.start()
+
+    def rows(self):
+        """[(Mitglied, Verbindung, Messung)] und fehlende Namen."""
+        rows, missing = [], []
+        for m in self.drawn():
+            rec = self.rec(m)
+            c = hc_cell(rec, m)
+            if c is None:
+                if status(rec, "hcell") != "none":
+                    missing.append(rec["name"])
+                continue
+            rows.append((m, rec, c))
+        return rows, missing
+
+    def figure_spec(self):
+        from elucida.tabs import hcell as HC
+        st = self.st
+        rows, missing = self.rows()
+        if missing:
+            self.add_note(T("cmp_missing_note", names=", ".join(missing)))
+        if not rows:
+            return None
+        pct = st["unit"] == "pct" and all(c["q_theo"] for _, _, c in rows)
+        if st["unit"] == "pct" and not pct:
+            self.add_note(T("hcell_no_qtheo"))
+        cols = {"charge": 3 if pct else 1, "discharge": 4 if pct else 2, "ce": 5}
+        kinds = ("charge", "discharge", "ce") if st["show_ce"] else ("charge", "discharge")
+        series = []
+        for m, rec, c in rows:
+            for kind in kinds:
+                pts = [(r[0], r[cols[kind]]) for r in c["cycles"] if r[cols[kind]] is not None]
+                if pts:
+                    series.append((m, rec, kind, *(np.array(v, float) for v in zip(*pts))))
+        caps = [y for *_a, kind, _x, y in series if kind != "ce"]
+        ces = [y for *_a, kind, _x, y in series if kind == "ce"]
+        if not caps:
+            return None
+        top = float(max(y.max() for y in caps))
+        y1 = st["ymax"] if st["ymax"] > 0 else (max(105.0, 1.05 * top) if pct else 1.15 * top)
+        r1 = max(105.0, 1.05 * max(float(y.max()) for y in ces)) if ces else None
+        cfg = self.base_cfg()
+        curves = []
+        for m, rec, kind, x, y in series:
+            if kind == "charge":                              # Block je Zeile in der Legende: Beschriftung als Kopf
+                curves.append({"x": np.array([]), "y": np.array([]), "label": rec["name"], "ls": "none",
+                               "aux": True})
+            marker, mfc = HC.OWN_LOOK[kind]
+            cv = {"x": x, "y": y * y1 / r1 if kind == "ce" else y, "color": m["color"], "label": HC.LEGEND[kind],
+                  "ls": "none", "marker": marker, "mfc": mfc, "ms": 3.5 if len(x) > 60 else 4.5}
+            if kind == "ce":
+                cv["val"] = y
+            curves.append(cv)
+        if r1:
+            cfg["right_axis"] = (r1, "efficiency [%]")
+        nmax = max(float(x.max()) for *_a, x, _y in series)
+        cfg["xlim"] = [0.0, nmax + max(1.0, 0.03 * nmax)]
+        cfg["ylim"] = [0.0, y1]
+        cfg["xlabel"] = "cycle number"
+        cfg["ylabel"] = "capacity [%]" if pct else "capacity [mAh]"
+        cfg["scatter"] = cfg["legend_beside"] = True
+        return cfg, curves, [], []
+
+    def hover_text(self, x, val, name):
+        return f"{name}: cycle {x:.0f}, {val:.1f}"
+
+    def measurement_of(self, m, rec):
+        c = hc_cell(rec, m)
+        return (c["label"] or "") if c else ""
+
+    def si_caption(self, name):
+        """„Symmetric charge–discharge H-cell cycling of A and B (…)“ wie der Tab, Angaben je Zeile aus dem Stand."""
+        from elucida.si.lines import chem_html
+        rows, _m = self.rows()
+        if not rows:
+            return ""
+        labs = [rec["name"] for _m, rec, _c in rows]
+        caps = [(lab, (rec["tabs"]["hcell"].get("cap") or {})) for lab, (_m2, rec, _c) in zip(labs, rows)]
+        conc = _per_compound([(n, c.get("cap_conc", "").strip()) for n, c in caps], chem_html)
+        solv = _per_compound([(n, c.get("cap_solvent", "").strip()) for n, c in caps], chem_html)
+        inner = " ".join(x for x in ((conc + " active material") if conc else "", ("in " + solv) if solv else "") if x)
+        h = "Symmetric charge–discharge H-cell cycling of " + _join_names(labs) + (f" ({inner})" if inner else "")
+        h += "; filled circles: charge, open circles: discharge"
+        if self.st["show_ce"]:
+            h += ", triangles: Coulombic efficiency (right axis)"
+        return h + "."
+
+
+class KineticsCompareTab(CompareTab):
+    """UV-Vis-Kinetik (1.5.0): A(λ) gegen die Zeit je Zeile wie die Ansicht „Verlauf“ des Tabs, relativ zum ersten
+    Spektrum oder absolut; gemeinsame Zeiteinheit (der Stand hat Sekunden, nie still gemischt). Chip „Fits zeigen“
+    (Robin 2026-11-27, Vorgabe aus, `fits` nur gespeichert, wenn an): gestrichelter Fit erster Ordnung je Reihe in
+    ihrer Farbe wie im Tab."""
+    KIND = "uvkin"
+    SI_PAGE = True
+    LABEL_CARD = True                    # Karte „Beschriftungen im Bild“: Achsentitel, Legende … (core.figtexts) wie alle Tabs
+    DEFAULT_STATE = dict(TABS.COMMON_DEFAULTS, ymax=0.0, members=[], t_unit="", y="rel")   # "": wie der Tab der ersten Zeile
+    UNITS = {"s": 1.0, "min": 60.0, "h": 3600.0, "d": 86400.0}
+
+    def kind_controls(self):
+        st = self.st
+        self.det = QGroupBox(T("cmp_member"))
+        f = make_form(self.det)
+        self.cmb_series = QComboBox()
+        self.cmb_series.currentIndexChanged.connect(self.detail_changed)
+        f.addRow(T("cmp_uk_series"), self.cmb_series)
+        self.lv.addWidget(self.det)
+        g = QGroupBox(T("cv_display"))
+        f = make_form(g)
+        self.cmb_t = QComboBox()
+        self.cmb_t.addItem(T("cmp_uk_tauto"), "")
+        for u in self.UNITS:
+            self.cmb_t.addItem(u, u)
+        self.cmb_t.setCurrentIndex(max(0, self.cmb_t.findData(st["t_unit"])))
+        self.cmb_t.currentIndexChanged.connect(self.changed)
+        f.addRow(T("cmp_uk_tunit"), self.cmb_t)
+        self.cmb_y = QComboBox()
+        self.cmb_y.addItem(T("cmp_uk_rel"), "rel")
+        self.cmb_y.addItem(T("cmp_uk_abs"), "abs")
+        self.cmb_y.setCurrentIndex(max(0, self.cmb_y.findData(st["y"])))
+        self.cmb_y.currentIndexChanged.connect(self.changed)
+        f.addRow(T("cmp_uk_y"), self.cmb_y)
+        self.cb_fit = QCheckBox(T("cmp_uk_fits"))
+        self.cb_fit.setChecked(bool(st.get("fits")))
+        self.cb_fit.toggled.connect(self.changed)
+        f.addRow(self.cb_fit)
+        self.lv.addWidget(g)
+
+    def collect(self):
+        self.st.update(t_unit=self.cmb_t.currentData(), y=self.cmb_y.currentData())
+        if self.cb_fit.isChecked():
+            self.st["fits"] = True
+        else:
+            self.st.pop("fits", None)                         # Vorgabe aus: alte Vergleiche bleiben unverändert
+
+    def show_member(self):
+        if not hasattr(self, "cmb_series"):
+            return
+        m = self.current_member()
+        self._loading = True
+        self.cmb_series.clear()
+        rec = self.rec(m) if m else None
+        for sr in ((rec["tabs"].get("uvkin") or {}).get("series") or []) if rec else []:
+            self.cmb_series.addItem(sr["name"], sr["name"])
+        sr = uk_series(rec, m) if rec else None
+        if sr is not None:
+            self.cmb_series.setCurrentIndex(max(0, self.cmb_series.findData(sr["name"])))
+        self.det.setEnabled(sr is not None)
+        self._loading = False
+
+    def detail_changed(self, *_):
+        m = self.current_member()
+        if self._loading or m is None:
+            return
+        m["uk_series"] = self.cmb_series.currentData()
+        self.timer.start()
+
+    def measurement_of(self, m, rec):
+        sr = uk_series(rec, m)
+        return sr["name"] if sr else ""
+
+    def rows(self):
+        rows, missing = [], []
+        for m in self.drawn():
+            rec = self.rec(m)
+            sr = uk_series(rec, m)
+            if sr is None:
+                if status(rec, "uvkin") != "none":
+                    missing.append(rec["name"])
+                continue
+            rows.append((m, rec, sr))
+        return rows, missing
+
+    def figure_spec(self):
+        st = self.st
+        rows, missing = self.rows()
+        if missing:
+            self.add_note(T("cmp_missing_note", names=", ".join(missing)))
+        if not rows:
+            return None
+        unit = st["t_unit"] or (rows[0][1]["tabs"]["uvkin"] or {}).get("unit") or "min"
+        u, key = self.UNITS[unit], "rel" if st["y"] == "rel" else "a"
+        cfg = self.base_cfg()
+        curves = []
+        for m, rec, sr in rows:
+            x = np.array(sr["t"], float) / u
+            y = np.array([np.nan if v is None else v for v in sr[key]], float)
+            curves.append({"x": x, "y": y, "color": m["color"], "label": rec["name"], "lw": 1.3})
+            fm = sr.get("model")
+            if st.get("fits") and fm is None:
+                self.add_note(T("uvkin_fit_short", s=f"{rec['name']} ({sr['name']})", n=sum(v is not None for v in sr["a"])))
+            elif st.get("fits") and (key != "rel" or sr["a"][0]):   # wie der Tab: A0·exp(−k·t), relativ zu A des ersten Spektrums
+                tf = np.linspace(0.0, float(np.max(sr["t"])), 200)
+                yf = fm["I0"] * np.exp(-fm["k"] * tf)
+                if key == "rel":
+                    yf = 100.0 * yf / sr["a"][0]
+                curves.append({"x": tf / u, "y": yf, "color": m["color"], "label": None, "ls": "--", "lw": 1.2})
+        xs = np.concatenate([c["x"] for c in curves])
+        ys = np.concatenate([c["y"] for c in curves])
+        hi = float(np.nanmax(xs)) if xs.size else 1.0
+        cfg["xlim"] = [0.0, hi * 1.03 or 1.0]
+        top = float(np.nanmax(ys)) if np.isfinite(ys).any() else 1.0
+        cfg["ylim"] = [0.0, st["ymax"] if st["ymax"] > 0 else (max(105.0, 1.05 * top) if key == "rel" else 1.1 * top)]
+        cfg["xlabel"] = f"time [{unit}]"
+        cfg["ylabel"] = "relative absorbance [%]" if key == "rel" else "absorbance"
+        cfg["legend"] = True
+        return cfg, curves, [], []
+
+    def si_caption(self, name):
+        """„Absorbance of A (420 nm) and B (380 nm) against time, relative to the first spectrum of each series.“"""
+        rows, _m = self.rows()
+        if not rows:
+            return ""
+        lam = _per_compound([(rec["name"], f"{(rec['tabs']['uvkin'] or {}).get('lam', '')} nm"
+                              if (rec["tabs"]["uvkin"] or {}).get("lam") else "") for _m2, rec, _s in rows], str)
+        h = "Absorbance of " + _join_names([rec["name"] for _m2, rec, _s in rows]) + (f" at {lam}" if lam else "")
+        h += " against time"
+        if self.st["y"] == "rel":
+            h += ", relative to the first spectrum of each series"
+        h += "."
+        if self.st.get("fits") and any(sr.get("model") for _m2, _r, sr in rows):
+            h += " Dashed lines: first-order fits."
+        return h
+
+
+TAB_CLASS = {None: CompareEmpty, "cv": CVStackTab, "spectra": SpectraTab, "hcell": HCellCompareTab,
+             "uvkin": KineticsCompareTab, "table": TableTab}
 
 
 # ============================================================================ Seite „Vergleich“ der Projektseite
@@ -2434,6 +3336,8 @@ class ComparePage(QWidget):
             self.new_menu = QMenu(self.b_new)
             for kind in KINDS:
                 self.new_menu.addAction(T("cmp_new_" + kind), lambda k=kind: self.add(k))
+            self.new_menu.addSeparator()                      # 1.5.0: dieselbe Funktion wie „Neu“ im Startbildschirm
+            self.new_menu.addAction(T("qc_new"), lambda: self.main.quick_compare())
             self.b_new.clicked.connect(lambda: self.new_menu.exec(self.b_new.mapToGlobal(self.b_new.rect().center())))
         self.gallery.remove_all()
         for c in self.cards:
@@ -2447,7 +3351,7 @@ class ComparePage(QWidget):
                 self._make_preview(it)
             c = PV.PathCard(it, self.preview_path(it["uid"]))
             for lab in c.findChildren(QLabel, "recentSub"):   # Art auf der Karte: „Spektren · Geändert heute 13:58“
-                lab.setText(T("cmp_kind_" + it["kind"]) + " · " + lab.text())
+                lab.setText((T("cmp_kind_" + it["kind"]) if it.get("kind") else T("qc_new")) + " · " + lab.text())
             c.opened.connect(lambda _=None, u=it["uid"]: self.open(u))
             c.setContextMenuPolicy(Qt.CustomContextMenu)
             c.customContextMenuRequested.connect(lambda pos, c=c: self._card_menu(c, pos))
@@ -2636,7 +3540,7 @@ class ComparePage(QWidget):
         ms = st.setdefault("members", [])
         known = {m["dir"] for m in ms}
         fresh = not ms
-        for rel in self.records:
+        for rel in self.records if not item.get("quick") else ():   # Schnellvergleich: nur seine Dateien
             if rel not in known:
                 ms.append({"dir": rel, "on": fresh})
         for k, m in enumerate(ms):
@@ -2670,12 +3574,106 @@ class ComparePage(QWidget):
         view = TABS.view_state(old.right_tabs, old._left_parts[2]) if old is not None else None
         self._drop_tab()
         st = self.item.setdefault("st", {}) if self.item is not None else {}
-        self.tab = TAB_CLASS.get(kind, CompareEmpty)(self.host, st)
+        cls = QuickEmpty if kind is None and (self.item or {}).get("quick") else TAB_CLASS.get(kind, CompareEmpty)
+        self.tab = cls(self.host, st)
         self._built = key
         self.lay.addWidget(self.tab)
         TABS.apply_view(self.tab.right_tabs, self.tab._left_parts[2], view, self.tab)
-        self.tab.btn_export.setEnabled(self.item is not None)
+        if self.item is not None and self.item.get("quick"):
+            self._quick_tabs()
+        self.tab.btn_export.setEnabled(self.item is not None and self.item.get("kind") is not None)
         self.pub.sync_main_button()
+
+    # -- 1.5.0: Schnellvergleich -------------------------------------------------------------------
+    def quick_group(self, data=None) -> dict:
+        from elucida.app import quick_compare as QC
+        gid = (self.item or {}).get("quick")
+        data = data if data is not None else PUB.load(self.pdir)
+        return (data.get(QC.GROUPS) or {}).get(gid) or {} if gid else {}
+
+    def quick_name(self) -> str:
+        return self.quick_group().get("name") or (self.item or {}).get("name", "")
+
+    def _quick_commit(self, fn, target=None):
+        """Gruppe ändern (fn(data, group)), Reiter nachziehen, speichern und den passenden Reiter zeigen."""
+        from elucida.app import quick_compare as QC
+        gid, part = self.item["quick"], target or self.item.get("part")
+        data = PUB.load(self.pdir)
+        g = data.setdefault(QC.GROUPS, {}).setdefault(gid, {"name": self.item["name"], "files": [], "unrec": []})
+        fn(data, g)
+        items = QC.sync_items(data, gid, g["name"])
+        PUB.save(self.pdir, data)
+        uid = next((x["uid"] for x in items if x.get("part") == part), items[0]["uid"])
+        self.pub.project_tabs.setCurrentWidget(self)
+        self.item, self.opened, self._saved = None, False, None
+        self.load(uid)
+
+    def quick_add(self, paths, force=None):
+        """Abgelegte/gewählte Dateien: je Datei eine Einzelauswertung, dann der Reiter der ersten erkannten Datei."""
+        from elucida.app import quick_compare as QC
+        if not paths or not (self.item or {}).get("quick"):
+            return
+        self.save()
+        keep = dict(self.item)
+        self.item, self.opened = None, False              # Anlegen öffnet Verbindungen: nichts Altes speichern
+        tmp = {"files": [], "unrec": []}
+        QC.add_files(self.main, self.pdir, tmp, [Path(p) for p in paths], force)
+        self.item = keep
+        done = {str(p) for p in paths}
+
+        def merge(data, g):
+            if force:
+                g["unrec"] = [u for u in g.get("unrec") or [] if u.get("path") not in done]
+            g.setdefault("files", []).extend(tmp["files"])
+            g.setdefault("unrec", []).extend(tmp["unrec"])
+        self._quick_commit(merge, QC.part_of(tmp["files"][0]["src"]) if tmp["files"] else None)
+
+    def quick_choose(self, dirs=False):
+        last = self.main.settings.value("last_dir", str(Path.home()))
+        if dirs:
+            d = QFileDialog.getExistingDirectory(self, T("qc_choose_dir"), last)
+            paths = [d] if d else []
+        else:
+            paths, _ = QFileDialog.getOpenFileNames(self, T("qc_choose"), last)
+        self.quick_add(paths)
+
+    def quick_remove(self, m):
+        from elucida.app import quick_compare as QC
+        if m is None or not (self.item or {}).get("quick"):
+            return
+        self.save()
+        self._quick_commit(lambda data, g: QC.remove_file(self.main, self.pdir, g, m["dir"]))
+
+    def quick_clear_unrec(self):
+        self._quick_commit(lambda data, g: g.update(unrec=[]))
+
+    def quick_rename(self, name):
+        name = name.strip()
+        if name and name != self.quick_name():
+            self.save()
+            self._quick_commit(lambda data, g: g.update(name=name))
+
+    def _quick_tabs(self):
+        """Je Art ein Reiter neben der Abbildung in fester Reihenfolge; ein anderer Reiter öffnet dessen Vergleich."""
+        from elucida.app import quick_compare as QC
+        data = PUB.load(self.pdir)
+        gid = self.item["quick"]
+        sibs = [x for x in data.get("comparisons") or [] if x.get("quick") == gid and x.get("part") is not None]
+        sibs.sort(key=lambda x: QC.PART_ORDER.index(x["part"]))
+        rt = self.tab.right_tabs
+        title = lambda x: f"{T('qc_part_' + x['part'])} ({len((x.get('st') or {}).get('members') or [])})"   # noqa: E731
+        pos = next((k for k, x in enumerate(sibs) if x["uid"] == self.item["uid"]), None)
+        if pos is None:
+            return
+        rt.setTabText(0, title(sibs[pos]))
+        for k, x in enumerate(sibs):
+            if k != pos:
+                w = QWidget()
+                w.setProperty("quick_uid", x["uid"])
+                rt.insertTab(k if k < pos else k, w, title(x))
+        rt.setCurrentIndex(pos)
+        rt.currentChanged.connect(lambda i: (u := rt.widget(i).property("quick_uid")) and QTimer.singleShot(
+            0, lambda: self.open(u)))
 
     def open(self, uid):
         if self.item is not None and self.item["uid"] == uid:
@@ -2757,10 +3755,13 @@ class ComparePage(QWidget):
         """„Aktualisieren“: Verbindungen ohne oder mit veraltetem Stand kurz öffnen und den Stand neu schreiben."""
         self.save()
         kind = (self.item or {}).get("kind")
-        dirs = [r["dir"] for r in self.records.values() if status(r, kind) in ("outdated", "missing")]
+        st = (self.item or {}).get("st")
+        dirs = [r["dir"] for r in self.records.values() if status(r, kind, st) in ("outdated", "missing")]
         uid = (self.item or {}).get("uid")
         pdir = self.pdir
-        n = refresh_compounds(self.main, pdir, dirs, needs(kind))
+        recs = {r["dir"]: r for r in self.records.values()}
+        keys = tuple(dict.fromkeys(k for d in dirs for k in recs[d]["stale"] + recs[d]["missing"]))  # geöffnet: alles
+        n = refresh_compounds(self.main, pdir, dirs, keys)
         self.pub.project_tabs.setCurrentWidget(self)
         self._dirty = True
         self.load(uid)

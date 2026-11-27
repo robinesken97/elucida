@@ -13726,7 +13726,7 @@ def _g_comparison(ctx):
             size_c_ = CMP.snapshot_path(dcmp_ / "S3").stat().st_size
             # ausgedünnte Kurven: Datei bleibt klein (seit Entscheidung 175 vier sichtbare CV-Messungen statt drei: Fc-Messung
             # im Beispiel sichtbar, ~222 kB)
-            assert size_c_ < 250_000, size_c_
+            assert size_c_ < 300_000, size_c_      # 1.5.0: dazu Overlay, Kinetik, SEC, H-Zelle, HRMS (~250 kB)
             r3_ = CMP.read_compound(dcmp_ / "S3")
             assert set(r3_["tabs"]) == set(CMP.SOURCES) and not r3_["stale"] and not r3_["missing"], r3_
             w.open_project(dcmp_ / "S3")
@@ -13754,12 +13754,13 @@ def _g_comparison(ctx):
             raw_["cv"]["cycle"] = 1 if raw_["cv"].get("cycle") != 1 else 2
             pf_.write_text(yaml_c_.safe_dump(raw_, allow_unicode=True, sort_keys=False), encoding="utf-8")
             r3_ = CMP.read_compound(dcmp_ / "S3")
-            assert r3_["stale"] == ["cv"] and "cv" not in r3_["tabs"] and CMP.status(r3_, "cv") == "outdated", r3_
+            # 1.5.0: SEC von S3 nimmt die Referenz aus dem CV-Tab -> sein Stand veraltet mit (Fingerabdruck fp_part)
+            assert r3_["stale"] == ["cv", "sec"] and "cv" not in r3_["tabs"] and CMP.status(r3_, "cv") == "outdated", r3_["stale"]
             assert CMP.auto_value("cv1_e12", r3_, {}) == ""   # veraltet: kein Wert (nie der alte)
             # ohne Stand (z. B. ältere Verbindung): fehlt -> Aktualisieren öffnet sie kurz
             CMP.snapshot_path(dcmp_ / "S2").unlink()
             r2_ = CMP.read_compound(dcmp_ / "S2")
-            assert r2_["missing"] == ["eps", "epr", "irms", "xray", "nmr"] and CMP.status(r2_, "table") == "missing", r2_
+            assert r2_["missing"] == ["eps", "epr", "irms", "xray", "nmr", "hrms", "syn"] and CMP.status(r2_, "table") == "missing", r2_
             w.open_publication(dcmp_)
             pp_c_ = w.pub_page
             cp_ = pp_c_.compare_page
@@ -13776,7 +13777,7 @@ def _g_comparison(ctx):
             assert all(cp_.preview_path(u_).exists() for u_ in ("demo0spectra", "demo00table")), "card previews"
             assert [x_.findChildren(QLabel, "recentSub")[0].text().split(" · ")[0] for x_ in cp_.cards] == \
                 [T("cmp_kind_spectra"), T("cmp_kind_table")]                # Art steht auf der Karte
-            assert [a_.text() for a_ in cp_.new_menu.actions()] == [T("cmp_new_" + k_) for k_ in CMP.KINDS]
+            assert [a_.text() for a_ in cp_.new_menu.actions()] == [T("cmp_new_" + k_) for k_ in CMP.KINDS] + ["", T("qc_new")]
             cp_.open("demo0spectra")
             assert cp_.opened and cp_.stack.currentWidget() is cp_.holder and pp_c_.head.isHidden() and w.side.isHidden()
             assert not w.btn_comp.isHidden() and w.btn_comp.text() == "UV-Vis S2 / S3", w.btn_comp.text()
@@ -13788,12 +13789,19 @@ def _g_comparison(ctx):
                 and not w.side.isHidden() and w.btn_comp.isHidden()
             cp_.open("demo00table")
             assert isinstance(cp_.tab, CMP.TableTab) and not cp_.tab.btn_refresh.isHidden()   # nur sichtbar, wenn nötig
-            assert cp_.refresh_snapshots() == 2
+            # 1.5.0: die Tabelle liest nur UV-Vis (Spalten) -> nur S2 (ohne Stand) wird geöffnet; S3s veraltetes CV/SEC
+            # betrifft sie nicht. Geöffnet wird dann alles erneuert, was der Verbindung fehlt (nicht nur UV-Vis)
+            assert CMP.needs("table", cp_.item["st"]) == ("eps",)
+            assert cp_.refresh_snapshots() == 1
             assert pp_c_.project_tabs.currentWidget() is cp_ and w.project_dir is None
-            for n_ in ("S2", "S3"):
-                r_ = cp_.records[n_]
-                assert not r_["stale"] and not r_["missing"], (n_, r_)
+            r_ = cp_.records["S2"]
+            assert not r_["stale"] and not r_["missing"], r_
+            assert cp_.records["S3"]["stale"] == ["cv", "sec"] and CMP.status(cp_.records["S3"], "table", cp_.item["st"]) == "ok"
             assert cp_.tab.btn_refresh.isHidden()
+            assert CMP.refresh_compounds(w, dcmp_, [dcmp_ / "S3"], ("cv", "sec")) == 1     # für die folgenden Abschnitte
+            cp_._dirty = True
+            cp_.load("demo00table")
+            assert not cp_.records["S3"]["stale"] and not cp_.records["S3"]["missing"], cp_.records["S3"]
             report.append(f"Comparison snapshots (written on save, same numbers as the tabs, {size_c_ // 1024} kB; "
                           f"outdated fingerprint, refresh of compounds without snapshot; tab opened in "
                           f"{open_s_:.2f} s): OK")
@@ -14281,6 +14289,9 @@ def _g_comparison(ctx):
             assert k_xr_ in known_ and "xr_sg" in known_ and "dft_homo" in known_ and "ir_band" in known_, sorted(known_)
             for k_ in (k_xr_, "xr_sg", "dft_eel", "dft_homo", "ir_band", "nmr_shift"):
                 tn_.add_auto(k_)
+            # 1.5.0: Stand je Zeile nach den Quellen der Spalten (echter Tabellen-Zustand)
+            assert CMP.needs("table", tn_.st) == ("xray", "dft", "irms", "nmr"), CMP.needs("table", tn_.st)
+            assert CMP.status(r2c_, "table", {"table": {"cols": tn_.tb["cols"][:1]}}) == "ok"   # nur Formel
             cols_ = tn_.tb["cols"]
             ir_c_, nmr_c_ = cols_[-2], cols_[-1]
             assert ir_c_["tol"] == 15 and ir_c_["target"] is None and nmr_c_["tol"] == 0.5 and nmr_c_["nuc"] == "1H"
@@ -15385,6 +15396,339 @@ def _g_comparison(ctx):
                 del cp_es.easyspin_text
             report.append("EasySpin start script from calculated couplings (garlic, MHz, g from fit or placeholder, ASCII, "
                           "MATLAB file name, failure leaves out only the script and is named): OK")
+        with section:
+            # 1.5.0 (lane s1vergleich): comparison snapshot also for Overlay/TD-DFT, UV-Vis kinetics, SEC, H-Cell and HRMS;
+            # written through the refresh path (tabs built, never shown), values as text exactly like the tab shows them,
+            # dependencies outside the own tab state (SEC reference from CV, HRMS formula) are part of the fingerprint
+            import types as types_s15
+            from elucida.tabs import uvkin as UVKIN_s15
+            import yaml as yaml_s15
+            from elucida.app import comparison as CMP_s15
+            dp_s15 = demo_pub(w, out / "demo_cmp15")
+            s3_s15 = dp_s15 / "S3"
+            CMP_s15.snapshot_path(s3_s15).unlink(missing_ok=True)
+            assert CMP_s15.read_compound(s3_s15)["missing"] == list(CMP_s15.SOURCES)
+            assert CMP_s15.status(CMP_s15.read_compound(dp_s15 / "S2"), "table") in ("ok", "missing")
+            n_s15 = CMP_s15.refresh_compounds(w, dp_s15, [s3_s15], CMP_s15.SOURCES)
+            r_s15 = CMP_s15.read_compound(s3_s15)
+            new_s15 = ("overlay", "uvkin", "sec", "hcell", "hrms", "syn")
+            assert n_s15 == 1 and not r_s15["missing"] and not r_s15["stale"] and set(new_s15) <= set(r_s15["tabs"]), r_s15
+            t_s15 = r_s15["tabs"]
+            w.open_project(s3_s15)
+            # H-Cell: retention, mean CE, first/last discharge like the summary table of the tab
+            w.hcell_tab.render()
+            e_h15, _d, rows_h15, sum_h15, _q, _src = w.hcell_tab.focus()
+            c_h15 = next(c_ for c_ in t_s15["hcell"]["cells"] if c_["uid"] == e_h15["uid"])
+            assert (c_h15["t_ret"], c_h15["t_ce"], c_h15["t_first"]) == (
+                f"{sum_h15['retention']:.1f}", f"{sum_h15['ce_mean']:.1f}", f"{sum_h15['first']['q_dis']:.3f}"), c_h15
+            assert len(c_h15["cycles"]) == len(rows_h15) and c_h15["cycles"][0][0] == rows_h15[0]["cycle"]
+            # UV-Vis kinetics: half-life and rest like the summary (unit of the tab), titration independent of the view
+            w.uvkin_tab.render()
+            for s_s15 in t_s15["uvkin"]["series"]:
+                sm_s15 = w.uvkin_tab.series_summary(s_s15["name"])
+                assert s_s15["t_rest"] == UVKIN_s15.fmt_pct(sm_s15["rest"]), (s_s15, sm_s15)
+                if sm_s15["fit"] is not None and sm_s15["fit"]["half"] is not None:
+                    assert s_s15["fit"]["t_half"] == f"{sm_s15['fit']['half']:.3g}", (s_s15, sm_s15)
+            assert t_s15["uvkin"]["unit"] == w.uvkin_tab.unit_used
+            assert t_s15["uvkin"]["titr"] is None or len(t_s15["uvkin"]["titr"]["eq"]) == len(w.uvkin_tab.titr_rows())
+            # SEC: first and last spectrum of the shown range with the potentials of the legend; quantity kept
+            w.sec_tab.render()
+            sec_s15 = t_s15["sec"]
+            assert [x_["role"] for x_ in sec_s15["spectra"]][0] == "start" and sec_s15["spectra"][-1]["role"] == "end"
+            assert sec_s15["quantity"] == w.sec_tab.st["quantity"] and sec_s15["ref"] == w.sec_tab.ref_label
+            for x_ in sec_s15["spectra"]:
+                assert len(x_["x"]) <= CMP_s15.CURVE_POINTS + 1 and (not x_["t_e"] or x_["t_e"] in w.sec_tab.lbl_range.text())
+            # Overlay: TD-DFT transitions as read (no shift), curve = broadened epsilon; linked epsilon entries left out
+            ov_s15 = t_s15["overlay"]["entries"]
+            assert all(not e_.get("link") for e_ in w.ov_tab.st["entries"] if any(o_["uid"] == e_.get("uid") for o_ in ov_s15))
+            calc_s15 = next(o_ for o_ in ov_s15 if o_["kind"] == "calc")
+            e_c15 = next(e_ for e_ in w.ov_tab.st["entries"] if e_.get("uid") == calc_s15["uid"])
+            E_c15, f_c15, _m = w.ov_tab.calc_data(e_c15)
+            strong_s15 = max(calc_s15["trans"], key=lambda t_: t_[2])
+            assert abs(strong_s15[2] - float(max(f_c15))) < 1e-5 and abs(strong_s15[1] - 1239.84198 / E_c15[int(np.argmax(f_c15))]) < 0.1
+            # HRMS: ion, calc., found and deviation like the check table of the tab
+            w.hrms_tab._update_ms()                                          # Prüftabelle füllt der Tab beim Zeichnen
+            tb_s15 = w.hrms_tab.tbl_ms
+            assert [t_s15["hrms"][k_] for k_ in ("calc", "found", "dev")] == [tb_s15.item(0, c_).text() for c_ in (1, 2, 3)], t_s15["hrms"]
+            assert t_s15["hrms"]["ok"] is True and t_s15["hrms"]["line"].startswith("HR-MS")
+            # fingerprint covers what the entry reads elsewhere; saving never builds a tab for it
+            fp_s15 = lambda st_: CMP_s15.fingerprint(CMP_s15.fp_part(st_, "sec"), s3_s15, "sec")     # noqa: E731
+            assert fp_s15({"sec": {"ref_from_cv": True}, "cv": {"cycle": 1}}) != fp_s15({"sec": {"ref_from_cv": True}, "cv": {"cycle": 2}})
+            assert fp_s15({"sec": {}, "cv": {"cycle": 1}}) == fp_s15({"sec": {}, "cv": {"cycle": 2}})
+            fake_s15 = types_s15.SimpleNamespace(_built=lambda k_: k_ == "sec")
+            assert not CMP_s15._ready(fake_s15, "sec", {"ref_from_cv": True}) and CMP_s15._ready(fake_s15, "sec", {})
+            # table columns of the new sources: the same text as the entry (= the tab), nothing for other compounds
+            r2_s15 = CMP_s15.read_compound(dp_s15 / "S2")
+            assert t_s15["syn"]["yield"] == "87" and r2_s15["tabs"]["syn"]["yield"] == "95", (t_s15["syn"], r2_s15["tabs"].get("syn"))
+            cols_s15 = CMP_s15.auto_columns([r_s15, r2_s15])
+            assert {k_ for ks_ in CMP_s15.NEW_COLS.values() for k_ in ks_} <= set(cols_s15)
+            assert all(CMP_s15.col_source(k_) in CMP_s15.SOURCES for k_ in cols_s15 if k_ not in ("formula", "mw", "mp")), \
+                [k_ for k_ in cols_s15 if CMP_s15.col_source(k_) not in CMP_s15.SOURCES]
+            av_s15 = lambda k_, r_=r_s15: CMP_s15.auto_value(k_, r_, {})                     # noqa: E731
+            assert (av_s15("hc_ret"), av_s15("hc_n"), av_s15("hrms_dev"), av_s15("hrms_found")) == (
+                c_h15["t_ret"], str(c_h15["n"]), t_s15["hrms"]["dev"], t_s15["hrms"]["found"])
+            assert av_s15("td_lam") == CMP_s15.core.fmt_lam(strong_s15[1]) and av_s15("td_f") == f"{strong_s15[2]:.3f}"
+            assert av_s15("uk_rest") == t_s15["uvkin"]["series"][0]["t_rest"] and av_s15("syn_yield") == "87"
+            assert av_s15("hc_ret", r2_s15) == "" and av_s15("uk_half", r2_s15) == "" and av_s15("td_lam", r2_s15) == ""
+            # what a comparison reads follows its columns / content: a table without HRMS asks for no HRMS refresh
+            tst_s15 = lambda *ks_: {"table": {"cols": [{"kind": "auto", "key": k_} for k_ in ks_]}}   # noqa: E731
+            assert CMP_s15.needs("table", tst_s15("formula", "uv_lam", "cv1_e12", "hrms_dev")) == ("eps", "cv", "hrms")
+            assert CMP_s15.needs("table", {"table": {"cols": [{"kind": "text", "key": "c1"}]}}) == ()
+            assert CMP_s15.needs("spectra", {"content": "abs_em"}) == ("eps", "fluo") and CMP_s15.needs("table") == CMP_s15.SOURCES
+            w.close_project()
+            pf_s15 = PRJ.project_file(s3_s15)
+            raw_s15 = yaml_s15.safe_load(pf_s15.read_text(encoding="utf-8"))
+            raw_s15["compound"]["formula"] = "C16H17N2"
+            pf_s15.write_text(yaml_s15.safe_dump(raw_s15, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            r_s15 = CMP_s15.read_compound(s3_s15)
+            assert r_s15["stale"] == ["hrms"] and "hrms" not in r_s15["tabs"], r_s15["stale"]
+            assert CMP_s15.status(r_s15, "table", tst_s15("uv_lam", "cv1_e12")) == "ok"
+            assert CMP_s15.status(r_s15, "table", tst_s15("uv_lam", "hrms_calc")) == "outdated"
+            assert CMP_s15.status(r_s15, "table") == "outdated"            # without the comparison: everything
+            report.append("Comparison snapshot 1.5.0: Overlay/TD-DFT, UV-Vis kinetics, SEC, H-Cell, HRMS and yield as shown in "
+                          "the tab, written on refresh, outside dependencies in the fingerprint, table columns, refresh "
+                          "only for the sources a comparison reads: OK")
+        with section:
+            # 1.5.0 (lane s1vergleich): quick comparison data layer -- each dropped file becomes one compound in the
+            # internal project, read by the loader of its tab (kind from the content, never from the open tab);
+            # unknown or ambiguous files are listed with a reason; the gallery and the recent list are not flooded
+            from PySide6.QtCore import QFile as QF_q15
+            from elucida.app import demo as DEMO_q15, quick_compare as QC_q15, publication as PUB_q15
+            from elucida.app import comparison as CMP_q15
+            inq_ = out / "quick15_in"
+            inq_.mkdir(parents=True, exist_ok=True)
+            E_q = np.concatenate([np.linspace(-0.2, 0.8, 120), np.linspace(0.8, -0.2, 120)])
+            DEMO_q15.write_dta(inq_ / "probe_a.DTA", [(E_q, 4 * np.exp(-((E_q - 0.4) / 0.06) ** 2) + 0.2 * E_q)], 100.0)
+            lam_q = np.arange(250.0, 701.0, 1.0)
+            DEMO_q15.cary_csv(inq_ / "probe_b.csv", [("probe_b", lam_q, 0.8 * np.exp(-((lam_q - 420) / 35) ** 2), None)])
+            hc_q = DEMO_q15.write_cycling(inq_ / "cell_c", "cell_c", 0.5, 0.002, [0.9, 0.85, 0.8], [0.98, 0.97, 0.97])
+            (inq_ / "report.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+            (inq_ / "notes.xyz1").write_text("x", encoding="utf-8")
+            (inq_ / "lonely").mkdir(exist_ok=True)
+            assert [QC_q15.detect(inq_ / n_)[0] for n_ in ("probe_a.DTA", "probe_b.csv", "cell_c", "report.pdf",
+                                                           "notes.xyz1", "lonely")] == ["cv", "eps", "hcell", None, None, None]
+            assert QC_q15.detect(hc_q)[0] == "hcell" and QC_q15.detect(inq_ / "cell_c")[2] == hc_q
+            qd_q = out / "quick15_data" / "Einzelauswertungen"
+            quick_keep_ = w.quick_dir
+            w.quick_dir = lambda: qd_q
+            try:
+                qd_q.mkdir(parents=True, exist_ok=True)
+                PUB_q15.create(qd_q, "Einzelauswertungen")
+                w.open_publication(qd_q)
+                w.new_compound_in_publication("own evaluation")       # eine Schnellauswertung: bleibt in der Übersicht
+                w.close_project()
+                rec_before_ = w.settings.value("recent_projects")
+                grp_q = {"name": "Quick", "files": [], "unrec": []}
+                t_q = time.perf_counter()
+                unrec_q = QC_q15.add_files(w, qd_q, grp_q, [inq_ / n_ for n_ in ("probe_a.DTA", "probe_b.csv", "cell_c",
+                                                                                 "report.pdf", "notes.xyz1")])
+                dt_q = (time.perf_counter() - t_q) / 3
+                fs_q = grp_q["files"]
+                assert [(f_["src"], f_["title"], f_["why"]) for f_ in fs_q] == [
+                    ("cv", "probe a", ""), ("eps", "probe b", "qc_why_eps_conc"), ("hcell", "cell c", "")], fs_q
+                assert [u_["why"] for u_ in unrec_q] == ["qc_why_pdf", "qc_why_unknown"] == \
+                    [u_["why"] for u_ in grp_q["unrec"]] and unrec_q[0]["path"] == str(inq_ / "report.pdf")
+                assert all(T(f_["why"]) != f_["why"] for f_ in fs_q + unrec_q if f_["why"])
+                assert w.settings.value("recent_projects") == rec_before_, "recent list must not change"
+                r_cv_q = CMP_q15.read_compound(qd_q / fs_q[0]["dir"], fs_q[0]["dir"])
+                f_cv_q = r_cv_q["tabs"]["cv"]["files"][0]
+                assert f_cv_q["std"] is None and r_cv_q["name"] == "probe_a"   # one file: no Fc reference, nothing invented
+                assert CMP_q15.read_compound(qd_q / fs_q[2]["dir"], fs_q[2]["dir"])["tabs"]["hcell"]["cells"]
+                # gallery: the file compounds stand in the comparison card, not as rows (20 files would flood it)
+                data_q = PUB_q15.load(qd_q)
+                data_q[QC_q15.GROUPS] = {"g15": grp_q}
+                items_q = QC_q15.sync_items(data_q, "g15", "Quick")
+                PUB_q15.save(qd_q, data_q)
+                assert [(x_["part"], x_["kind"], [m_["title"] for m_ in x_["st"]["members"]]) for x_ in items_q] == [
+                    ("cv", "cv", ["probe a"]), ("hcell", "hcell", ["cell c"]),
+                    ("eps", "spectra", ["probe b"])], items_q
+                assert items_q[0]["name"] == "Quick · " + T("qc_part_cv")
+                assert PUB_q15.load(qd_q)[QC_q15.GROUPS]["g15"]["files"] == fs_q        # Gruppe bleibt gespeichert
+                assert QC_q15.file_dirs(qd_q) == {(qd_q / f_["dir"]).resolve() for f_ in fs_q}
+                w.open_publication(qd_q)
+                pump(0.3)
+                rows_q = [Path(r_.info["path"]).name for r_ in w.pub_page.rows]
+                assert rows_q == ["own evaluation"], rows_q
+                # remove: the compound goes to the trash (never deleted), entry and rows of the kind comparisons go
+                trashed_q, real_q = [], QF_q15.moveToTrash
+                QF_q15.moveToTrash = staticmethod(lambda p_: trashed_q.append(p_) or True)
+                try:
+                    assert QC_q15.remove_file(w, qd_q, grp_q, fs_q[0]["dir"])
+                finally:
+                    QF_q15.moveToTrash = real_q
+                assert trashed_q == [str(qd_q / "probe_a")]
+                assert [f_["dir"] for f_ in grp_q["files"]] == ["probe_b", "cell_c"]
+                data_q = PUB_q15.load(qd_q)
+                data_q[QC_q15.GROUPS] = {"g15": grp_q}
+                assert [x_["part"] for x_ in QC_q15.sync_items(data_q, "g15", "Quick")] == ["hcell", "eps"]   # CV-Reiter weg
+                w.close_publication()
+            finally:
+                w.quick_dir = quick_keep_
+            report.append(f"Quick comparison data layer: kind from the file content (CV, UV-Vis, H-Cell folder), "
+                          f"PDF/unknown listed with reason, one compound per file ({dt_q:.2f} s each), gallery and recent "
+                          f"list unchanged, remove to trash: OK")
+        with section:
+            # 1.5.0 (lane s1vergleich): H-Cell comparison kind; several measurements of one compound as own rows
+            # (label shows the measurement, caption never "S3, S3 and S3", structure once per compound)
+            from elucida.app import comparison as CMP_m15
+            dp_m15 = demo_pub(w, out / "demo_cmp15m")
+            CMP_m15.refresh_compounds(w, dp_m15, [dp_m15 / "S3"], CMP_m15.SOURCES)   # Stand mit allen Quellen
+            w.open_publication(dp_m15)
+            pp_m15 = w.pub_page
+            cpm_ = pp_m15.compare_page
+            pp_m15.project_tabs.setCurrentWidget(cpm_)
+            pump(0.5)
+            assert [a_.text() for a_ in cpm_.new_menu.actions()][:len(CMP_m15.KINDS)] == [T("cmp_new_" + k_) for k_ in CMP_m15.KINDS]
+            assert "hcell" in CMP_m15.KINDS and CMP_m15.TAB_CLASS["hcell"] is CMP_m15.HCellCompareTab
+            cpm_.add("hcell")
+            pump(1.0)
+            th_ = cpm_.tab
+            assert isinstance(th_, CMP_m15.HCellCompareTab) and CMP_m15.default_chapter(cpm_.item) == "hcell"
+            rows_h_, _miss = th_.rows()
+            assert [r_[1]["name"] for r_ in rows_h_] == ["S3"], rows_h_     # S2 has no H-Cell measurement
+            spec_h_ = th_.figure_spec()
+            assert spec_h_ is not None and spec_h_[0]["ylabel"] == "capacity [%]" and spec_h_[0]["right_axis"]
+            c3_ = rows_h_[0][2]
+            dis_ = [cv_ for cv_ in spec_h_[1] if cv_.get("mfc") == "none"][0]
+            assert list(dis_["y"]) == [r_[4] for r_ in c3_["cycles"] if r_[4] is not None]   # % of the tab, unscaled
+            cap_h_ = th_.si_caption("x")
+            assert cap_h_.startswith("Symmetric charge–discharge H-cell cycling of <b>S3</b>"), cap_h_
+            th_.cmb_unit.setCurrentIndex(th_.cmb_unit.findData("mAh"))
+            th_.collect()
+            assert th_.figure_spec()[0]["ylabel"] == "capacity [mAh]"
+            # own fixed texts (core.figtexts) like every tab: card present, y title replaced in the figure, key gone again
+            ft_h_ = th_.build(th_.fig)
+            ky_h_ = next(r_["key"] for r_ in ft_h_.text_rows if r_["role"] == "y")
+            th_.st["text_over"] = {ky_h_: {"text": "own capacity"}}
+            assert th_.label_card is not None and any(a_.get_ylabel() == "own capacity" for a_ in th_.build(th_.fig).fig.axes)
+            th_.st.pop("text_over")
+            # UV-Vis kinetics kind: relative absorbance against time in a common unit (snapshot in s)
+            cpm_.add("uvkin")
+            pump(1.0)
+            tk_ = cpm_.tab
+            rows_k_, _miss = tk_.rows()
+            assert isinstance(tk_, CMP_m15.KineticsCompareTab) and [r_[1]["name"] for r_ in rows_k_] == ["S3"], rows_k_
+            spec_k_ = tk_.figure_spec()
+            sr_k_ = rows_k_[0][2]
+            u_k_ = rows_k_[0][1]["tabs"]["uvkin"]["unit"]                    # Einheit des Tabs der ersten Zeile
+            assert spec_k_[0]["xlabel"] == f"time [{u_k_}]" and \
+                abs(spec_k_[1][0]["x"][-1] * tk_.UNITS[u_k_] - sr_k_["t"][-1]) < 1e-6
+            assert "against time, relative to the first spectrum" in tk_.si_caption("x")
+            assert CMP_m15.default_chapter(cpm_.item) == "uvvis"
+            # chip "Show Fits" (default off, stored only when on): dashed first-order fit in the row colour, like the tab
+            assert "fits" not in tk_.st and not tk_.cb_fit.isChecked() and sr_k_["model"] is not None, sr_k_.get("model")
+            assert not any(c_.get("ls") == "--" for c_ in spec_k_[1]) and "Dashed" not in tk_.si_caption("x")
+            tk_.cb_fit.setChecked(True)
+            tk_.collect()
+            fit_k_ = [c_ for c_ in tk_.figure_spec()[1] if c_.get("ls") == "--"]
+            m_k_ = rows_k_[0][0]
+            assert tk_.st["fits"] is True and len(fit_k_) == 1 and fit_k_[0]["color"] == m_k_["color"], fit_k_
+            assert abs(fit_k_[0]["y"][0] - 100.0 * sr_k_["model"]["I0"] / sr_k_["a"][0]) < 1e-9
+            assert tk_.si_caption("x").endswith("Dashed lines: first-order fits.")
+            tk_.cb_fit.setChecked(False)
+            tk_.collect()
+            assert "fits" not in tk_.st and not any(c_.get("ls") == "--" for c_ in tk_.figure_spec()[1])
+            ft_k_ = tk_.build(tk_.fig)
+            kx_k_ = next(r_["key"] for r_ in ft_k_.text_rows if r_["role"] == "x")
+            assert kx_k_ == f"txt:x|time [{u_k_}]", kx_k_
+            tk_.st["text_over"] = {kx_k_: {"text": "own time"}}
+            assert tk_.label_card is not None and any(a_.get_xlabel() == "own time" for a_ in tk_.build(tk_.fig).fig.axes)
+            tk_.st.pop("text_over")
+            # spectra comparison: SEC end spectrum (absorbance, normalized) and TD-DFT curve (epsilon) as contents
+            cpm_.add("spectra")
+            pump(1.0)
+            ts_ = cpm_.tab
+            for c_, src_ in (("sec", "sec"), ("td", "overlay")):
+                ts_.st["content"] = c_
+                assert CMP_m15.needs("spectra", ts_.st) == (src_,)
+                sp_ = ts_.figure_spec()
+                assert sp_ is not None and [cv_["label"] for cv_ in sp_[1]] == ["S3"], (c_, sp_ and sp_[1])
+                if c_ == "sec":
+                    assert abs(float(np.nanmax(np.abs(sp_[1][0]["val"]))) - 1.0) < 1e-9
+                    assert ts_.si_caption("x").startswith("Spectra of <b>S3</b> at the end of the spectroelectrochemical")
+                else:
+                    c3_td_ = CMP_m15.td_calc(cpm_.records["S3"], {})
+                    assert abs(float(np.nanmax(sp_[1][0]["val"])) * 1000 - max(c3_td_["y"])) < 1e-6
+            # multi rows in the CV stack: + Measurement duplicates the row, the label names the scan rate
+            cpm_.add("cv")
+            pump(1.0)
+            tc_ = cpm_.tab
+            s3_row_ = next(i_ for i_, m_ in enumerate(tc_.members()) if m_["dir"] == "S3")
+            files_m_ = cpm_.records["S3"]["tabs"]["cv"]["files"]
+            tc_.tbl.selectRow(s3_row_)
+            assert not tc_.btn_del_meas.isEnabled()
+            tc_.add_measurement()
+            new_m_ = tc_.current_member()
+            assert new_m_["dir"] == "S3" and tc_.btn_del_meas.isEnabled()
+            new_m_["file"] = next(f_["uid"] for f_ in files_m_ if f_["rate"] != files_m_[0]["rate"])
+            tc_.fill_members()
+            labs_m_ = [tc_.label_of(m_) for m_ in tc_.drawn() if m_["dir"] == "S3"]
+            assert len(set(labs_m_)) == 2 and all(l_.startswith("S3 · ") and "mV s" in l_ for l_ in labs_m_), labs_m_
+            cap_m_ = tc_.si_caption("x")
+            assert cap_m_.count("<b>S3 · ") >= 2 and "<b>S3</b>, <b>S3</b>" not in cap_m_, cap_m_
+            # own label: edited in the list, used in the legend/caption
+            r_new_ = tc_.members().index(new_m_)
+            tc_.tbl.item(r_new_, 2).setText("fast scan")
+            assert new_m_["title"] == "fast scan" and "<b>fast scan</b>" in tc_.si_caption("x")
+            spec_m_ = tc_.figure_spec()
+            assert sum(1 for im_ in spec_m_[0]["images"] if str(im_.get("id")).startswith("struktur_")) <= \
+                len({m_["dir"] for m_ in tc_.drawn()})                      # structure once per compound
+            tc_.remove_measurement()
+            assert [m_["dir"] for m_ in tc_.members()].count("S3") == 1
+            w.close_publication()
+            report.append("Comparison 1.5.0: H-Cell kind (capacity like the tab, % only with Q_theo, caption), several "
+                          "measurements of one compound as own rows (label with scan rate or own text, structure once), kinetics with Show Fits chip: OK")
+        with section:
+            # 1.5.0 (lane s1vergleich): quick comparison UI -- start menu entry, empty comparison with drop area (no
+            # combined SI), files added through the page, one tab per kind (each a normal comparison), remove to trash
+            from PySide6.QtCore import QFile as QF_u15
+            from elucida.app import comparison as CMP_u15, demo as DEMO_u15, quick_compare as QC_u15
+            assert T("qc_new") in [a_.text() for a_ in w.btn_new.menu().actions()]
+            inu_ = out / "quick15ui_in"
+            inu_.mkdir(parents=True, exist_ok=True)
+            E_u = np.concatenate([np.linspace(-0.2, 0.8, 120), np.linspace(0.8, -0.2, 120)])
+            for n_, e0_ in (("cv_one", 0.3), ("cv_two", 0.5)):
+                DEMO_u15.write_dta(inu_ / f"{n_}.DTA", [(E_u, 4 * np.exp(-((E_u - e0_) / 0.06) ** 2))], 100.0)
+            DEMO_u15.write_cycling(inu_ / "cell_u", "cell_u", 0.5, 0.002, [0.9, 0.85, 0.8], [0.98, 0.97, 0.97])
+            (inu_ / "other.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+            qd_u = out / "quick15ui_data" / "Einzelauswertungen"
+            keep_u_ = w.quick_dir
+            w.quick_dir = lambda: qd_u
+            try:
+                assert w.quick_compare()
+                pump(0.5)
+                cpu_ = w.pub_page.compare_page
+                assert isinstance(cpu_.tab, CMP_u15.QuickEmpty) and cpu_.item["quick"] and not hasattr(cpu_.tab, "cb_si")
+                assert cpu_.tab.findChildren(CMP_u15.QuickDrop), "drop area"
+                cpu_.quick_add([str(inu_ / n_) for n_ in ("cv_one.DTA", "cv_two.DTA", "cell_u", "other.pdf")])
+                pump(0.8)
+                rt_u = cpu_.tab.right_tabs
+                assert [rt_u.tabText(i_) for i_ in range(2)] == [T("qc_part_cv") + " (2)", T("qc_part_hcell") + " (1)"]
+                assert isinstance(cpu_.tab, CMP_u15.CVStackTab) and [m_["title"] for m_ in cpu_.tab.members()] == ["cv one", "cv two"]
+                assert cpu_.tab.btn_add_meas.isHidden() and not hasattr(cpu_.tab, "cb_si")
+                assert [cpu_.tab.tbl.item(r_, 1).text() for r_ in range(2)] == ["cv_one.DTA", "cv_two.DTA"]
+                assert [u_["file"] for u_ in cpu_.quick_group()["unrec"]] == ["other.pdf"]
+                assert "<b>cv one</b> and <b>cv two</b>" in cpu_.tab.si_caption("x")
+                rt_u.setCurrentIndex(1)                                  # Reiter der anderen Art öffnet deren Vergleich
+                pump(0.8)
+                assert isinstance(cpu_.tab, CMP_u15.HCellCompareTab) and cpu_.tab.right_tabs.currentIndex() == 1
+                assert cpu_.tab.figure_spec() is not None
+                trashed_u, real_u = [], QF_u15.moveToTrash
+                QF_u15.moveToTrash = staticmethod(lambda p_: trashed_u.append(p_) or True)
+                try:
+                    cpu_.quick_remove(cpu_.tab.members()[0])
+                finally:
+                    QF_u15.moveToTrash = real_u
+                pump(0.5)
+                assert len(trashed_u) == 1 and isinstance(cpu_.tab, CMP_u15.CVStackTab)   # H-Zelle leer: Reiter weg
+                assert cpu_.tab.right_tabs.tabText(0) == T("qc_part_cv") + " (2)" and \
+                    QC_u15.file_dirs(qd_u) == {(qd_u / d_).resolve() for d_ in ("cv_one", "cv_two")}
+                assert not cpu_.can_undo(-1)                              # Entfernen ist kein Rückgängig-Schritt
+                w.close_publication()
+            finally:
+                w.quick_dir = keep_u_
+            report.append("Quick comparison UI: start menu entry, empty comparison with drop area and no combined SI, "
+                          "files through the page, one tab per kind (each a normal comparison), remove to trash: OK")
     finally:
         ctx.update(locals())
 

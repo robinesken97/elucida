@@ -131,6 +131,8 @@ def save(pdir, data):
         out["reaction_paths_si"] = dict(data["reaction_paths_si"])
     if data.get("comparisons"):           # Seite „Vergleich“: benannte Vergleiche über die Verbindungen
         out["comparisons"] = list(data["comparisons"])
+    if data.get("quick_groups"):          # Schnellvergleiche (nur „Einzelauswertungen“): Dateien je Gruppe (1.5.0)
+        out["quick_groups"] = dict(data["quick_groups"])
     if data.get("cv_setup"):              # CV-Messaufbau des Projekts: Anfangstext des Kapitels in der Gesamt-SI
         out["cv_setup"] = {k: str(v).strip() for k, v in data["cv_setup"].items() if k in CV_SETUP and str(v).strip()}
     if data.get("si_naming"):             # Bezeichner der Gesamt-SI („supplementary“: Nature), leer = wie die Vorlage

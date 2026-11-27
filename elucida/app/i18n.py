@@ -4487,8 +4487,8 @@ TEXTS = {
     "cmp_new_spectra": ("Spektren", "Spectra"),
     "cmp_new_table": ("Tabelle", "Table"),
     "cmp_new": ("Neuer Vergleich …", "New comparison …"),
-    "cmp_new_hint": ("CV-Stapel, Spektren oder Eigenschaftstabelle über mehrere Verbindungen hinweg.",
-                     "CV stack, spectra or property table across several compounds."),
+    "cmp_new_hint": ("CV-Stapel, Spektren, H-Zelle, UV-Vis-Kinetik oder Eigenschaftstabelle über mehrere Verbindungen "
+                     "hinweg.", "CV stack, spectra, H-Cell, UV-Vis kinetics or property table across several compounds."),
     "cmp_new_cv_tip": ("Neuer Vergleich: je Verbindung ein Cyclovoltammogramm, versetzt übereinander",
                        "New comparison: one cyclic voltammogram per compound, stacked"),
     "cmp_new_spectra_tip": ("Neuer Vergleich: UV-Vis- und/oder Emissionsspektren mehrerer Verbindungen in einem Bild",
@@ -6488,6 +6488,141 @@ TEXTS.update({                                            # s3texte: Karten fest
     "lab_card_nto": ("Beschriftungen: NTO", "Labels: NTO"),
 })
 
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): Tabellenspalten der neuen Quellen
+    "cmp_col_syn_yield": ("Synthese: Ausbeute [%]", "Synthesis: yield [%]"),
+    "cmp_col_hrms_ion": ("HRMS: Ion", "HRMS: ion"),
+    "cmp_col_hrms_calc": ("HRMS: m/z ber.", "HRMS: m/z calc."),
+    "cmp_col_hrms_found": ("HRMS: m/z gef.", "HRMS: m/z found"),
+    "cmp_col_hrms_dev": ("HRMS: Δ [ppm]", "HRMS: Δ [ppm]"),
+    "cmp_col_td_lam": ("TD-DFT: λ des stärksten Übergangs", "TD-DFT: λ of the strongest transition"),
+    "cmp_col_td_f": ("TD-DFT: f des stärksten Übergangs", "TD-DFT: f of the strongest transition"),
+    "cmp_col_td_E": ("TD-DFT: E des stärksten Übergangs", "TD-DFT: E of the strongest transition"),
+    "cmp_col_uk_lam": ("Kinetik: λ", "Kinetics: λ"),
+    "cmp_col_uk_rest": ("Kinetik: verbleibend [%]", "Kinetics: remaining [%]"),
+    "cmp_col_uk_half": ("Kinetik: t½", "Kinetics: t½"),
+    "cmp_col_sec_e12": ("SEC: E½ (scheinbar, Nernst-Fit)", "SEC: E½ (apparent, Nernst fit)"),
+    "cmp_col_sec_ref": ("SEC: Referenz", "SEC: reference"),
+    "cmp_col_hc_q": ("H-Zelle: Q_theo [mAh]", "H-Cell: Q_theo [mAh]"),
+    "cmp_col_hc_first": ("H-Zelle: Entladen, 1. Zyklus [mAh]", "H-Cell: discharge, first cycle [mAh]"),
+    "cmp_col_hc_last": ("H-Zelle: Entladen, letzter Zyklus [mAh]", "H-Cell: discharge, last cycle [mAh]"),
+    "cmp_col_hc_ret": ("H-Zelle: Erhalt [%]", "H-Cell: retention [%]"),
+    "cmp_col_hc_ce": ("H-Zelle: mittlere CE [%]", "H-Cell: mean CE [%]"),
+    "cmp_col_hc_n": ("H-Zelle: Zyklen", "H-Cell: cycles"),
+    "cmp_col_hc_h": ("H-Zelle: Dauer [h]", "H-Cell: duration [h]"),
+})
+
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): Schnellvergleich, Gründe „nicht erkannt“
+    "qc_why_folder": ("Ordner ohne erkannte Messung (TopSpin-NMR, Bruker-.d oder H-Zelle mit CHARGE_DISCHARGE/)",
+                      "Folder without a recognized measurement (TopSpin NMR, Bruker .d or H-Cell with CHARGE_DISCHARGE/)"),
+    "qc_why_missing": ("Datei nicht gefunden", "File not found"),
+    "qc_why_hcell": ("Lade/Entlade-Messung ohne Ordner CHARGE_DISCHARGE/ daneben – den ganzen Ordner ablegen",
+                     "Charge/discharge measurement without the CHARGE_DISCHARGE/ folder next to it – drop the whole folder"),
+    "qc_why_pdf": ("PDF: HRMS-Bericht oder IR-Spektrum? Nicht eindeutig", "PDF: HRMS report or IR spectrum? Not unique"),
+    "qc_why_unknown": ("Unbekanntes Dateiformat", "Unknown file format"),
+    "qc_why_create": ("Verbindung konnte nicht angelegt werden", "Compound could not be created"),
+})
+
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): Vergleichsart H-Zelle
+    "cmp_new_hcell": ("H-Zelle", "H-Cell"),
+    "cmp_new_hcell_tip": ("Neuer Vergleich: Kapazität gegen Zyklus mehrerer Lade/Entlade-Messungen in einem Bild",
+                          "New comparison: capacity versus cycle of several charge/discharge measurements in one figure"),
+    "cmp_kind_hcell": ("H-Zelle", "H-Cell"),
+    "cmp_hc_unit": ("Kapazität", "Capacity"),
+    "cmp_hc_ce": ("Coulomb-Effizienz (rechte Achse)", "Coulombic efficiency (right axis)"),
+})
+
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): mehrere Messungen einer Verbindung
+    "cmp_title": ("Beschriftung", "Label"),
+    "cmp_title_tip": ("Beschriftung im Bild, in der Legende und in der Unterschrift (Doppelklick ändert; leer = "
+                      "Name der Verbindung, bei mehreren Zeilen mit der Messung)",
+                      "Label in the figure, legend and caption (double-click to change; empty = name of the compound, "
+                      "with the measurement when it has several rows)"),
+    "cmp_add_meas": ("+ Messung", "+ Measurement"),
+    "cmp_add_meas_tip": ("Weitere Messung der gewählten Verbindung als eigene Zeile; welche, wählt die Karte darunter",
+                         "Another measurement of the selected compound as its own row; choose which in the card below"),
+    "cmp_del_meas_tip": ("Diese weitere Zeile der Verbindung entfernen", "Remove this additional row of the compound"),
+})
+
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): Schnellvergleich (Oberfläche)
+    "qc_new": ("Schnellvergleich", "Quick comparison"),
+    "qc_new_tip": ("Dateien ablegen und sofort vergleichen – jede Datei wird eine Einzelauswertung im internen Projekt "
+                   "„Einzelauswertungen“", "Drop files and compare them at once – each file becomes a quick evaluation "
+                   "in the internal project “Quick evaluations”"),
+    "qc_name": ("Schnellvergleich {date}", "Quick comparison {date}"),
+    "qc_add": ("Dateien hinzufügen", "Add Files"),
+    "qc_drop": ("Dateien oder Ordner hierher ziehen", "Drop files or folders here"),
+    "qc_drop_sub": ("CV, H-Zelle, UV-Vis, IR, EPR, SEC, NMR, HRMS, X-Ray, DFT – die Art wird aus der Datei erkannt",
+                    "CV, H-cell, UV-Vis, IR, EPR, SEC, NMR, HRMS, X-ray, DFT – the kind is read from the file"),
+    "qc_choose": ("Dateien wählen …", "Choose Files …"),
+    "qc_choose_dir": ("Ordner wählen …", "Choose Folder …"),
+    "qc_files": ("Dateien", "Files"),
+    "qc_file": ("Datei", "File"),
+    "qc_reason": ("Grund", "Reason"),
+    "qc_kind": ("Art", "Kind"),
+    "qc_unrec": ("Nicht erkannt", "Not Recognized"),
+    "qc_unrec_hint": ("Nicht geraten: Art wählen, wo zwei in Frage kommen, oder die Datei im passenden Tab einer "
+                      "Verbindung öffnen.", "Not guessed: choose the kind where two are possible, or open the file in "
+                      "the matching tab of a compound."),
+    "qc_unrec_clear": ("Liste leeren", "Clear List"),
+    "qc_pick": ("Art wählen …", "Choose kind …"),
+    "qc_src_hrms": ("HRMS-Bericht", "HRMS report"),
+    "qc_src_irms": ("IR-Spektrum", "IR spectrum"),
+    "qc_remove_tip": ("Gewählte Datei entfernen (ihre Einzelauswertung kommt in den Papierkorb)",
+                      "Remove the selected file (its quick evaluation goes to the trash)"),
+    "qc_part_cv": ("CV", "CV"),
+    "qc_part_hcell": ("H-Zelle", "H-Cell"),
+    "qc_part_eps": ("UV-Vis", "UV-Vis"),
+    "qc_part_irms": ("IR", "IR"),
+    "qc_part_epr": ("EPR", "EPR"),
+    "qc_part_table": ("Tabelle", "Table"),
+    "guide_quick_title": ("Schnellvergleich: Dateien ablegen, gleiche Arten kommen in ein Bild",
+                          "Quick comparison: drop files, files of one kind share a figure"),
+    "guide_quick_files": ("Daten: Messdateien und -ordner (CV, H-Zelle, UV-Vis, IR, EPR, SEC, NMR, HRMS, X-Ray, DFT); "
+                          "jede wird eine Einzelauswertung, ausgewertet wie im Tab",
+                          "Data: measurement files and folders (CV, H-cell, UV-Vis, IR, EPR, SEC, NMR, HRMS, X-ray, DFT); "
+                          "each becomes a quick evaluation, evaluated like in the tab"),
+    "guide_quick_steps": ("Dateien links ablegen oder „Dateien wählen …“\nJe Art ein Reiter rechts; Beschriftung und "
+                          "Farbe in der Liste ändern\nExportieren wie jeden Vergleich",
+                          "Drop files on the left or use “Choose Files …”\nOne tab per kind on the right; change label "
+                          "and colour in the list\nExport like any comparison"),
+})
+
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): Vergleichsart UV-Vis-Kinetik
+    "cmp_new_uvkin": ("UV-Vis-Kinetik", "UV-Vis Kinetics"),
+    "cmp_new_uvkin_tip": ("Neuer Vergleich: Absorbanz gegen die Zeit mehrerer Kinetik-Reihen in einem Bild",
+                          "New comparison: absorbance against time of several kinetics series in one figure"),
+    "cmp_kind_uvkin": ("UV-Vis-Kinetik", "UV-Vis kinetics"),
+    "cmp_uk_series": ("Reihe", "Series"),
+    "cmp_uk_tunit": ("Zeiteinheit", "Time unit"),
+    "cmp_uk_y": ("Absorbanz", "Absorbance"),
+    "cmp_uk_rel": ("relativ zum ersten Spektrum [%]", "relative to the first spectrum [%]"),
+    "cmp_uk_abs": ("absolut", "absolute"),
+})
+TEXTS.update({"cmp_uk_tauto": ("wie im Tab (erste Zeile)", "as in the tab (first row)")})   # Spur s1vergleich
+TEXTS.update({"cmp_hrms_dev_tip": ("Abweichung über 5 ppm (wie in der Prüftabelle des HRMS-Tabs)",   # Spur s1vergleich
+                                   "Deviation above 5 ppm (as in the check table of the HRMS tab)")})
+TEXTS.update({                                      # Spur s1vergleich (1.5.0): SEC und TD-DFT im Spektrenvergleich
+    "cmp_content_sec": ("SEC: Endspektrum (normiert)", "SEC: end spectrum (normalized)"),
+    "cmp_content_td": ("TD-DFT: berechnetes Spektrum (ε)", "TD-DFT: calculated spectrum (ε)"),
+    "cmp_sec_refused": ("Nicht im Bild (SEC als Rohsignal, nicht als Absorbanz): {names}",
+                        "Not in the figure (SEC as raw signal, not absorbance): {names}"),
+})
+TEXTS.update({"qc_part_sec": ("SEC", "SEC")})       # Spur s1vergleich: Reiter des Schnellvergleichs
+TEXTS.update({                                      # Spur s1vergleich: Grund je Datei im Schnellvergleich
+    "qc_st_novalues": ("ohne Werte", "no values"),
+    "qc_why_eps_conc": ("Gelesen, aber ohne Konzentrationen: kein ε. Doppelklick auf die Datei öffnet die "
+                        "Einzelauswertung zum Eintragen.", "Read, but without concentrations: no ε. Double-click the "
+                        "file to open the quick evaluation and enter them."),
+    "qc_why_novalues": ("Gelesen, aber ohne auswertbare Werte (Doppelklick auf die Datei öffnet die Einzelauswertung)",
+                        "Read, but without values to compare (double-click the file to open the quick evaluation)"),
+})
+TEXTS.update({                                      # Spur s1vergleich: Hinweise zu Regeln ui.md
+    "cmp_del_meas_off": ("Nur weitere Messungen einer Verbindung lassen sich entfernen; die letzte Zeile abwählen",
+                         "Only additional measurements of a compound can be removed; untick the last row instead"),
+    "qc_pick_none": ("Für diese Datei gibt es keine Wahl: im passenden Tab einer Verbindung öffnen",
+                     "No choice for this file: open it in the matching tab of a compound"),
+})
+TEXTS.update({"cmp_uk_fits": ("Fits zeigen", "Show Fits")})   # Spur s1vergleich: Kinetik-Vergleich (Robin 2026-11-27)
 # NTO-Strukturen drehbar (1.5.0, Spur s2bnto)
 TEXTS.update({
     "nto_view": ("Ansicht", "View"),

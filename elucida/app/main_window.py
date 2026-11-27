@@ -2467,7 +2467,8 @@ class MainWindow(QMainWindow):
         m = QMenu(self.btn_new)
         m.setToolTipsVisible(True)
         for key, tip, fn in (("act_new_publication", "act_new_publication_tip", self.new_publication),
-                             ("act_new_project", None, self.new_project), ("act_quick", "act_quick_tip", self.quick_evaluation)):
+                             ("act_new_project", None, self.new_project), ("act_quick", "act_quick_tip", self.quick_evaluation),
+                             ("qc_new", "qc_new_tip", self.quick_compare)):        # 1.5.0: Schnellvergleich
             a = m.addAction(T(key), lambda f=fn: f())
             if tip:
                 a.setToolTip(T(tip))
@@ -5378,6 +5379,11 @@ class MainWindow(QMainWindow):
             return False
         self.add_recent_publication(q)
         return self.new_compound_in_publication(name)
+
+    def quick_compare(self):
+        """Schnellvergleich (1.5.0): Dateien ablegen und sofort vergleichen (elucida/app/quick_compare.py)."""
+        from elucida.app import quick_compare as QC
+        return QC.new_quick(self)
 
     def retire_exports(self, key, out):
         """Nach einem Export des Tabs `key`: was der vorige Export schrieb und dieser nicht mehr, in den Papierkorb
