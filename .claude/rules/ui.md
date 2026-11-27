@@ -38,7 +38,9 @@ paths:
   sonst der Knopf der Anleitung. Hauptknopf gleich groß wie die anderen, Schrift 600 statt 500, nie fett. Tabs
   behalten die Gruppenüberschriften (Nutzerwunsch); Tab-Text hell = dort liegen Daten, gedimmt = leer (`NavTab`, Tab bleibt symmetrisch). Auswahl mit
   Häkchen immer als Tabelle (`STYLE.check_table`/`check_row`: mittig, Datenspalten gleich breit, Nutzerwunsch).
-  Ausnahme Tab Export: kein blauer Hauptknopf; die Ausgabeknöpfe Bilder, Tabellen, PPTX und SI (Word) sind gleichrangig, Blau heißt dort nur „ausgewählt“ (Nutzerwunsch 2026-11-20).
+  Ausnahme Tab Export: kein blauer Hauptknopf; die Ausgabeknöpfe Bilder, Tabellen, PPTX und SI (Word) sind gleichrangig, Auswahl der Kacheln ohne Blau: gewählt = kleiner grauer Haken auf der Vorschau, abgewählt = leerer
+  Kreis + blasse Vorschau + grauer Name; Zählmarken grau; Kachelfläche neutral, Platzhalter grau, der farbige Punkt der
+  Datenart und der Farbstreifen der Projektseite bleiben (Nutzerwunsch 2026-11-27).
 - Navigation: Tabs in vier Gruppen als Leiste **oben** (`nav_bar`, `NAV_GROUPS`), Reiter ausgeblendet. Keine Leisten
   links/rechts: die Vorschau ist in der Breite begrenzt (Seitenleiste −20 % Abbildung, gemessen); Selbsttest verlangt
   bei 1440 × 900 Abbildungsbreite ≥ halbe Fensterbreite. Leere Tabs: Anleitung (`EmptyGuide`, `guide_<tab>_*`), Hinweise
@@ -92,7 +94,8 @@ paths:
   werden **Chips** (`ChipRow`, die QCheckBox-Objekte mit Eigenschaft `chip`, die ganze Pille schaltet) gesammelt in einer
   Zeile „Optionen“ hinter den Feldern der Karte, im Schritt Darstellung „Im Bild“; beschriftete Zeilen (Formate) bleiben
   an ihrem Platz, ebenso Kästchen mit `chip_here` (gehört zum Feld direkt darüber) und Kästchen neben einem Feld (Chip
-  darunter). Chip-Text kurz (≤ ~25 Zeichen), Langform als `<key>_long`. (2) Schalter + Wert = **ein Feld mit „aus“**
+  darunter). Chip-Text kurz (≤ ~25 Zeichen), Langform als `<key>_long`. An/aus über Fläche und Text, nicht nur über den Rand: an = graue Fläche (`sel`), dunkler
+  Rand (`border_strong`), Textfarbe; aus = feiner Rand (`border`), grauer Text (Nutzerwunsch 2026-11-27). (2) Schalter + Wert = **ein Feld mit „aus“**
   (`_make_off_spin`: ☑ + Zahlenfeld in einer Zeile automatisch, getrennte Zeilen über `STYLE.off_spin(cb, spin)`; ☑ +
   Auswahlliste: `_make_off_combo`); Kästchen und Feld des Tabs bleiben verborgen als Träger, der Wert bleibt bei „aus“
   erhalten. (3) ☑ gesamt/auto + von–bis = **Felder zeigen „auto“** (`AutoRange`; Klick = eigene Grenzen, geleertes Feld =
@@ -115,7 +118,8 @@ paths:
   (Mathtext: Arial hat kein hochgestelltes Minus). Stoffnamen und Formeln, die nur angezeigt werden: `SI.chem_name_html`
   (Tabellen über `STYLE.RichDelegate`) bzw. `SI.chem_plain` (tiefgestellte Ziffern, kursive Lokanten N,N-, tert-, n-).
 - Tabellen überall gleich (zentral in `tidy`): kein Gitter, feine Linie unter jeder Zeile und Luft in den Zellen
-  (`_CellDelegate`), kein Zeilenumbruch in Zellen; Tabellen der linken Spalte nie mit Querrollen (schmale Spalten nach
+  (`_CellDelegate`), kein Zeilenumbruch in Zellen. Gewählte Zeile: graue Fläche (`sel`) + 3-px-Akzentstrich links, Text in
+  Textfarbe; Blau bleibt nur für die Textauswahl in Feldern (Nutzerwunsch 2026-11-27); Tabellen der linken Spalte nie mit Querrollen (schmale Spalten nach
   Inhalt, eine nimmt den Rest). Kästchen stehen in einer **eigenen schmalen Spalte ohne Kopftext** (`STYLE.check_columns`,
   feste Breite `CHECK_COL_W`), nie mit Text in einer Zelle (Nutzerwunsch 2026-11-11, „genug Platz zum Abwählen“); soll die
   Textspalte ihre Nummer behalten, kommt der Text in eine neue letzte Spalte, die mit `moveSection` gleich hinter dem
@@ -293,7 +297,7 @@ paths:
 - Tab-Rahmen in Schritten (Nutzerwunsch 2026-11-10, Entwurf `Tabs.dc.html` im Mockup; `tabs/base.py`): links
   `StepColumn` verteilt die Karten nach Titel (`STEP_TITLES`) auf bis zu drei Seiten, Standard Daten · Auswertung ·
   Darstellung, je Tab eigene Namen über `STEP_LABELS`; neue Karten dort eintragen, sonst landen sie im ersten Schritt. Die
-  Schrittleiste steht immer (auch bei einem Schritt): Karten links und Seite rechts beginnen in jedem Tab auf derselben Höhe.
+  Schrittleiste steht immer (auch bei einem Schritt; dann ohne Nummernkreis, nur der Name): Karten links und Seite rechts beginnen in jedem Tab auf derselben Höhe.
   Punkt am Schritt = Abweichung vom Standard, Schritt je Tab in QSettings `step/<Tab>`; ein Feld in einem anderen Schritt vor
   dem Fokussieren mit `steps.reveal(widget)` zeigen. Rechts immer `result_tabs` (auch mit nur „Abbildung“). Fußleisten links
   und rechts über `side_bar` gleich hoch (`BAR_MIN_H`), alle Knöpfe darin `BAR_H`: links Zurücksetzen, Vorlagen, „Weiter: …“,
