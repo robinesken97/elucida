@@ -402,7 +402,7 @@ def doc_to_html(doc):
 
 # ---------------------------------------------------------------------------- Tab
 from PySide6.QtCore import Qt, QTimer  # noqa: E402
-from PySide6.QtGui import QFont, QImage, QPixmap, QTextCharFormat  # noqa: E402
+from PySide6.QtGui import QFont, QImage, QPixmap, QTextCharFormat, QTextCursor  # noqa: E402
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame, QGroupBox,  # noqa: E402
                                QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QScrollArea, QSplitter, QStackedWidget,
                                QInputDialog, QMessageBox, QTableWidget, QTableWidgetItem, QTextBrowser, QTextEdit, QVBoxLayout, QWidget)
@@ -1270,23 +1270,40 @@ class ProcEdit(QTextEdit):
         super().insertFromMimeData(source)
 
 
+def _sel_all(edit, test):
+    """Gilt test für jedes Zeichen der Auswahl? Ohne Auswahl: für das Format beim Weitertippen. Nicht das Zeichen vor
+    der Auswahl (currentCharFormat): sonst schaltete X² eine „2“ hinter hochgestelltem „nm“ zurück statt hoch."""
+    c = edit.textCursor()
+    if not c.hasSelection():
+        return test(edit.currentCharFormat())
+    doc, k = edit.document(), QTextCursor(edit.document())
+    for p in range(c.selectionStart(), c.selectionEnd()):
+        if doc.characterAt(p) in ("\u2029", "\n"):             # Absatzende: kein Zeichen mit Format
+            continue
+        k.setPosition(p + 1)                                 # charFormat = Zeichen vor der Position
+        if not test(k.charFormat()):
+            return False
+    return True
+
+
 def format_buttons(edit):
     """Knöpfe B, I, X₂, X² für einen Editor (Vorschrift; Karte „Beschriftungen im Bild“): wirken auf die Auswahl bzw.
-    das Weitertippen. Ohne Fokus, damit das Feld beim Klick seine Auswahl behält (und nicht vorher übernimmt)."""
+    das Weitertippen; schon ganz so formatiert -> zurück. Ohne Fokus, damit das Feld beim Klick seine Auswahl behält."""
     def bold():
         f = QTextCharFormat()
-        f.setFontWeight(QFont.Weight.Normal if _weight(edit.fontWeight()) >= _weight(QFont.Weight.Bold)
-                        else QFont.Weight.Bold)
+        on = _sel_all(edit, lambda cf: _weight(cf.fontWeight()) >= _weight(QFont.Weight.Bold))
+        f.setFontWeight(QFont.Weight.Normal if on else QFont.Weight.Bold)
         edit.mergeCurrentCharFormat(f)
 
     def italic():
         f = QTextCharFormat()
-        f.setFontItalic(not edit.fontItalic())
+        f.setFontItalic(not _sel_all(edit, lambda cf: cf.fontItalic()))
         edit.mergeCurrentCharFormat(f)
 
     def valign(al):
         f = QTextCharFormat()
-        f.setVerticalAlignment(QTextCharFormat.AlignNormal if edit.currentCharFormat().verticalAlignment() == al else al)
+        f.setVerticalAlignment(QTextCharFormat.AlignNormal if _sel_all(edit, lambda cf: cf.verticalAlignment() == al)
+                               else al)
         edit.mergeCurrentCharFormat(f)
     out = []
     for txt, fn, tip in (("B", bold, T("syn_bold")), ("I", italic, T("syn_italic")),

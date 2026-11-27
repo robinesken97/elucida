@@ -28,6 +28,7 @@ from elucida.app import canvas_theme as CANVAS
 from elucida.app import style as STYLE
 from elucida.app.canvas_theme import register as register_canvas
 from elucida.app.i18n import T
+from elucida.core import figtexts as FT
 from elucida.core import uvvis as core
 from elucida.tabs import base as TABS
 
@@ -384,6 +385,7 @@ class NMRView(QWidget):
         self._boxes = {}
         self.cfg = core.deep_merge(core.DEFAULTS, {})
         self.cfg["font_size"] = 11.0                         # Bildschirmansicht, nicht die SI-Abbildung
+        self.get_text_over, self.after_draw, self.text_rows = None, None, []   # Karte „Beschriftungen im Bild“
         core.setup_fonts(plt, self.cfg)                       # vor den Achsen: ihre Texte merken sich den Mathtext-Satz
         self.fig = MplFigure(figsize=(8, 5), dpi=TABS.PREVIEW_DPI)
         self.canvas = register_canvas(FigureCanvasQTAgg(self.fig))
@@ -948,6 +950,7 @@ class NMRView(QWidget):
             self._insets_ov()
             self._marks_ov()
             self._traces_ov()
+            self.text_rows = FT.apply(self.fig, self, self.get_text_over() if self.get_text_over else None)
         finally:
             self._sync_delete()
             if self.screen:                                  # Hinweise der Zeichnung (Labels zu dicht, kein Platz)
@@ -956,6 +959,8 @@ class NMRView(QWidget):
             if self.selected != self._last_sel:
                 self._last_sel = self.selected
                 self.selection_changed.emit(self.selected)
+            if self.after_draw is not None:
+                self.after_draw()
 
     def _add(self, a):
         self._ov.append(a)
@@ -1013,6 +1018,8 @@ class NMRView(QWidget):
         texts = [self._add(self.ax.text(0.004, base, text, transform=tr, fontsize=self.opts["axis_font_size"], color=col,
                                         style="italic" if it else "normal", ha="left", va="bottom", zorder=5))
                  for text, _x, _y, base, _h, col, it in labels]
+        for t_ in texts:                                   # Namen wie die Legende des Überlagerns: Karte „Beschriftungen“
+            t_._elu_role = "legend"
         try:                                               # breiteste Beschriftung als Anteil der Achse
             r = self.fig.canvas.get_renderer()
             frac = max(t_.get_window_extent(r).width for t_ in texts) / max(self.ax.bbox.width, 1.0)
@@ -1058,8 +1065,9 @@ class NMRView(QWidget):
     def _title(self):
         if self.opts["title"] and self.title:
             bb = self.ax.bbox
-            self._add(self.fig.text(bb.x0 / self.fig.bbox.width, 1 - 6 * self.fig.dpi / 72 / self.fig.bbox.height,
-                                    self.title, va="top", ha="left", fontsize=self.cfg["font_size"]))
+            t = self._add(self.fig.text(bb.x0 / self.fig.bbox.width, 1 - 6 * self.fig.dpi / 72 / self.fig.bbox.height,
+                                        self.title, va="top", ha="left", fontsize=self.cfg["font_size"]))
+            t._elu_role = "title"                          # fester Text der Abbildung (core.figtexts)
 
     def _row_items(self, parts=None):
         """Peaks und Lösungsmittel der Labelreihe (in parts oder im sichtbaren Bereich) -> [(x, Text, Farbe, Größe)]."""
@@ -1966,6 +1974,7 @@ class NMR2DView(QWidget):
         self.xlim = self.ylim = None
         self.cfg = core.deep_merge(core.DEFAULTS, {})
         self.cfg["font_size"] = 11.0
+        self.get_text_over, self.after_draw, self.text_rows = None, None, []   # Karte „Beschriftungen im Bild“
         self.fig = MplFigure(figsize=(8, 6), dpi=TABS.PREVIEW_DPI)
         self.canvas = register_canvas(FigureCanvasQTAgg(self.fig))
         self.host = _Host(self.canvas, self.fig, page=True)
@@ -2053,8 +2062,11 @@ class NMR2DView(QWidget):
         for sp in ax.spines.values():
             sp.set_linewidth(0.5)
         self.ax = ax
+        self.text_rows = FT.apply(fig, self, self.get_text_over() if self.get_text_over else None)
         if fig is self.fig:
             self.canvas.draw_idle()
+            if self.after_draw is not None:
+                self.after_draw()
 
     def export_svg(self, path, w_cm=16.0, h_cm=11.0):
         """Dieselbe Ansicht als SVG für die SI (eigene Figure, weißer Grund)."""

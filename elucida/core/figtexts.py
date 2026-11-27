@@ -116,6 +116,7 @@ def items(fig, F=None):
             out += [(pre + "head", cells[k].get_text()) for k in sorted(cells) if k[0] == 0]
     for leg in fig.legends:
         out += [("fig.legend", t) for t in leg.get_texts()]
+    out += [("fig." + t._elu_role, t) for t in fig.texts if getattr(t, "_elu_role", None)]   # z. B. NMR-Titel
     if getattr(fig, "_suptitle", None) is not None:
         out.append(("fig.title", fig._suptitle))
     # Texte mit eigenem Feld der Seite (Energieprofil: Achsentitel); über cfg, damit es schon vor dem Layout gilt
@@ -156,6 +157,10 @@ def apply(fig, F=None, over=None, cfg=None):
         t._elu_shown = new
         if o.get("hidden"):
             t.set_visible(False)
+            t._elu_hid = True
+        elif getattr(t, "_elu_hid", False):               # bleibender Artist (NMR-Ansicht): wieder zeigen
+            t.set_visible(True)
+            t._elu_hid = False
         own = o["text"] if own is not None else None
         if key not in seen:
             seen.add(key)
@@ -220,7 +225,7 @@ def _runs_of_html(h):
 
 def from_html(h):
     """Editor-HTML -> Abbildungstext (Mathtext): Formatiertes als $…$ (Sonderzeichen darin maskiert), nie über ein
-    Zeilenende; ungeformter Text wörtlich."""
+    Zeilenende; ungeformter Text wörtlich, auch ein getipptes $ (als \\$, Nutzerwunsch: Format nur über die Knöpfe)."""
     out, math = [], []                                     # math: [(Art '', 'sub', 'sup'), Inhalt]
 
     def flush():
@@ -236,11 +241,13 @@ def from_html(h):
                 continue
             if not f:
                 flush()
-                out.append(part)
+                # shortcut: a plain backslash right before "$" or a formatted run escapes that "$"; handle if it comes up
+                out.append(part.replace("$", r"\$"))
                 continue
             body = "".join(_ESC.get(c, c) for c in part)
-            font = _FONT_OF.get(f & {"b", "i"})
-            body = "\\%s{%s}" % (font, body) if font else body
+            # ohne B/I steil (\\mathrm): Mathtext setzte Buchstaben sonst kursiv, und die Regel „Größe mit Index kursiv“
+            # (core.math_symbols) griffe auf ein getipptes „a“ vor tiefem „b“ – kursiv nur, was der Nutzer kursiv setzt
+            body = "\\%s{%s}" % (_FONT_OF.get(f & {"b", "i"}, "mathrm"), body)
             kind = "sub" if "sub" in f else "sup" if "sup" in f else ""
             if math and kind and math[-1][0] == kind:      # gleiche Stufe weiter: ein Index (sonst „Double subscript“)
                 math[-1] = [kind, math[-1][1] + body]
@@ -327,10 +334,9 @@ def _math_runs(src, fmt, out):
     return out
 
 
-def to_html(s):
-    """Abbildungstext -> Editor-HTML (b, i, sub, sup, <br>) oder None, wenn er sich nicht so zeigen lässt (\\frac,
-    unpaariges $ …: dann steht der Text als Quelltext im Feld)."""
-    import html as _h
+def text_runs(s):
+    """Abbildungstext -> [(Text, Format)] mit Format aus b, i, sub, sup („\n“ = Zeilenende), gleiche Formate
+    zusammengefasst; None, wenn er sich so nicht zeigen lässt (\\frac, unpaariges $ …)."""
     runs = []
     try:
         for li, line in enumerate(str(s or "").split("\n")):
@@ -342,7 +348,7 @@ def to_html(s):
             for k, p in enumerate(parts):
                 if k % 2 == 0:
                     if p:
-                        runs.append((p, frozenset()))
+                        runs.append((p.replace(r"\$", "$"), frozenset()))
                 else:
                     _math_runs(p, frozenset(), runs)
     except (ValueError, IndexError):
@@ -353,6 +359,34 @@ def to_html(s):
             merged[-1] = (merged[-1][0] + text, f)
         else:
             merged.append((text, f))
+    return merged
+
+
+_SUP_MAP = str.maketrans("0123456789+-−=()n", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁻⁼⁽⁾ⁿ")
+_SUB_MAP = str.maketrans("0123456789+-−=()", "₀₁₂₃₄₅₆₇₈₉₊₋₋₌₍₎")
+
+
+def to_plain(s):
+    """Abbildungstext als Klartext für Listen und Meldungen (ohne $, ^, _, Befehle): Hoch-/Tiefgestelltes aus Ziffern
+    und Zeichen als Unicode (cm⁻¹, E₁/₂), sonst als normale Zeichen; None, wenn er sich nicht lesen lässt."""
+    runs = text_runs(s)
+    if runs is None:
+        return None
+    out = []
+    for text, f in runs:
+        m = _SUP_MAP if "sup" in f else _SUB_MAP if "sub" in f else None
+        out.append(text.translate(m) if m and all(ch in "0123456789+-−=()/" or (m is _SUP_MAP and ch == "n")
+                                                  for ch in text) else text)
+    return "".join(out)
+
+
+def to_html(s):
+    """Abbildungstext -> Editor-HTML (b, i, sub, sup, <br>) oder None, wenn er sich nicht so zeigen lässt (\\frac,
+    unpaariges $ …: dann steht der Text als Quelltext im Feld)."""
+    import html as _h
+    merged = text_runs(s)
+    if merged is None:
+        return None
     html_ = []
     for text, f in merged:
         if text == "\n":

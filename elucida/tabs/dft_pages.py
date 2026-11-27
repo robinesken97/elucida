@@ -1408,8 +1408,6 @@ class DftPages:
         TABS.core.setup_fonts(TABS.plt, cfg)
         cfg["legend"] = False
         cfg["xlabel"] = "reaction coordinate" + (" [Å]" if kind == "irc_rc" else "")
-        if kind == "levels":
-            cfg["text_skip"] = ("y",)                        # Achsentitel des Stufenbilds: eigenes Feld (axis_title)
         return cfg
 
     def style_of(self, mode, rec=None):

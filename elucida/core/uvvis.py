@@ -356,6 +356,10 @@ _SYM_PLAIN = [(re.compile(r"\b(A)/d\b"), "$\\IT{A}$/$\\IT{d}$"),                
               (re.compile(r"(?<=[a-z] )(f)$"), "$\\IT{f}$"), (re.compile(r"(?<=\()(v)(?= / )"), "$\\IT{v}$")]
 
 
+_DOLLAR = re.compile(r"(?<!\\)\$")                 # \$ = wörtliches $ (Editor), kein Formelrand
+_DOLLARS = re.compile(r"(?<!\\)\$\$")
+
+
 def math_symbols(s, it="mathit", rm="mathrm"):
     """Bildtext -> Mathtext mit kursiven Größen: „E [V]“, „ΔE“, „A/d“, „i$_p$“ (Index steil), „v$^{1/2}$“. Der
     gespeicherte Text bleibt, wie er eingegeben wurde; chemische Formeln (Index nur aus Ziffern) bleiben steil."""
@@ -364,13 +368,13 @@ def math_symbols(s, it="mathit", rm="mathrm"):
     s = _SYM_SUB.sub(lambda m: "$\\%s{%s}$%s$_{\\%s{%s}}$" % (it, m.group(1), m.group(2), rm, m.group(3)), s)
     s = _SYM_IDX.sub(lambda m: "$\\%s{%s}$" % (it, m.group(1)), s)
     s = _SYM_POW.sub(lambda m: "$\\%s{%s}$" % (it, m.group(1)), s)
-    parts = s.split("$")
+    parts = _DOLLAR.split(s)
     if len(parts) % 2 == 0:                    # unpaariges $: lieber nichts anfassen
         return s
     for i in range(0, len(parts), 2):
         for pat, rep in _SYM_PLAIN:
             parts[i] = pat.sub(lambda m, rep=rep: rep.replace("IT", it).replace("G1", m.group(1)), parts[i])
-    return "$".join(parts).replace("$$", "")
+    return _DOLLARS.sub("", "$".join(parts))
 
 
 def label_text_ok(s):
@@ -397,15 +401,15 @@ def fmt_text(s, cfg, label=False):
     it = "mathbfit" if (label and lc.get("bold")) else "mathit"
     s = math_symbols(s, it)
     if not greek:                              # ohne Symbolschrift: griechische Größen kursiv in der Textschrift
-        parts = s.split("$")
+        parts = _DOLLAR.split(s)
         if len(parts) % 2:
             parts[::2] = [re.sub("[%s]" % _GREEK_QTY, lambda m: "$\\%s{%s}$" % (it, m.group()), q) for q in parts[::2]]
-            s = "$".join(parts).replace("$$", "")
+            s = _DOLLARS.sub("", "$".join(parts))
     wrap = {(True, False): "mathbf", (False, True): "mathit", (True, True): "mathbfit"}.get(
         (bool(lc.get("bold")), bool(lc.get("italic")))) if label else None
     if not (greek or wrap):
         return s
-    parts = s.split("$")
+    parts = _DOLLAR.split(s)
     if len(parts) % 2 == 0:                    # unpaariges $: lieber nichts anfassen
         return s
     slot = "mathsf" if label else "mathtt"
@@ -421,7 +425,7 @@ def fmt_text(s, cfg, label=False):
                 p = _GREEK.sub(lambda m: sym(m.group()), p)      # zuerst Unicode, sonst doppelt
                 p = _TEX_GREEK_RE.sub(lambda m: sym(_TEX_GREEK[m.group(1)]), p)
             out.append("$" + (_wrap_math(p, wrap) if wrap else p) + "$")
-    return "".join(out).replace("$$", "")      # λ$_{em}$ -> ein Mathe-Block: Index sitzt richtig
+    return _DOLLARS.sub("", "".join(out))      # λ$_{em}$ -> ein Mathe-Block: Index sitzt richtig
 
 
 def label_kw(cfg):

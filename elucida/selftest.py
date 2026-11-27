@@ -4350,7 +4350,7 @@ def _g_epr_kinetics(ctx):
             w.epr_state.update(cap_species="TEST-1$^{•+}$")
             assert "<b>TEST-1<sup>•+</sup></b> in THF" in t_e.si_caption("TEST-1"), t_e.si_caption("TEST-1")
             ed_sp_, _f = TABS._cap_edit(lambda: None, "TEST-1^{•+}")
-            assert ed_sp_.text() == "TEST-1$^{•+}$" and not ed_sp_.toPlainText().count("^"), ed_sp_.text()
+            assert ed_sp_.text() == "TEST-1$^{\\mathrm{•+}}$" and not ed_sp_.toPlainText().count("^"), ed_sp_.text()
             ed_sp_.deleteLater(), _f.deleteLater()
             w.epr_state.update(cap_species="", cap_solvent="", cap_conc="")
             # zwei Spezies: Messung = 0.7·A + 0.3·B, beide als EasySpin-ASCII importiert
@@ -11272,10 +11272,17 @@ def _g_project_si(ctx):
             w.export_all(exp_l)
             pdf_l = next(exp_l.glob("*.pdf"))
             assert "Zqx" in "".join(p_.get_text() for p_ in pymupdf.open(str(pdf_l))), "own label text missing in export"
-            # Formel, die sich nicht setzen lässt: nicht übernommen, Hinweis
+            # getipptes $…$ ist wörtlich (Robin 27.11.): keine Formel, kein Hinweis
             card_l.ed.setPlainText("$\\frac{$ bad")
             card_l._commit()
-            assert w.series[g_l]["label_over"][k_l]["text"] == "Zqx own" and card_l.lbl_warn.text() == T("lab_bad_math")
+            assert w.series[g_l]["label_over"][k_l]["text"] == "\\$\\frac{\\$ bad" and not card_l.lbl_warn.text()
+            # alter Text als Quelltext im Feld: Formel, die sich nicht setzen lässt, nicht übernommen, Hinweis
+            card_l.set_over(dict(card_l.over(), **{k_l: {"text": "$\\frac{a}{b}$"}}))
+            card_l.select(next(r_["key"] for r_ in card_l.rows if isinstance(r_.get("key"), str) and r_["key"] != k_l))
+            card_l.select(k_l)
+            card_l.ed.setPlainText("$\\frac{$ bad")
+            card_l._commit()
+            assert w.series[g_l]["label_over"][k_l]["text"] == "$\\frac{a}{b}$" and card_l.lbl_warn.text() == T("lab_bad_math")
             card_l.ed.setPlainText("Zqx own")
             card_l._commit()
             # gespeichert und nach dem Öffnen wieder da
@@ -21604,7 +21611,7 @@ def _g_lanes(ctx):
             n_t = len(w._undo)
             card_t._commit()
             own_t = st_t["text_over"][kx_t]["text"]
-            assert own_t == "$\\mathit{E}$ / V $_{Zqf}$" and len(w._undo) == n_t + 1, own_t
+            assert own_t == "$\\mathit{E}$ / V $_{\\mathrm{Zqf}}$" and len(w._undo) == n_t + 1, own_t
             assert w.F.ax.xaxis.label.get_text() == core.fmt_text(own_t, w.F.cfg)
             card_t.select(w.F.label_rows[0]["key"])
             card_t.select(kx_t)
@@ -21621,16 +21628,37 @@ def _g_lanes(ctx):
                 card_t._commit()
                 assert len(w._undo) == n_t and st_t["text_over"][kx_t]["text"] == old_t, old_t
             assert card_t.ed.toPlainText() == "$\\frac{a}{b}$"                 # nicht als Format zu zeigen: Quelltext
+            # Quelltext bleibt Quelltext (Robin 27.11.): Formatknöpfe aus, angehängter Text lässt die Formel stehen
+            assert not any(b_.isEnabled() for b_ in card_t.fmt_buttons)
+            card_t.ed.setPlainText("$\\frac{a}{b}$ Zq")
+            card_t._commit()
+            assert st_t["text_over"][kx_t]["text"] == "$\\frac{a}{b}$ Zq", st_t["text_over"][kx_t]
+            # getipptes $…$ ist wörtlich (Robin 27.11.: Format nur über die Knöpfe), alte $…$-Texte bleiben Formeln
+            card_t.set_over(dict(card_t.over(), **{kx_t: {"text": "Zqd", "view": ""}}))
+            card_t.select(w.F.label_rows[0]["key"])
+            card_t.select(kx_t)
+            assert all(b_.isEnabled() for b_ in card_t.fmt_buttons)
+            card_t.ed.setPlainText("Zq $x$ lit")
+            card_t._commit()
+            own_t = st_t["text_over"][kx_t]["text"]
+            assert own_t == "Zq \\$x\\$ lit" and core.fmt_text(own_t, w.F.cfg) == own_t, own_t
+            xl_t = w.F.ax.xaxis.label
+            assert xl_t._preprocess_math(xl_t.get_text()) == ("Zq $x$ lit", False), xl_t.get_text()
+            card_t.select(w.F.label_rows[0]["key"])
+            card_t.select(kx_t)
+            assert card_t.ed.toPlainText() == "Zq $x$ lit"
             # Umwandlung zentral (core.figtexts): Sonderzeichen in Format-Läufen setzbar, hin und zurück gleich
             cfgs_t = ({}, {"greek_symbol_font": False}, {"labels": {"bold": True, "italic": True}}, {"labels": {"bold": True}})
             for ch_t in "$_^{}\\%#& ~":
-                for f_t in ("<i>%s</i>", "<sub>%s</sub>", "<sup>%s</sup>", "<b><i>%s</i></b>", "<b>%s</b>"):
-                    h_t = f_t % _html_t.escape(ch_t, quote=False)
+                for f_t in ("%s", "<i>%s</i>", "<sub>%s</sub>", "<sup>%s</sup>", "<b><i>%s</i></b>", "<b>%s</b>", "%s<i>x</i>%s"):
+                    if ch_t == "\\" and f_t.startswith("%s<"):
+                        continue                                            # \ vor $: bekannte Grenze (figtexts)
+                    h_t = f_t.replace("%s", _html_t.escape(ch_t, quote=False))
                     t_t = FT_t.from_html(h_t)
                     assert FT_t.to_html(t_t) == h_t and all(core.label_text_ok(core.fmt_text(t_t, c_, label=l_))
                                                           for c_ in cfgs_t for l_ in (False, True)), (h_t, t_t)
             t_t = FT_t.from_html("<i>a</i><br><sub>b</sub><sub><i>c</i></sub><sup>2</sup>")
-            assert t_t == "$\\mathit{a}$\n$_{b\\mathit{c}}{}^{2}$" and core.label_text_ok(t_t), t_t
+            assert t_t == "$\\mathit{a}$\n$_{\\mathrm{b}\\mathit{c}}{}^{\\mathrm{2}}$" and core.label_text_ok(t_t), t_t
             # vor dem Einpassen gesetzt: ein langer Titel bleibt bei fester Größe im Bild
             card_t.edit(kx_t)
             card_t.ed.setPlainText("Zqt " + "very long axis title " * 4)
@@ -21644,7 +21672,7 @@ def _g_lanes(ctx):
                 card_t.ed.setPlainText(bad_t)
                 card_t._commit()
                 assert w.F is not None and w.F.ax.xaxis.label.get_text()
-            assert st_t["text_over"][kx_t]["text"] == "\\" and card_t.lbl_warn.text() == T("lab_bad_math")
+            assert st_t["text_over"][kx_t]["text"] == "a \\$x^\\$ b" and not card_t.lbl_warn.text()   # getippt: wörtlich
             card_t.edit(kx_t)
             card_t.ed.setPlainText("Zqt own")
             card_t._commit()
@@ -21766,12 +21794,31 @@ def _g_lanes(ctx):
             cv_t.label_card.select("label_zq_here")
             assert not cv_t.label_card.btn_adopt.isEnabled() and cv_t.label_card.btn_reset.isEnabled()
             assert cv_t.label_card.lbl_info.text() == T("lab_stale_info", t="Zqh1"), cv_t.label_card.lbl_info.text()
-            cv_t.label_card.btn_reset_all.click()
-            assert "label_over" not in cv_t.st
+            assert T("lab_reset_all_tip") == cv_t.label_card.btn_reset_all.toolTip()
+            cv_t.label_card.btn_reset_all.click()                               # nur diese Ansicht (Robin 27.11.)
+            assert set(cv_t.st["label_over"]) == {"label_zq_other", "label_zq_old"}, cv_t.st["label_over"]
+            cv_t.label_card.set_over({})
             # Seiten mit eigener Abbildung (PageTexts): Abklingkurve, PXRD, Energieprofil – gleiche Funktion, auch im Export
             from matplotlib.figure import Figure as _MF_t
             from matplotlib.backends.backend_agg import FigureCanvasAgg as _FCA_t
             assert w.open_project(dp_t / "S3", ask=False, recent=False)
+            # Altes Projekt (bis 1.4.0): label_over ohne „view“ in Tabs mit mehreren Ansichten weiter gezeichnet und in
+            # der Karte als gezeigte Zeile gelistet (DFT hatte bis 1.4.0 kein label_over, daher CV und SEC)
+            from matplotlib.text import Text as _Txt_t
+            for key_o in ("cv", "sec"):
+                w.main_tabs.setCurrentIndex(w._tab_keys.index(key_o))
+                pump(0.3)
+                to_ = getattr(w, w._tab_spec(key_o)[0])
+                to_.render()
+                assert to_.card_view() not in ("", "-"), (key_o, to_.card_view())  # wirklich eine Ansicht mit Namen
+                ko_ = to_.F.label_rows[0]["key"]
+                to_.st["label_over"] = {ko_: {"text": "Zqold"}}                     # wie 1.4.0 schrieb: ohne Ansicht
+                to_.render()
+                assert any("Zqold" in t_.get_text() for t_ in to_.F.fig.findobj(_Txt_t)), key_o
+                ro_ = [r_ for r_ in to_.label_card.rows if r_.get("key") == ko_]
+                assert len(ro_) == 1 and ro_[0]["text"] == "Zqold" and not ro_[0].get("stale"), (key_o, ro_)
+                to_.label_card.reset(ko_)
+                assert "label_over" not in to_.st, (key_o, to_.st.get("label_over"))
             w.main_tabs.setCurrentIndex(w._tab_keys.index("fluo"))
             pump(0.3)
             fl_t = w.fl_tab
@@ -21801,8 +21848,11 @@ def _g_lanes(ctx):
             pg_t = w.dft_tab.pages
             pg_t.refresh()
             roles_p = {r_["role"] for r_ in pg_t.prof_texts.card.rows}
-            if pg_t.prof["mode"] == "levels" and roles_p:
-                assert "y" not in roles_p, roles_p                                 # Achsentitel: eigenes Feld (axis_title)
+            # Energieprofil (Windows-Bericht 1.5.0): auch die y-Achse in der Karte (das Feld „Achsentitel“ bleibt die Quelle
+            # des automatischen Texts, die Karte setzt darüber)
+            assert pg_t.prof["mode"] == "levels" and {"x", "y"} <= roles_p, (pg_t.prof["mode"], roles_p)
+            assert "^" not in " ".join(TABS._label_line(r_["auto"]) for r_ in pg_t.prof_texts.card.rows
+                                       if isinstance(r_.get("key"), str))
             # NTO (Overlay): „hole“/„particle“ in beiden Anordnungen derselbe Schlüssel, eigener Text auch im Export-Bild
             nt_t = w.ov_tab.nto
             keys_n = []
@@ -21828,7 +21878,7 @@ def _g_lanes(ctx):
             w.go_home()
             report.append("Own figure texts (lane s3texte): axis titles, inset header, hide, reset, undo, stale entry "
                           "adopt, view-bound keys, language-stable keys, export PDF and Word image, decay/PXRD/profile/NTO pages, "
-                          "synthesis editor without syntax, grouped card, label views: OK")
+                          "synthesis editor without syntax, grouped card, label views, old labels without view (CV, SEC): OK")
         with section:
             # 1.5.0 (Spur s3c, Robin 2026-11-27): Schriftgrößen Achsentitel, Achsenzahlen, Legende in „Schrift und
             # Linien“ (core.SIZE_KEYS, pt, 0 = auto); auto pixelgleich, gesetzt in Vorschau, Export und Word; nur
@@ -21917,6 +21967,78 @@ def _g_lanes(ctx):
             report.append("Axis font sizes (lane s3c): axis titles, tick labels, legend in the text format card, auto "
                           "unchanged (pixel-identical), set values in preview/export PDF/Word image, eps inset kept, "
                           "own tab format, auto stores no key: OK")
+        with section:
+            # 1.5.0 (Spur s3b): Windows-Bericht vor 1.5.0, Punkt 4 – Feld „Eigener Text“ der Karte „Beschriftungen im Bild“
+            from PySide6.QtGui import QTextCharFormat as _QCF_w, QTextCursor as _QTC_w
+            from elucida.core import figtexts as FT_w
+            from elucida.tabs import synthesis as SYN_w
+            assert w.open_project(dp_t / "S3", ask=False, recent=False)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            pump(0.5)
+            w.render()
+            card_w, g_w = w.label_card, w.current
+            kx_w = next(r_["key"] for r_ in card_w.rows if r_.get("role") == "x")
+
+            def sel_w(a_, b_):
+                c_ = card_w.ed.textCursor()
+                c_.setPosition(a_)
+                c_.setPosition(b_, _QTC_w.KeepAnchor)
+                card_w.ed.setTextCursor(c_)
+            val_w = lambda: FT_w.from_html(SYN_w.doc_html(card_w.ed))      # noqa: E731
+
+            def put_w(text_):
+                card_w.ed.clear()                                           # frisch wie nach dem Laden (_load_ed): kein
+                card_w.ed.setCurrentCharFormat(_QCF_w())                    # Hoch vom vorigen Text (Tippen erbt das Format)
+                card_w.ed.setPlainText(text_)
+            # (a) X² auf ein einzelnes Zeichen, auch hinter schon Hochgestelltem (vorher: Zeichen davor bestimmte)
+            card_w.edit(kx_w)
+            put_w("ab")
+            sel_w(2, 1)                                                       # Umschalt+Links
+            card_w.fmt_buttons[3].click()
+            assert val_w() == "a$^{\\mathrm{b}}$", val_w()
+            put_w("nm2")
+            sel_w(0, 2)
+            card_w.fmt_buttons[3].click()
+            sel_w(3, 2)
+            card_w.fmt_buttons[3].click()
+            assert val_w() == "$^{\\mathrm{nm2}}$", val_w()
+            card_w.fmt_buttons[3].click()                                     # ganz hoch -> zurück
+            assert val_w() == "$^{\\mathrm{nm}}$2", val_w()
+            # (b) nur Kursives kursiv: „a“ vor tiefem „b“ und hochgestelltes „nm“ bleiben steil (\\mathrm, keine Größenregel)
+            put_w("ab")
+            sel_w(2, 1)
+            card_w.fmt_buttons[2].click()
+            sub_w = val_w()
+            assert sub_w == "a$_{\\mathrm{b}}$" and core.fmt_text(sub_w, w.F.cfg) == sub_w, sub_w
+            assert "\\mathit" not in core.fmt_text("x / $^{\\mathrm{nm}}$2", w.F.cfg)
+            # (d) eine Regel: das Feld gilt kurz nach der letzten Änderung (ein Rückgängig-Schritt), Formatknöpfe ebenso
+            card_w._commit()
+            assert w.series[g_w]["text_over"][kx_w]["text"] == sub_w
+            n_w = len(w._undo)
+            put_w("Zqlive")
+            pump(2.5 * card_w.LIVE_MS / 1000)
+            assert w.series[g_w]["text_over"][kx_w]["text"] == "Zqlive" and len(w._undo) == n_w + 1
+            assert w.F.ax.xaxis.label.get_text() == "Zqlive" and card_w.ed.toPlainText() == "Zqlive"
+            sel_w(0, 2)
+            card_w.fmt_buttons[1].click()                                     # kursiv: ohne Verlassen des Felds
+            pump(2.5 * card_w.LIVE_MS / 1000)
+            assert w.series[g_w]["text_over"][kx_w]["text"] == "$\\mathit{Zq}$live" and len(w._undo) == n_w + 2
+            # (c) Liste zeigt Text ohne Markup (kein ^, _, $), Hoch-/Tiefgestelltes aus Ziffern als Unicode
+            put_w("Zq nm2 cm-1")
+            sel_w(3, 5)
+            card_w.fmt_buttons[3].click()
+            sel_w(9, 11)
+            card_w.fmt_buttons[3].click()
+            card_w._commit()
+            i_w = [r_["key"] for r_ in card_w.rows].index(kx_w)
+            cell_w = card_w.table.item(i_w, 1).text()
+            assert cell_w == "Zq nm2 cm\u207b\u00b9", cell_w
+            card_w.reset(kx_w)
+            assert kx_w not in (w.series[g_w].get("text_over") or {})
+            w.go_home()
+            report.append("Own text field (lane s3b, Windows report 1.5.0): X2 on one character also behind superscript, "
+                          "only italic is italic, list without markup, field applies after a short pause and on "
+                          "format buttons (one undo step), energy profile lists the y axis: OK")
     finally:
         ctx.update(locals())
 
@@ -25391,6 +25513,90 @@ def _g_nmr_own(ctx):
             report.append("Lane s2e: TD-DFT without project page jump, example project notice (fresh copy) and failure "
                           "message, atomic replace retries PermissionError, Other tab without 'entries', HRMS label at "
                           "the found peak shows found: OK")
+        with section:
+            # 1.5.0 (Spur s3b): feste Texte der eigenen NMR-Spektren (1D und 2D) über die Karte „Beschriftungen im Bild“
+            # (core.figtexts, text_over des NMR-Tabs): Vorschau, SI-Abbildung, Ausblenden, Zurücksetzen, Rückgängig
+            from elucida.formats import bruker_nmr as BN_s3n
+            from elucida.tabs import nmr_view as NV_s3n
+            root_s3n = out / "input" / "nmr_s3b"
+            shutil.rmtree(root_s3n, ignore_errors=True)
+            shutil.rmtree(out / "nmr_s3b", ignore_errors=True)
+            BN_s3n.make_test_2d(root_s3n / "T6" / "11", [(7.33, 128.5, 1), (3.03, 40.2, 1)])
+            BN_s3n.make_test_1d(root_s3n / "T6" / "10", [(7.29, 0.1, 1.0), (3.03, 3.0, 1.0)], bf1=500.13,
+                                td=16384, si=32768)
+            assert w.create_project(out / "nmr_s3b")
+            pump(0.3)
+            w.main_tabs.setCurrentWidget(w.nmr_tab)
+            s1_s3n, s2_s3n = w.nmr_tab.add_raw_path(str(root_s3n / "T6"))
+            w.nmr_state["current"] = s1_s3n["uid"]
+            w.nmr_tab.sync_widgets()
+            pump(0.3)
+            t_s3n = w.nmr_tab
+            v_s3n = t_s3n.view
+            v_s3n.redraw()
+            card_s3n = t_s3n.texts.card
+            assert t_s3n._texts_view() == "1d" and t_s3n.texts.box.isEnabled()
+            kx_s3n = next(r_["key"] for r_ in card_s3n.rows if r_.get("role") == "x")
+            auto_s3n = v_s3n.ax.xaxis.label.get_text()
+            n_s3n = len(w._undo)
+            card_s3n.edit(kx_s3n)
+            card_s3n.ed.setPlainText("Zqnmr")
+            card_s3n._commit()
+            assert t_s3n.st["text_over"][kx_s3n] == {"text": "Zqnmr", "view": "1d"}, t_s3n.st.get("text_over")
+            assert len(w._undo) == n_s3n + 1 and v_s3n.ax.xaxis.label.get_text() == "Zqnmr"
+            seen_s3n, red_s3n = [], NV_s3n.NMRView.redraw
+
+            def rec_s3n(self_):
+                red_s3n(self_)
+                seen_s3n.append(self_.ax.xaxis.label.get_text())
+            NV_s3n.NMRView.redraw = rec_s3n
+            try:
+                svg_s3n = t_s3n.raw_svg(t_s3n.current())                      # SI-Abbildung (Word) trägt den Text
+            finally:
+                NV_s3n.NMRView.redraw = red_s3n
+            assert seen_s3n and seen_s3n[-1] == "Zqnmr", seen_s3n
+            card_s3n._store(kx_s3n, hidden=True)                              # bleibende Achse: aus und wieder an
+            assert not v_s3n.ax.xaxis.label.get_visible()
+            card_s3n.reset(kx_s3n)
+            assert "text_over" not in t_s3n.st and v_s3n.ax.xaxis.label.get_visible()
+            assert v_s3n.ax.xaxis.label.get_text() == auto_s3n
+            assert t_s3n.raw_svg(t_s3n.current()) != svg_s3n                  # Zwischenspeicher je eigenem Text
+            # 2D: eigener Eintrag (Ansicht 2d), auch in der SI-Abbildung; in 1D weder gezeigt noch zurückgesetzt
+            w.nmr_state["current"] = s2_s3n["uid"]
+            w.nmr_tab.sync_widgets()
+            pump(0.3)
+            t2_s3n = w.nmr_tab
+            assert t2_s3n._texts_view() == "2d"
+            ky_s3n = next(r_["key"] for r_ in t2_s3n.texts.card.rows if r_.get("role") == "y")
+            t2_s3n.texts.card.edit(ky_s3n)
+            t2_s3n.texts.card.ed.setPlainText("Zq2d")
+            t2_s3n.texts.card._commit()
+            assert t2_s3n.st["text_over"][ky_s3n] == {"text": "Zq2d", "view": "2d"}, t2_s3n.st.get("text_over")
+            assert t2_s3n.view2d.ax.yaxis.label.get_text() == "Zq2d"
+            seen2_s3n, red2_s3n = [], NV_s3n.NMR2DView.redraw
+
+            def rec2_s3n(self_, fig=None):
+                red2_s3n(self_, fig)
+                seen2_s3n.append(self_.ax.yaxis.label.get_text())
+            NV_s3n.NMR2DView.redraw = rec2_s3n
+            try:
+                t2_s3n.raw_svg2d(t2_s3n.current())
+            finally:
+                NV_s3n.NMR2DView.redraw = red2_s3n
+            assert "Zq2d" in seen2_s3n, seen2_s3n
+            w.nmr_state["current"] = s1_s3n["uid"]
+            w.nmr_tab.sync_widgets()
+            pump(0.3)
+            t1_s3n = w.nmr_tab
+            t1_s3n.view.redraw()
+            assert not [r_ for r_ in t1_s3n.texts.card.rows if r_.get("stale")]
+            t1_s3n.texts.card.reset_all()
+            assert ky_s3n in t1_s3n.st["text_over"]
+            w.undo()                                                          # Rückgängig: Eintrag wieder weg
+            pump(0.3)
+            assert ky_s3n not in (w.nmr_state.get("text_over") or {}), w.nmr_state.get("text_over")
+            report.append("NMR figure texts (lane s3b): own 1D/2D axis titles via the card, SI figure, hide on the "
+                          "kept axis, reset, cache name, views 1d/2d, undo: OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

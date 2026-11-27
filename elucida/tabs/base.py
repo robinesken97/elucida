@@ -190,6 +190,9 @@ ALL_TEXT_OPTS = ("fonts", "greek", "axis_sizes", "labels", "label_size", "axes_f
 
 def _label_line(s):
     """Text eines Labels in einer Tabellenzeile/Meldung: Zeilen mit „ · “, ohne Mathtext-Zeichen (nur Anzeige)."""
+    plain = FT.to_plain(s) if "$" in str(s) else None       # Mathtext (Editor: hoch/tief, fett …): Klartext ohne ^ _ $
+    if plain is not None:
+        return " · ".join(" ".join(x.split()) for x in plain.splitlines() if x.strip())
     prev, s = None, str(s)
     while prev != s:                                         # \\mathit{E} (Editor, Labelstil) wie E
         prev, s = s, FT._FONT_CMD.sub(r"\1", s)
@@ -303,7 +306,7 @@ def _row_kind(r):
 class LabelCard(QObject):
     """Karte „Beschriftungen im Bild“ (FigureTab mit LABEL_CARD, ε je Serie): Zeilen = Labels der gezeigten Abbildung
     (`F.label_rows`: Häkchen = im Bild, Text = eigener, sonst der automatische; eigener Text orange markiert). Darunter der eigene Text der gewählten
-    Zeile (gilt beim Verlassen; leer oder wie automatisch = kein eigener Text), Zurücksetzen je Label und für alle,
+    Zeile (gilt kurz nach der letzten Änderung und beim Verlassen; leer oder wie automatisch = kein eigener Text), Zurücksetzen je Label und für alle,
     Rechtsklick auf ein Label im Bild öffnet `menu`. Zustand {Schlüssel: {"text": …, "hidden": True}} über
     get_over/set_over des Tabs (set_over zeichnet neu = ein Rückgängig-Schritt). Ausblenden betrifft nur das Bild, anders
     als „Bande im Bild“ (ε) und abgewählte IR-Banden, die auch die SI-Zeile ändern.
@@ -314,8 +317,10 @@ class LabelCard(QObject):
     „Element“). Jeder gespeicherte Eintrag merkt die Ansicht (`get_view`); Einträge dieser Ansicht, deren Text gerade nicht
     im Bild steht (Element aus, andere Daten, geänderter automatischer Text), bleiben als Zeile „nicht im Bild“ sichtbar:
     Übernehmen (auf das eine passende Element ohne eigenen Text) oder Zurücksetzen (verwerfen) – nie still verloren.
-    Labels speichern keine Ansicht (Format von `label_over` unverändert): ihre Zeilen „nicht im Bild“ nur in Karten mit
-    einer Ansicht (ε, Overlay, Fluoreszenz, HRMS); in Tabs mit mehreren Ansichten bleiben sie wie bisher unsichtbar."""
+    Labels speichern die Ansicht ebenso (Robin 27.11.); alte Einträge ohne Ansicht gelten weiter, erscheinen in Tabs mit
+    mehreren Ansichten aber nie als „nicht im Bild“ (unbekannt, wohin sie gehören)."""
+
+    LIVE_MS = 600                                            # Pause nach dem Tippen, bis das Feld gilt
 
     def __init__(self, body, get_over, set_over, reveal=None, get_extra=None, set_extra=None, get_view=None):
         super().__init__(body)
@@ -354,6 +359,11 @@ class LabelCard(QObject):
         self.fmt_buttons = SYN.format_buttons(self.ed)       # B, I, X₂, X² wie in der Vorschrift: keine Syntax nötig
         for b in self.fmt_buttons:
             row.addWidget(b)
+        # eine Regel (Windows-Bericht 1.5.0): was im Feld steht, gilt kurz nach der letzten Änderung (Tippen wie
+        # Formatknöpfe; ein Rückgängig-Schritt je Pause) und beim Verlassen des Felds sofort
+        self._live = QTimer(self, singleShot=True, interval=self.LIVE_MS)
+        self._live.timeout.connect(self._commit)
+        self.ed.textChanged.connect(self._live.start)
         row.addStretch(1)
         fv.addLayout(row)
         fv.addWidget(self.ed)
@@ -535,10 +545,10 @@ class LabelCard(QObject):
         self._show_row()
 
     def _resettable(self):
-        """Schlüssel, die „Alle zurücksetzen“ leert: alle Labels (wie bisher) und die festen Texte der gezeigten Zeilen
-        samt „nicht im Bild“ – nicht die anderer Ansichten oder Seiten (auch wenn derselbe Text dort steht)."""
+        """Schlüssel, die „Alle zurücksetzen“ leert: nur die der gezeigten Ansicht (Zeilen der Karte samt „nicht im
+        Bild“); andere Ansichten und Seiten behalten ihre Texte (Robin 27.11.)."""
         mine = {r["key"] for r in self.rows}
-        return {k for k in self.over() if not FT.is_text_key(k) or k in mine}
+        return {k for k in self.over() if k in mine}
 
     def reset_all(self):
         drop = self._resettable()
@@ -595,7 +605,9 @@ class LabelCard(QObject):
         for w_ in [self.ed] + self.fmt_buttons:             # Feld und Formatknöpfe zusammen
             w_.setEnabled(r is not None and not r.get("stale"))
         typed = self._value() != self._ed_text
-        if not self.ed.hasFocus() or key != self._ed_key or not typed:   # Getipptes nie überschreiben
+        # Feld zeigt schon den gespeicherten Text (eben übernommen): nicht neu laden, sonst spränge beim Tippen der Cursor
+        shown = r is not None and key == self._ed_key and (r["text"] or "") == self._ed_text.rstrip()
+        if not self.ed.hasFocus() or key != self._ed_key or not (typed or shown):   # Getipptes nie überschreiben
             self._ed_key = key
             # ohne eigenen Text bleibt das Feld leer, der automatische Text steht lesbar als Platzhalter (keine
             # Mathtext-Quelle, ein unveränderter Vorschlag wird nie eigener Text)
@@ -604,6 +616,8 @@ class LabelCard(QObject):
             self.ed.setPlaceholderText("" if r is None or r["text"] is not None else
                                        "\n".join(_label_line(x) for x in str(r["auto"]).splitlines() if x.strip()))
             self.ed.blockSignals(False)
+        for b in self.fmt_buttons:                           # Quelltext (\frac …): Format bliebe ohne Wirkung
+            b.setEnabled(r is not None and not r.get("stale") and not getattr(self, "_raw", False))
         self.lbl_info.setText(T("lab_stale_info", t=_label_line(r["auto"] or r["text"] or "")) if r and r.get("stale") else
                               T("lab_extra_tip") if r and r.get("extra") else
                               T("lab_auto", t=_label_line(r["auto"])) if r and r["text"] is not None else "")
@@ -617,7 +631,10 @@ class LabelCard(QObject):
         QTimer.singleShot(0, lambda: st(key, hidden=True if hidden else None))   # nach dem Klick neu zeichnen
 
     def _value(self):
-        """Feldinhalt als Abbildungstext (Mathtext aus fett/kursiv/tief/hoch, sonst wörtlich)."""
+        """Feldinhalt als Abbildungstext (Mathtext aus fett/kursiv/tief/hoch, sonst wörtlich). Alter Text, der nur als
+        Quelltext im Feld steht (\\frac …), bleibt Quelltext: sein $…$ gilt weiter als Formel."""
+        if getattr(self, "_raw", False):
+            return self.ed.toPlainText()
         return FT.from_html(self._doc_html(self.ed))
 
     def _load_ed(self, text):
@@ -627,6 +644,7 @@ class LabelCard(QObject):
         h = FT.to_html(text) if text else None
         self.ed.clear()
         self.ed.setCurrentCharFormat(QTextCharFormat())     # kein Tief/Kursiv vom vorigen Text am Cursor
+        self._raw = bool(text) and h is None
         if h is None:
             self.ed.setPlainText(text or "")
         else:
@@ -634,16 +652,18 @@ class LabelCard(QObject):
         self._ed_text = self._value()
 
     def _commit(self):
+        self._live.stop()
         key = self._ed_key                                   # die Zeile, für die der Text im Feld steht
         r = self.row_of(key)
         val = self._value()
         if self._loading or r is None or val == self._ed_text:   # nichts getippt: alter Feldtext
             return                                           # darf nach Zurücksetzen nicht zurückkommen
-        self._ed_text = val                                  # übernommen: nach Zurücksetzen nicht noch einmal
+        prev, self._ed_text = self._ed_text, val             # übernommen: nach Zurücksetzen nicht noch einmal
         text = val.rstrip()
         if r.get("extra"):                                   # eigenes Label: leer = entfernen
             text = text if text.strip() else None
             if text is not None and not core.label_text_ok(text):
+                self._ed_text = prev                         # abgelehnt: Getipptes bleibt im Feld
                 self._error = T("lab_bad_math")
                 self.lbl_warn.setText(self._error)
                 return
@@ -653,6 +673,7 @@ class LabelCard(QObject):
             return
         text = None if not text.strip() or text == r["auto"] else text
         if text is not None and not core.label_text_ok(text):
+            self._ed_text = prev
             self._error = T("lab_bad_math")
             self.lbl_warn.setText(self._error)
             return

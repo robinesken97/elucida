@@ -6327,7 +6327,8 @@ TEXTS.update({
     "lab_reset": ("Zurücksetzen", "Reset"),
     "lab_reset_tip": ("Automatischer Text und wieder im Bild", "Automatic text and shown again"),
     "lab_reset_all": ("Alle zurücksetzen", "Reset all"),
-    "lab_reset_all_tip": ("Alle Beschriftungen wieder automatisch und im Bild", "All labels automatic and shown again"),
+    "lab_reset_all_tip": ("Alle Beschriftungen dieser Ansicht wieder automatisch und im Bild; andere Ansichten behalten "
+                          "ihre Texte", "All labels of this view automatic and shown again; other views keep their texts"),
     "lab_reset_none": ("Nichts zurückzusetzen: automatischer Text, im Bild", "Nothing to reset: automatic text, shown"),
     "lab_pick_first": ("Erst eine Beschriftung in der Tabelle wählen", "Select a label in the table first"),
     "lab_auto": ("Automatisch: {t}", "Automatic: {t}"),

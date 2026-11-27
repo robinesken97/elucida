@@ -1607,6 +1607,37 @@ class NMRTab(QWidget):
                 g.layout().addRow(T("nmr_si_range"), row)
             self._view_cards.append(g)                     # bei MNova-SVG sichtbar, aber ausgegraut (R8), Grund im Tooltip
             self.raw_cards.append(g)
+        # feste Texte der eigenen Spektren (Achsentitel, Titel; 1D und 2D): derselbe Mechanismus wie in allen Tabs
+        from elucida.tabs import base as TABS
+        self.texts = TABS.PageTexts(self, self._texts_view, self._texts_redraw)
+        self.lv.addWidget(self.texts.box)
+        self._view_cards.append(self.texts.box)
+        self.raw_cards.append(self.texts.box)
+
+    def _texts_view(self):
+        """Ansicht der Karte „Beschriftungen im Bild“: eigenes 2D-Spektrum oder 1D."""
+        ps = getattr(self, "preview_stack", None)          # die Karte fragt schon beim Bauen (vor der Vorschau)
+        return "2d" if ps is not None and ps.currentIndex() == 3 else "1d"
+
+    def _texts_redraw(self):
+        v = self._view2d if self._texts_view() == "2d" else self._view
+        if v is not None:
+            v.redraw()
+
+    def _texts_fill(self, v):
+        """Nach dem Zeichnen der gezeigten Ansicht: Zeilen der Karte (nur wenn sich etwas geändert hat, Ziehen und
+        Zoomen zeichnen oft)."""
+        if v is not (self._view2d if self._texts_view() == "2d" else self._view):
+            return
+        sig = (self._texts_view(), repr(v.text_rows), repr(self.st.get("text_over")))
+        if sig != getattr(self, "_texts_sig", None):
+            self._texts_sig = sig
+            self.texts.fill(v)
+
+    def _text_tag(self):
+        """Eigene Texte für den Namen zwischengespeicherter SVG (ohne eigene Texte: Name wie bisher)."""
+        over = self.st.get("text_over")
+        return [over] if over else []
 
     @property
     def view(self):
@@ -1618,6 +1649,7 @@ class NMRTab(QWidget):
             h = self._cards
             v.opts, v._boxes, v.cmb_mult, v.cmb_mark = h.opts, h._boxes, h.cmb_mult, h.cmb_mark
             v.set_phase_callback(self.phase_preview)
+            v.get_text_over, v.after_draw = (lambda: self.st.get("text_over")), (lambda: self._texts_fill(v))
             v.phase_changed.connect(lambda *_: self.phase_timer.start())
             v.reference_clicked.connect(self.reference_clicked)
             v.display_changed.connect(self.view_display_changed)
@@ -2646,6 +2678,8 @@ class NMRTab(QWidget):
         if self._view2d is None:
             from elucida.tabs.nmr_view import NMR2DView
             self._view2d = NMR2DView()
+            v2_ = self._view2d
+            v2_.get_text_over, v2_.after_draw = (lambda: self.st.get("text_over")), (lambda: self._texts_fill(v2_))
             self._view2d.levels_changed.connect(self.level_2d_changed)
             self._view2d.view_changed.connect(self.zoom_2d_changed)
             self._lay2d.insertWidget(0, self._view2d, 1)
@@ -2697,10 +2731,12 @@ class NMRTab(QWidget):
         v2 = s.get("view2d") or {}
         lim = (tuple(v2["xlim"]), tuple(v2["ylim"])) if v2.get("xlim") and v2.get("ylim") else None
         cdir = PRJ.work_dir(self.main.project_dir or Path(s["bruker"]).parent, self.STATE_KEY)
-        tag = zlib.crc32(json.dumps([s, lim, float(ax2[0]), float(ax1[0])], sort_keys=True, default=str).encode())
+        tag = zlib.crc32(json.dumps([s, lim, float(ax2[0]), float(ax1[0])] + self._text_tag(), sort_keys=True,
+                                    default=str).encode())
         out = cdir / f"{Path(s['bruker']).name}_own2d_{tag:08x}.svg"
         if not out.exists():
             e = NMR2DView()
+            e.get_text_over = lambda: self.st.get("text_over")
             try:
                 e.set_data(ds["data"], ax2, ax1, ds["nuc2"], ds["nuc1"], (s.get("view2d") or {}).get("level"))
                 if lim:
@@ -3075,6 +3111,9 @@ class NMRTab(QWidget):
         """Karten Verarbeitung/Referenzierung zum gewählten Spektrum; bei Mnova-Spektren nur der Satz, wofür sie sind."""
         s = self.raw_current()
         self.lbl_view_lock.setVisible(s is None)
+        if s is None:                                       # MNova-SVG: keine eigenen Texte (Bild)
+            self._texts_sig = None
+            self.texts.fill(None)
         for g in self.raw_cards:
             g.setEnabled(s is not None)
             if g in self._quiet_cards:                    # Karten ohne eigenen Satz: mit verbergen
@@ -3915,13 +3954,14 @@ class NMRTab(QWidget):
         labels = [NC.label_of(s, specs, c) for s in specs]
         if out is None:
             cdir = PRJ.work_dir(self.main.project_dir or Path(specs[0]["bruker"]).parent, self.STATE_KEY)
-            tag = zlib.crc32(json.dumps([c["mode"], c.get("offset"), labels, specs, hi, lo], sort_keys=True,
-                                        default=str).encode())
+            tag = zlib.crc32(json.dumps([c["mode"], c.get("offset"), labels, specs, hi, lo] + self._text_tag(),
+                                        sort_keys=True, default=str).encode())
             out = cdir / f"cmp_{NC.nucleus(specs[0])}_{tag:08x}.{fmt}"
             if out.exists():
                 return str(out)
         w_cm, h_cm = OWN_SIZE_CM
         v = NV.NMRView()
+        v.get_text_over = lambda: self.st.get("text_over")
         try:
             v.canvas = FigureCanvasAgg(v.fig)
             v.screen = False
@@ -4203,7 +4243,8 @@ class NMRTab(QWidget):
         c = self.raw_y(s, ds)
         ref = s["proc"].get("ref") or 0.0
         cdir = PRJ.work_dir(self.main.project_dir or Path(s["bruker"]).parent, self.STATE_KEY)
-        tag = zlib.crc32(json.dumps([s, self.si_xlim(s, ds, ref)], sort_keys=True, default=str).encode())
+        tag = zlib.crc32(json.dumps([s, self.si_xlim(s, ds, ref)] + self._text_tag(), sort_keys=True,
+                                    default=str).encode())
         st = self.structure_asset() if s.get("struct_on", True) else None
         width = self.struct_w() / 100
         tag = zlib.crc32(f"{tag}|{self.structure_path()}|{width}|{self.label(s) and len(self.label(s))}".encode())
@@ -4212,6 +4253,7 @@ class NMRTab(QWidget):
             return str(out)
         w_cm, h_cm = OWN_SIZE_CM                           # „size“ ist die Seite des Mnova-SVG, nicht dieses Bild
         v = NMRView()
+        v.get_text_over = lambda: self.st.get("text_over")
         try:
             from matplotlib.backends.backend_agg import FigureCanvasAgg
             v.canvas = FigureCanvasAgg(v.fig)             # ohne Qt-Fläche: deren Gastgeber setzt sonst die Bildgröße
