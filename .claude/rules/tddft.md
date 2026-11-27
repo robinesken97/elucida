@@ -46,7 +46,9 @@ paths:
   wie im Block ab 0 je Spin (`NtoView.mo_index`); Besetzungen der Molden-Datei werden nicht als Gewicht benutzt
   (unbelegt). Cubes: genau zwei, Loch = kleinere MO-Nummer, Gewicht aus dem Block oder von Hand (Unterschrift sagt
   nichts dazu, Hinweis in der Karte). Bilder mit dem Orbital-Rendering (IboView-Stil) über `XrayFigure`, gemeinsame
-  Ansicht (`default_view`), gemeinsame Ausdehnung und gemeinsamer Ausschnitt; langgestreckt (b > 1.6 h): Loch über
+  Ansicht: automatisch (`default_view`) oder eigene Drehung (Ziehen im Bild dreht Loch und Teilchen zugleich; je Zustand
+  als `view` im Eintrag, nur nach eigener Drehung gespeichert; gilt für Export und SI; „Startansicht“ entfernt sie),
+  gemeinsame Ausdehnung und gemeinsamer Ausschnitt; langgestreckt (b > 1.6 h): Loch über
   Teilchen. Schlüssel je Zustand = Dateiname|Variante|Index (nicht der Pfad); Dateien in `project._path_slots`.
   Echte NTO-Molden-/Cube-Dateien und Gaussian-NTO ungeprüft.
 - Umbenennung und Abgrenzung (Nutzerentscheid 1.2.0, wörtlich: Tab „UV-Vis-Overlay“ heißt künftig „TD-DFT“, „das

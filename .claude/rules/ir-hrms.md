@@ -9,6 +9,7 @@ paths:
 
 # IR und HRMS: fachliche Regeln (nicht ändern ohne Rückfrage)
 
+- IR- und Raman-Bandenlagen (ν̃) überall ganzzahlig: dieselbe Zahl in Tabelle, Bild, SI und Excel, nur die CSV behält Rohwerte.
 - HRMS: calc. = monoisotopisch **mit Elektronenmasse** ([M+H]⁺ = M + 1.007276), calc./found immer 4 Nachkommastellen;
   ppm zur Kontrolle als found − calc (die Massenabteilung gibt das umgekehrte Vorzeichen an). IR: ganze Zahlen,
   absteigend; Bereich standardmäßig der ganze gemessene; mit OPUS-PDF gelten dessen Peakwerte.
