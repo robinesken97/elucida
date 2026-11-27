@@ -3758,6 +3758,22 @@ def previous_view(tab):
     tab.main.statusBar().showMessage(T("xr_prev_view_none"), 4000)
 
 
+def view_reset_button(store, done):
+    """„Startansicht“ für 3D-Seiten mit eigener Ansicht im Zustand (view/zoom/pan: NBO, ACID, 3D-NICS, EPR-Rechnung):
+    Drehung, Zoom und Verschiebung auf automatisch; `done` zeichnet neu und legt den Rückgängig-Schritt an."""
+    b = QPushButton(STYLE.icon("reset"), T("xr_reset_view"))
+    b.setToolTip(T("view_reset_tip"))
+    b.setFixedWidth(STYLE.VALUE_W)                     # einzelner Knopf: ganze Wertespalte
+
+    def go():
+        d = store()
+        if d.get("view") or float(d.get("zoom") or 1.0) != 1.0 or any(d.get("pan") or ()):
+            d.update(view=None, zoom=1.0, pan=[0.0, 0.0])
+            done()
+    b.clicked.connect(go)
+    return b
+
+
 def reset_buttons(tab):
     """„Vorherige Ansicht“ + „Ansicht zurücksetzen“ + „Darstellung auf Standard“ (X-Ray und DFT)."""
     row = QHBoxLayout()

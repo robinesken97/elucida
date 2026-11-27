@@ -1919,6 +1919,8 @@ class DftPages:
             sp.valueChanged.connect(self.nics3d_changed)
             row.addWidget(sp)
         f.addRow(T("dft_nics3d_alpha"), row)
+        from elucida.tabs import xray as XRAY
+        f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.nics, lambda: (self.sync_nics(), self.changed())))
         self._nics_form = f
         self.nics_display = g
         self.nics_enabled = True                           # im Reaktionspfad aus: NICS gehört zur einzelnen Verbindung

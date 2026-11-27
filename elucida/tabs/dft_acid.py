@@ -364,6 +364,8 @@ class AcidPage:
         self.sp_alpha.setSingleStep(0.05)
         self.sp_alpha.valueChanged.connect(self.display_changed)
         f.addRow(T("dft_nics3d_alpha"), self.sp_alpha)
+        from elucida.tabs import xray as XRAY
+        f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.acid, self.changed))
         self.lbl_iso_file = STYLE.HintLabel("")                # AICD: Isowert steht in der Datei
         self.lbl_iso_file.setWordWrap(True)
         f.addRow(self.lbl_iso_file)

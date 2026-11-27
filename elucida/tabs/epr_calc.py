@@ -980,6 +980,7 @@ class SpinPages:
         row.addWidget(self.cb_dipole)
         row.addStretch(1)
         f.addRow(row)
+        f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.calc, self.changed))
         for w in (self.sp_iso, self.sp_alpha, self.sp_thresh, self.sp_min):
             w.valueChanged.connect(self.changed)
         self.cmb_surface.currentIndexChanged.connect(self.surface_changed)

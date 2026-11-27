@@ -27,10 +27,12 @@ from elucida.core import tddft as X
 from elucida.formats import nto as NTO
 from elucida.formats.calc import read_text
 from elucida.formats.elements import BOHR
+from elucida.tabs import xray as XRAY
 
 DEFAULTS = dict(items={}, sel=None, wmin=10.0, iso=0.0, si=True)
 MAX_PAIRS = 4                                    # mehr Paare über der Schwelle sind praktisch nie sinnvoll lesbar
 IMG_DPI = 200
+DRAG_DPI = 100                                   # Ziehbild (4 Zoll) höchstens so fein: Drehen bleibt flüssig
 
 
 def state_key(src, k):
@@ -81,6 +83,10 @@ class NtoView:
         self.sp_iso.setSpecialValueText(T("nto_iso_auto", p=f"{ORB.ISO_FRACTION:g}"))
         self.sp_iso.setToolTip(T("nto_iso_tip"))
         f.addRow(T("nto_iso"), self.sp_iso)
+        self.btn_view = QPushButton(STYLE.icon("reset"), T("xr_reset_view"))
+        self.btn_view.setToolTip(T("nto_view_reset_tip"))
+        self.btn_view.setFixedWidth(STYLE.VALUE_W)            # einzelner Knopf: ganze Wertespalte wie die Dateiknöpfe
+        f.addRow(T("nto_view"), self.btn_view)
         self.cb_si = QCheckBox(T("nto_si"))
         self.cb_si.setToolTip(T("nto_si_tip"))
         f.addRow(self.cb_si)
@@ -92,6 +98,7 @@ class NtoView:
         self.btn_molden.clicked.connect(self.add_molden)
         self.btn_cubes.clicked.connect(self.add_cubes)
         self.btn_remove.clicked.connect(self.remove)
+        self.btn_view.clicked.connect(self.reset_view)
         self.sp_w.valueChanged.connect(self.weight_changed)
         for w in (self.sp_wmin, self.sp_iso):
             w.valueChanged.connect(self.changed)
@@ -118,6 +125,9 @@ class NtoView:
         lay.addWidget(self.page)
         self._states = []
         self._pending = False
+        self._ims = []                                         # [(Achse, Bild)] der Orbitale auf self.fig (Drehen)
+        self._drag_key = None
+        self.mouse = _NtoMouse(_DragView(self), _NtoTarget(self))
         from elucida.tabs.base import ShowHook
         ShowHook(self.page, lambda: self._pending and self.refresh())   # aufgeschobenes Bild beim Anzeigen
 
@@ -183,6 +193,7 @@ class NtoView:
             w.setEnabled(on)
         it = self.item()
         self.btn_remove.setEnabled(it is not None)
+        self.btn_view.setEnabled(bool(it and it.get("view")))
         # Gewicht von Hand nur für Cubes, deren Paar nicht im NTO-Block der Ausgabe steht
         self.sp_w.setEnabled(bool(it) and it["kind"] == "cube" and self.out_weight(self.current(), it) is None)
 
@@ -200,6 +211,20 @@ class NtoView:
         if it is not None and it["kind"] == "cube":
             it["weight"] = self.sp_w.value() or None
             self.changed()
+
+    def reset_view(self):
+        it = self.item()
+        if it is not None and it.pop("view", None) is not None:
+            self.refresh()
+            self.tab.main.push_undo()
+
+    def view_changed(self, R):
+        """Eigene Drehung (Ziehen im Bild): gilt für Loch und Teilchen, gespeichert nur jetzt (alte Projekte ohne)."""
+        it = self.item()
+        if it is not None:
+            it["view"] = [round(float(v), 6) for v in np.asarray(R).ravel()]
+            self.refresh()
+            self.tab.main.push_undo()
 
     # -- Dateien ---------------------------------------------------------------------------------
     def _pick(self, title, flt, many):
@@ -390,13 +415,20 @@ class NtoView:
             R = XRAY.default_view(mol, use=list(range(len(mol.atoms))))
         return XRAY.XrayFigure(cfg, mol, R, o, {}, fig, ext=ext), R
 
-    def images(self, pairs):
+    def images(self, pairs, s=None):
         """RGBA-Bilder aller Orbitale (Loch, Teilchen je Paar): gleiche Ansicht, gleicher Maßstab, gleicher Ausschnitt."""
+        return self.rendered(pairs, s)["imgs"]
+
+    def rendered(self, pairs, s=None):
+        """-> dict(imgs, R, ext, crop (x0, y0) in Pixeln des vollen Bilds); Ansicht = eigene Drehung des Zustands
+        (`view` im Eintrag) oder automatisch."""
         srcs = [p[r] for p in pairs for r in ("hole", "particle")]
-        key = ("ntoimg", repr(srcs), float(self.st.get("iso", 0.0)))
+        view = (self.item(s) or {}).get("view")
+        key = ("ntoimg", repr(srcs), float(self.st.get("iso", 0.0)), repr(view))
 
         def make():
-            R, ext, figs = None, [0.0, 0.0], []
+            R = np.array(view, float).reshape(3, 3) if view and len(view) == 9 else None
+            ext, figs = [0.0, 0.0], []
             for src in srcs:                                      # 1) gemeinsame Ansicht und Ausdehnung
                 els, xyz = self.geometry(src)
                 vol = self.volume(src)
@@ -417,11 +449,12 @@ class NtoView:
                 out.append(np.asarray(Image.open(buf).convert("RGBA")).copy())
             alpha = np.max([im[:, :, 3] for im in out], axis=0)    # gemeinsamer Ausschnitt um alles Sichtbare
             y, x = np.nonzero(alpha)
+            y0 = x0 = 0
             if len(x):
                 pad = 6
                 y0, y1, x0, x1 = max(0, y.min() - pad), y.max() + pad + 1, max(0, x.min() - pad), x.max() + pad + 1
                 out = [im[y0:y1, x0:x1] for im in out]
-            return out
+            return dict(imgs=out, R=R, ext=(e, e), crop=(int(x0), int(y0)), full=alpha.shape[:2])
         return self.tab.cache(key, make)
 
     @staticmethod
@@ -435,6 +468,7 @@ class NtoView:
         """Je Paar Loch → Teilchen mit Gewicht über dem Pfeil. Normal: Paare untereinander (Loch | Pfeil | Teilchen);
         langgestreckt: Paare nebeneinander (Loch über Pfeil über Teilchen). Köpfe „hole“/„particle“."""
         fig.clear()
+        ims = []
         n, fs, wide = len(pairs), 11, self.wide(imgs)
         if wide:
             gs = fig.add_gridspec(3, n, height_ratios=[1, 0.3, 1], left=0.07, right=0.99, top=0.99, bottom=0.01,
@@ -445,7 +479,7 @@ class NtoView:
         for i, (p, (a, b)) in enumerate(zip(pairs, zip(imgs[0::2], imgs[1::2]))):
             for j, im in ((0, a), (2, b)):
                 ax = fig.add_subplot(gs[j, i] if wide else gs[i, j])
-                ax.imshow(im, interpolation="lanczos")
+                ims.append((ax, ax.imshow(im, interpolation="lanczos")))
                 ax.set_axis_off()
                 if i == 0:
                     lab = "hole" if j == 0 else "particle"
@@ -469,6 +503,7 @@ class NtoView:
                     ax.text(0.54, 0.5, t, ha="left", va="center", fontsize=fs)
                 else:
                     ax.text(0.5, 0.58, t, ha="center", va="bottom", fontsize=fs)
+        return ims
 
     def fig_size(self, n, imgs, w_cm=16.0):
         """Exportgröße: 16 cm breit, Höhe aus Seitenverhältnis der Bilder und Anordnung (wie `draw`)."""
@@ -491,6 +526,7 @@ class NtoView:
         self._pending = bool(pairs) and not self.page.isVisible()
         if self._pending:                                     # Bilder (Raycasting) erst beim Anzeigen der Seite
             return
+        self._ims = []
         if not pairs:
             self.fig.clear()
             self.canvas.hide()
@@ -500,7 +536,7 @@ class NtoView:
             self.canvas.draw_idle()
             return
         try:
-            imgs = self.images(pairs)
+            imgs = self.images(pairs, s)
         except Exception as ex:
             self.tab.main.log_signal.emit(f"NTO: {ex}")
             self.canvas.hide()
@@ -509,7 +545,8 @@ class NtoView:
             return
         self.lbl_empty.hide()
         self.canvas.show()
-        self.draw(self.fig, pairs, imgs)
+        self._ims = self.draw(self.fig, pairs, imgs)
+        self._drag_key = (s["key"], repr(pairs), float(self.st.get("iso", 0.0)), repr(self.item(s).get("view")))
         self.canvas.draw_idle()
         cap = self.caption_html(s, pairs)
         self.txt_cap.setText("<b>Figure Sn:</b> " + cap)
@@ -542,7 +579,7 @@ class NtoView:
         if lev:
             txt += f" at the {html.escape(lev)} level of theory"
         try:
-            wide = self.wide(self.images(pairs))
+            wide = self.wide(self.images(pairs, s))
         except Exception:
             wide = False
         txt += ": hole (top) and particle (bottom)" if wide else ": hole (left) and particle (right)"
@@ -559,7 +596,7 @@ class NtoView:
         pairs = self.pairs(s)[0] if s else []
         if not pairs:
             return []
-        imgs = self.images(pairs)
+        imgs = self.images(pairs, s)
         fig = MplFigure(figsize=self.fig_size(len(pairs), imgs), dpi=100)
         FigureCanvasAgg(fig)
         self.draw(fig, pairs, imgs)
@@ -606,7 +643,7 @@ class NtoView:
             got = self.export_figure(Path(out_dir) / f"{core.safe_name(name)}_NTO_{s['name']}", s)
             if not got:
                 continue
-            w_in, h_in = self.fig_size(len(pairs), self.images(pairs))
+            w_in, h_in = self.fig_size(len(pairs), self.images(pairs, s))
             out += [("image", got[0], w_in * 2.54, h_in * 2.54, got[1]), ("figcap", self.caption_html(s, pairs, name))]
         return out
 
@@ -615,3 +652,101 @@ def STYLE_plain(h):
     """HTML der Unterschrift -> reiner Text."""
     import re
     return html.unescape(re.sub(r"<[^>]+>", "", h))
+
+
+class _DragView:
+    """Schnittstelle von `xray.XrayMouse` für das NTO-Bild (mehrere Orbitale auf einer Abbildung): Drehen setzt die
+    Ansicht aller Orbitale zugleich. Beim Ziehen je Orbital eine feste XrayFigure (Orbital gröber, Maßstab und Ausschnitt
+    vom Ruhebild), ihr Bild ersetzt das Ruhebild in dessen Achse; nach dem Loslassen zeichnet `refresh` alles neu."""
+
+    ann_items = {}
+    scene = orb_art = None
+    pan, zoom = [0.0, 0.0], 1.0
+
+    def __init__(self, view):
+        self.v, self.fig, self.R = view, view.fig, None
+        self._figs, self._for = [], None
+
+    @property
+    def ax(self):
+        return self.v._ims[0][0] if self.v._ims else self.fig.gca()
+
+    def artists(self):
+        return [im for _, im in self.v._ims]
+
+    def data_per_px(self):
+        return 1.0
+
+    def set_zoom_pan(self, zoom=None, pan=None):
+        pass
+
+    def start(self):
+        """Beim Drücken: Ansicht des Ruhebilds (eigene oder automatische)."""
+        v = self.v
+        s = v.current()
+        pairs = v.pairs(s)[0] if s else []
+        if not pairs or not v._ims:
+            return False
+        self._pairs, self._r = pairs, v.rendered(pairs, s)
+        self.R = self._r["R"].copy()
+        return True
+
+    def set_drag(self, on):
+        if not on or self._for == self.v._drag_key:
+            return
+        v, r = self.v, self._r
+        ax = v._ims[0][0]
+        crop_w = max(1, v._ims[0][1].get_array().shape[1])
+        dpi = int(min(DRAG_DPI, max(30, IMG_DPI * ax.bbox.width / crop_w)))   # höchstens Bildschirmauflösung
+        for _, im in v._ims:
+            im.set_interpolation("bilinear")                      # Lanczos kostete beim Ziehen ~10 ms je Bild
+        self._figs = []
+        for src in [p[k] for p in self._pairs for k in ("hole", "particle")]:
+            els, xyz = v.geometry(src)
+            vol = v.volume(src)
+            fig = MplFigure(figsize=(4, 4), dpi=dpi)
+            FigureCanvasAgg(fig)
+            F, _ = v._orbital_figure(els, xyz, vol, v.iso(vol), r["R"], fig, ext=r["ext"])
+            fig.patch.set_alpha(0.0)
+            F.set_drag(True)
+            self._figs.append(F)
+        self._for = v._drag_key
+
+    def set_view(self, R):
+        self.R = XRAY.orthonormalize(R)
+        H, W = self._r["full"]
+        x0, y0 = self._r["crop"]
+        for F, (ax, im) in zip(self._figs, self.v._ims):
+            F.set_view(self.R)
+            F.fig.canvas.draw()
+            ax.set_autoscale_on(False)                            # Achse behält den Ausschnitt des Ruhebilds
+            im.set_data(np.asarray(F.fig.canvas.buffer_rgba()))
+            im.set_extent((-0.5 - x0, W - 0.5 - x0, H - 0.5 - y0, -0.5 - y0))
+
+
+class _NtoMouse(XRAY.XrayMouse):
+    """Nur Drehen mit der linken Taste (kein Verschieben, Zoomen, Rahmen, Atomwahl); Empfänger = NtoView."""
+
+    def press(self, ev):
+        if ev.button != 1 or ev.dblclick or "shift" in (ev.key or "") or not self.F.start():
+            self.mode = None
+            return
+        super().press(ev)
+
+    def scroll(self, ev):
+        pass
+
+
+class _NtoTarget:
+    """Empfänger für `_NtoMouse` (wie `_AcidMouse`): nur die Ansicht."""
+
+    def __init__(self, view):
+        self.v = view
+
+    def hover_atom(self, k):
+        pass
+
+    atom_clicked = atom_double_clicked = atoms_boxed = labels_moved = pan_changed = zoom_changed = hover_atom
+
+    def view_changed(self, R):
+        self.v.view_changed(R)

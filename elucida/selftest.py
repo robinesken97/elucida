@@ -1670,6 +1670,110 @@ def _g_uvvis(ctx):
                           "project paths): OK")
 
         with section:
+            # NTO drehbar (1.5.0): Ziehen dreht Loch und Teilchen gemeinsam (XrayMouse ueber _DragView), Ansicht je Zustand
+            # nur nach eigener Drehung gespeichert, gilt fuer Bild/Export, "Startansicht" = automatische Ansicht, Undo
+            import copy as copy_r_
+            from matplotlib.backend_bases import MouseEvent as ME_r_
+            from elucida.app.demo import tddft_out as td_r_
+            from elucida.core import orbitals as ORB_r_
+            from elucida.tabs import nto as NTOV_r_
+            tn_r_ = td_r_(out / "input" / "nto_rot.out", [(400.0, 0.80)], parts=[[(0, 1, 0.90)]], n_occ=1,
+                          nto=[[(7, 8, 0.91)]])
+            cr1_ = ORB_r_.make_test_cube(out / "input" / "nto_rot.mo7a.cube", n=24)
+            cr2_ = out / "input" / "nto_rot.mo8a.cube"
+            sh_n_.copy(cr1_, cr2_)
+            ov_r_ = w.ov_tab.st
+            old_r_ = copy_r_.deepcopy(dict(ov_r_))
+            try:
+                ov_r_.update(entries=[dict(kind="calc", file=str(tn_r_), label="calc.", color="#1764e8", visible=True,
+                                           own_norm=False, nlo=250.0, nhi=500.0, fwhm=0.3, shift=0.0)],
+                             mode="norm", stack=False, nlo=250.0, nhi=500.0)
+                kr_ = NTOV_r_.state_key({"file": str(tn_r_)}, 0)
+                fr_, nr_ = NTOV_r_.NtoView.cube_pair([str(cr1_), str(cr2_)])
+                ov_r_["nto"] = dict(items={kr_: dict(kind="cube", files=fr_, mos=nr_, state="S1", weight=None)},
+                                    sel=kr_, wmin=10.0, iso=0.0, si=True)
+                v_r_ = w.ov_tab.nto
+                v_r_.sync()
+                assert "view" not in v_r_.item() and not v_r_.btn_view.isEnabled()
+                pr_r_ = v_r_.pairs()[0]
+                r0_ = v_r_.rendered(pr_r_)
+                im0_ = [i_.copy() for i_ in r0_["imgs"]]
+                assert r0_["R"].shape == (3, 3) and len(im0_) == 2
+                png0_ = v_r_.export_figure(out / "nto_rot_a")[0].read_bytes()
+                # eigene Drehung: Bild und Export aendern sich, Ansicht steht im Eintrag (9 Zahlen)
+                from elucida.tabs import xray as XRAY_r_
+                v_r_.view_changed(XRAY_r_.rot("y", 1.1) @ r0_["R"])
+                assert len(v_r_.item()["view"]) == 9 and v_r_.btn_view.isEnabled()
+                im1_ = v_r_.images(pr_r_)
+                assert im1_[0].shape != im0_[0].shape or np.abs(im1_[0].astype(int) - im0_[0]).max() > 0
+                assert v_r_.export_figure(out / "nto_rot_b")[0].read_bytes() != png0_
+                # Startansicht: Eintrag ohne view, Bild pixelgleich zum automatischen
+                v_r_.reset_view()
+                assert "view" not in v_r_.item() and not v_r_.btn_view.isEnabled()
+                for k_ in [k_ for k_ in w.extra_cache if isinstance(k_, tuple) and k_[0] == "ntoimg"]:
+                    del w.extra_cache[k_]                       # neu gerechnet, nicht aus dem Cache
+                im2_ = v_r_.images(pr_r_)
+                assert all(a_.shape == b_.shape and np.array_equal(a_, b_) for a_, b_ in zip(im0_, im2_))
+                # Ziehen im sichtbaren Bild: Loch und Teilchen gemeinsam, Ansicht erst beim Loslassen gespeichert
+                vis_r_ = w.isVisible()
+                w.show()
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("overlay"))
+                pump()
+                rt_r_ = w.ov_tab.right_tabs
+                rt_r_.setCurrentIndex(next(j_ for j_ in range(rt_r_.count())
+                                           if rt_r_.widget(j_).isAncestorOf(v_r_.page)))
+                pump(0.5)
+                assert len(v_r_._ims) == 2, (v_r_.page.isVisible(), w.isVisible(), v_r_._pending)
+                c_r_ = v_r_.canvas
+                b_r_ = v_r_._ims[0][0].bbox
+                x_r_, y_r_ = b_r_.x0 + b_r_.width / 2, b_r_.y0 + b_r_.height / 2
+                c_r_.callbacks.process("button_press_event", ME_r_("button_press_event", c_r_, x_r_, y_r_, button=1))
+                for i_ in range(1, 5):
+                    c_r_.callbacks.process("motion_notify_event", ME_r_("motion_notify_event", c_r_, x_r_ + 15 * i_,
+                                                                        y_r_ + 4 * i_, button=1))
+                dv_r_ = v_r_.mouse.F
+                assert len(dv_r_._figs) == 2 and all(np.allclose(F_.R, dv_r_.R) for F_ in dv_r_._figs)
+                assert "view" not in v_r_.item()
+                for _ in range(50):                          # Undo-Verlauf aktiv (nicht mitten in einer Wiederherstellung)
+                    if not w._restoring:
+                        break
+                    pump(0.1)
+                if not w._undo:
+                    w._init_undo()
+                n_undo_r_ = len(w._undo)
+                c_r_.callbacks.process("button_release_event", ME_r_("button_release_event", c_r_, x_r_ + 60, y_r_ + 16,
+                                                                     button=1))
+                pump(0.3)
+                vr_ = v_r_.item()["view"]
+                assert np.allclose(np.array(vr_).reshape(3, 3), dv_r_.R, atol=1e-5), vr_
+                # Rueckgaengig holt die automatische Ansicht zurueck
+                assert n_undo_r_ and len(w._undo) == n_undo_r_ + 1, (n_undo_r_, len(w._undo))
+                w.undo()
+                for _ in range(50):
+                    pump(0.1)
+                    if not w._restoring:
+                        break
+                assert "view" not in w.ov_state["nto"]["items"][kr_], w.ov_state["nto"]["items"][kr_]
+                # gleicher Baustein "Startansicht" fuer NBO, ACID, 3D-NICS, EPR-Rechnung (view/zoom/pan im Zustand)
+                d_r_, n_r_ = dict(view=[1.0] * 9, zoom=2.0, pan=[0.5, 0.0], layout={"a": 1}), []
+                b_rv_ = XRAY_r_.view_reset_button(lambda: d_r_, lambda: n_r_.append(1))
+                b_rv_.click()
+                assert d_r_ == dict(view=None, zoom=1.0, pan=[0.0, 0.0], layout={"a": 1}) and n_r_ == [1], d_r_
+                b_rv_.click()                                # schon automatisch: kein Neuzeichnen, kein Undo-Schritt
+                assert n_r_ == [1]
+            finally:
+                rt_r_ = w.ov_tab.right_tabs
+                rt_r_.setCurrentIndex(0)
+                if not locals().get("vis_r_", True):
+                    w.hide()
+                ov_r_ = w.ov_tab.st
+                ov_r_.clear()
+                ov_r_.update(old_r_)
+                w.ov_tab.render()
+            report.append("NTO rotation (drag rotates hole and particle together, view stored only after rotation, "
+                          "export follows, reset view pixel-equal, undo; reset view button for NBO/ACID/NICS/EPR): OK")
+
+        with section:
             # Export ins Projekt inkl. Excel-Report
             w.open_csv(csv, ask=False)
             w.series["TEST-A"]["mw"] = 95.1

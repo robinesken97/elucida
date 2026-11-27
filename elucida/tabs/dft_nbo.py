@@ -395,6 +395,7 @@ class NboPage:
         self.cb_hlab = QCheckBox(T("nbo_h_labels"))
         f.addRow(self.cb_h)
         f.addRow(self.cb_hlab)
+        f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.st, self.changed))
         self.display = g
         for w in (self.cmb_atoms, self.cmb_spin):
             w.currentIndexChanged.connect(self.collect)

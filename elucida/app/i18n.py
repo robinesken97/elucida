@@ -6446,3 +6446,16 @@ TEXTS.update({                                            # HRMS: eigenes Ion, F
     "dp_pdf_check": ("PDF-Köpfe prüfen (MS-Bericht als Bild oder mit unbekanntem Aufbau, Inhalt unverändert):\n  {files}",
                      "check PDF headers (MS report as image or with unknown layout, content unchanged):\n  {files}"),
 })
+
+# NTO-Strukturen drehbar (1.5.0, Spur s2bnto)
+TEXTS.update({
+    "nto_view": ("Ansicht", "View"),
+    "view_row": ("Ansicht", "View"),
+    "view_reset_tip": ("Drehung, Zoom und Verschiebung des Bilds auf die automatische Ansicht (Ziehen im Bild dreht, "
+                       "Mausrad zoomt).", "Rotation, zoom and shift of the figure back to the automatic view (drag in the "
+                       "figure to rotate, mouse wheel to zoom)."),
+    "nto_view_reset_tip": ("Im Bild ziehen dreht Loch und Teilchen gemeinsam (gilt auch für Export und SI). Der Knopf "
+                           "stellt die automatische Ansicht wieder her.",
+                           "Dragging in the figure rotates hole and particle together (also used for export and SI). "
+                           "The button restores the automatic view."),
+})
