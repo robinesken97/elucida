@@ -5633,6 +5633,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         TABS.si_elsewhere(f, self.cb_pxrd_si, self, "xray", "PXRD")
         self.grp_pxrd_fig = g
         self.lv.addWidget(g)
+        self.pxrd_texts = TABS.PageTexts(self, lambda: "pxrd", self.show_pxrd, "lab_card_pxrd")   # feste Texte (Achsentitel, Legende)
+        self.lv.addWidget(self.pxrd_texts.box)
         for w_ in (self.cmb_pxrd_anode, self.cmb_pxrd_stack):
             w_.currentIndexChanged.connect(self.pxrd_changed)
         for w_ in (self.cb_pxrd_ka2, self.cb_pxrd_auto, self.cb_pxrd_ticks, self.cb_pxrd_si):
@@ -5846,7 +5848,9 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             return None
         cfg, curves, sticks, _, _ = spec
         core.setup_fonts(TABS.plt, cfg)
-        return TABS.X.SimpleFigure(TABS.plt, cfg, curves, [], {}, fig=fig, sticks=sticks)
+        F = TABS.X.SimpleFigure(TABS.plt, cfg, curves, [], {}, fig=fig, sticks=sticks)
+        TABS.own_texts(self, F, fig)                       # eigene feste Texte (Karte „Beschriftungen im Bild“)
+        return F
 
     def show_pxrd(self):
         """Seite „PXRD“ und linke Karten auf den Stand bringen (nach jedem Zeichnen)."""
@@ -5859,6 +5863,8 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
             self.pxrd_host.set_figure_size(*self.base_cfg()["figsize_in"])
             F = self.build_pxrd(self.pxrd_fig, e)
         self.pxrd_stack.setCurrentIndex(0 if F is None else 1)
+        self.pxrd_texts.fill(F)
+        self.pxrd_texts.box.setVisible(F is not None)      # nur mit Diffraktogramm
         if F is None:
             self.pxrd_fig.clear()
             self.lbl_pxrd_note.setText(getattr(self, "_pxrd_err", "") if e is not None else "")

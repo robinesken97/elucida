@@ -6446,6 +6446,47 @@ TEXTS.update({                                            # HRMS: eigenes Ion, F
     "dp_pdf_check": ("PDF-Köpfe prüfen (MS-Bericht als Bild oder mit unbekanntem Aufbau, Inhalt unverändert):\n  {files}",
                      "check PDF headers (MS report as image or with unknown layout, content unchanged):\n  {files}"),
 })
+# txt_: feste Texte der Abbildung in der Karte „Beschriftungen im Bild“ (core/figtexts.py, Spur s3texte 1.5.0)
+TEXTS.update({
+    "lab_col_what": ("Element", "Element"),
+    "lab_kind_label": ("Label", "Label"),
+    "lab_kind_extra": ("Eigenes Label", "Own label"),
+    "txt_part_x": ("X-Achse", "X-axis"),
+    "txt_part_y": ("Y-Achse", "Y-axis"),
+    "txt_part_title": ("Titel", "title"),
+    "txt_part_legend": ("Legende", "legend"),
+    "txt_part_head": ("Tabellenkopf", "table header"),
+    "txt_ax_r": ("rechte", "right"),
+    "txt_ax_inset": ("Inset", "inset"),
+    "txt_ax_cbar": ("Farbskala", "Color scale"),
+    "txt_ax_fig": ("Abbildung", "figure"),
+    "txt_ax_n": ("Teilbild {n}", "panel {n}"),
+})
+TEXTS.update({                                            # s3texte: Einträge „nicht im Bild“, Übernehmen
+    "lab_stale": ("{el} · nicht im Bild", "{el} · not in figure"),
+    "lab_stale_tip": ("Eigener Text, der gerade nicht im Bild steht (Element aus, andere Daten oder geänderter "
+                      "automatischer Text). Er bleibt gespeichert: Übernehmen oder Zurücksetzen.",
+                      "Own text that is currently not in the figure (element off, other data or changed automatic "
+                      "text). It stays saved: adopt or reset."),
+    "lab_stale_info": ("Nicht im Bild – eigener Text für „{t}“", "Not in the figure – own text for “{t}”"),
+    "lab_stale_reset_tip": ("Eigenen Text verwerfen", "Discard the own text"),
+    "lab_adopt": ("Übernehmen", "Adopt"),
+    "lab_adopt_tip": ("Eigenen Text für „{el}“ im Bild verwenden", "Use the own text for “{el}” in the figure"),
+    "lab_adopt_none": ("Kein eindeutiges Element ohne eigenen Text im Bild: Text kopieren und in der passenden Zeile "
+                       "eintragen", "No single element without own text in the figure: copy the text and enter it in "
+                       "the matching row"),
+    "lab_adopt_only": ("Nur für Zeilen „nicht im Bild“", "Only for rows “not in figure”"),
+})
+TEXTS.update({                                            # s3texte: Karten fester Texte auf Seiten mit eigener Abbildung
+    "lab_card_nics": ("Beschriftungen: NICS-Scan", "Labels: NICS Scan"),
+    "lab_card_pxrd": ("Beschriftungen: PXRD", "Labels: PXRD"),
+    "lab_card_decay": ("Beschriftungen: Abklingkurve", "Labels: Decay Curve"),
+    "lab_grp_labels": ("Labels", "Labels"),
+    "lab_grp_axes": ("Achsen und Legende", "Axes and Legend"),
+    "lab_grp_inset": ("Inset", "Inset"),
+    "lab_grp_tip": ("Klicken: auf- oder zuklappen", "Click to expand or collapse"),
+    "lab_card_nto": ("Beschriftungen: NTO", "Labels: NTO"),
+})
 
 # NTO-Strukturen drehbar (1.5.0, Spur s2bnto)
 TEXTS.update({

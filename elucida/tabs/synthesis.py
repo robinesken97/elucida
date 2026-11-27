@@ -554,13 +554,8 @@ class SynthTab(QWidget):
         self.proc_group = g
         v = QVBoxLayout(g)
         row = QHBoxLayout()
-        for txt, fn, tip in (("B", self.fmt_bold, T("syn_bold")), ("I", self.fmt_italic, T("syn_italic")),
-                             ("X₂", lambda: self.fmt_valign(QTextCharFormat.AlignSubScript), T("syn_sub")),
-                             ("X²", lambda: self.fmt_valign(QTextCharFormat.AlignSuperScript), T("syn_sup"))):
-            b = QPushButton(txt)
-            b.setToolTip(tip)
-            b.setFixedWidth(40)
-            b.clicked.connect(fn)
+        self.ed_proc = ProcEdit()
+        for b in format_buttons(self.ed_proc):
             row.addWidget(b)
         b = QPushButton(T("syn_join_lines"))                 # aus PDF kopierter Text: feste Zeilenenden entfernen
         b.setToolTip(T("syn_join_lines_tip"))
@@ -573,7 +568,6 @@ class SynthTab(QWidget):
         self.btn_gp.menu().aboutToShow.connect(self.fill_gp_menu)
         row.addWidget(self.btn_gp)
         v.addLayout(row)
-        self.ed_proc = ProcEdit()
         self.ed_proc.setAcceptRichText(True)
         self.ed_proc.setMinimumHeight(180)
         if self.compact:
@@ -892,23 +886,6 @@ class SynthTab(QWidget):
                 self.main.log_signal.emit(f"{Path(p).name}: {ex}")
                 self.main.extra_cache[key] = None
         return self.main.extra_cache[key]
-
-    def fmt_bold(self):
-        f = QTextCharFormat()
-        bold = _weight(self.ed_proc.fontWeight()) >= _weight(QFont.Weight.Bold)
-        f.setFontWeight(QFont.Weight.Normal if bold else QFont.Weight.Bold)
-        self.ed_proc.mergeCurrentCharFormat(f)
-
-    def fmt_italic(self):
-        f = QTextCharFormat()
-        f.setFontItalic(not self.ed_proc.fontItalic())
-        self.ed_proc.mergeCurrentCharFormat(f)
-
-    def fmt_valign(self, al):
-        f = QTextCharFormat()
-        cur = self.ed_proc.currentCharFormat().verticalAlignment()
-        f.setVerticalAlignment(QTextCharFormat.AlignNormal if cur == al else al)
-        self.ed_proc.mergeCurrentCharFormat(f)
 
     def proc_changed(self):
         self.st["proc"] = doc_html(self.ed_proc)
@@ -1291,6 +1268,37 @@ class ProcEdit(QTextEdit):
             self.textCursor().insertText(re.sub(r"[ \t]{2,}", " ", text))
             return
         super().insertFromMimeData(source)
+
+
+def format_buttons(edit):
+    """Knöpfe B, I, X₂, X² für einen Editor (Vorschrift; Karte „Beschriftungen im Bild“): wirken auf die Auswahl bzw.
+    das Weitertippen. Ohne Fokus, damit das Feld beim Klick seine Auswahl behält (und nicht vorher übernimmt)."""
+    def bold():
+        f = QTextCharFormat()
+        f.setFontWeight(QFont.Weight.Normal if _weight(edit.fontWeight()) >= _weight(QFont.Weight.Bold)
+                        else QFont.Weight.Bold)
+        edit.mergeCurrentCharFormat(f)
+
+    def italic():
+        f = QTextCharFormat()
+        f.setFontItalic(not edit.fontItalic())
+        edit.mergeCurrentCharFormat(f)
+
+    def valign(al):
+        f = QTextCharFormat()
+        f.setVerticalAlignment(QTextCharFormat.AlignNormal if edit.currentCharFormat().verticalAlignment() == al else al)
+        edit.mergeCurrentCharFormat(f)
+    out = []
+    for txt, fn, tip in (("B", bold, T("syn_bold")), ("I", italic, T("syn_italic")),
+                         ("X₂", lambda: valign(QTextCharFormat.AlignSubScript), T("syn_sub")),
+                         ("X²", lambda: valign(QTextCharFormat.AlignSuperScript), T("syn_sup"))):
+        b = QPushButton(txt)
+        b.setToolTip(tip)
+        b.setFixedWidth(40)
+        b.setFocusPolicy(Qt.NoFocus)
+        b.clicked.connect(fn)
+        out.append(b)
+    return out
 
 
 def simple_to_qt(h):

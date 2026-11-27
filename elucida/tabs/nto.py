@@ -94,6 +94,11 @@ class NtoView:
         si_elsewhere(f, self.cb_si, tab, "overlay", "NTO")
         lay.addWidget(g)
         self.card = g
+        from elucida.tabs.base import PageTexts               # feste Texte des Bilds („hole“, „particle“)
+        self.text_rows = []
+        self.texts = PageTexts(tab, lambda: "nto", self.refresh, "lab_card_nto")
+        lay.addWidget(self.texts.box)
+        self.texts.box.hide()                                  # erst mit Bild
         self.cmb_state.currentIndexChanged.connect(self.state_chosen)
         self.btn_molden.clicked.connect(self.add_molden)
         self.btn_cubes.clicked.connect(self.add_cubes)
@@ -483,9 +488,9 @@ class NtoView:
                 ax.set_axis_off()
                 if i == 0:
                     lab = "hole" if j == 0 else "particle"
-                    if wide:
+                    if wide:                          # wie der Titel: derselbe Schlüssel in beiden Anordnungen
                         ax.text(-0.02, 0.5, lab, transform=ax.transAxes, rotation=90, ha="right", va="center",
-                                fontsize=fs)
+                                fontsize=fs)._elu_role = "title"
                     else:
                         ax.set_title(lab, fontsize=fs)
             ax = fig.add_subplot(gs[1, i] if wide else gs[i, 1])
@@ -503,6 +508,8 @@ class NtoView:
                     ax.text(0.54, 0.5, t, ha="left", va="center", fontsize=fs)
                 else:
                     ax.text(0.5, 0.58, t, ha="center", va="bottom", fontsize=fs)
+        from elucida.core import figtexts as FT            # eigene Texte (Karte „Beschriftungen: NTO“), auch Export/SI
+        self.text_rows = FT.apply(fig, None, self.tab.st.get("text_over"), {})
         return ims
 
     def fig_size(self, n, imgs, w_cm=16.0):
@@ -523,6 +530,7 @@ class NtoView:
                  [Path(p).name for p in it["files"]] if it else [])
         self.lbl_names.setText("; ".join(files) if files else "–")
         self.lbl_file.setText("\n".join(notes))
+        self.texts.box.setVisible(bool(pairs))
         self._pending = bool(pairs) and not self.page.isVisible()
         if self._pending:                                     # Bilder (Raycasting) erst beim Anzeigen der Seite
             return
@@ -546,6 +554,7 @@ class NtoView:
         self.lbl_empty.hide()
         self.canvas.show()
         self._ims = self.draw(self.fig, pairs, imgs)
+        self.texts.fill(self)
         self._drag_key = (s["key"], repr(pairs), float(self.st.get("iso", 0.0)), repr(self.item(s).get("view")))
         self.canvas.draw_idle()
         cap = self.caption_html(s, pairs)

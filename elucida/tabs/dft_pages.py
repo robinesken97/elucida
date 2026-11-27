@@ -648,6 +648,8 @@ class DftPages:
         f.addRow(self.cb_signed)
         f.addRow("", self.btn_labels_reset)                # an der Feldkante wie die übrigen Knopfreihen
         lv.addWidget(card)
+        self.prof_texts = TABS.PageTexts(self.tab, lambda: "profile/" + self.prof["mode"], self.refresh)
+        lv.addWidget(self.prof_texts.box)                  # feste Texte des Profils (Achsentitel der IRC, x-Achse …)
         # Abschnitte: Balken unter dem Profil (z. B. zwei Reaktionswege nebeneinander), je Abschnitt Text, von–bis, Farbe
         card = self.card_sections = QGroupBox(T("dft_prof_card_sections"))
         v_ = STYLE.make_form(card)
@@ -1406,6 +1408,8 @@ class DftPages:
         TABS.core.setup_fonts(TABS.plt, cfg)
         cfg["legend"] = False
         cfg["xlabel"] = "reaction coordinate" + (" [Å]" if kind == "irc_rc" else "")
+        if kind == "levels":
+            cfg["text_skip"] = ("y",)                        # Achsentitel des Stufenbilds: eigenes Feld (axis_title)
         return cfg
 
     def style_of(self, mode, rec=None):
@@ -1477,7 +1481,9 @@ class DftPages:
 
     def build(self, fig, mode=None):
         mode = mode or self.prof["mode"]
-        return self.build_levels(fig) if mode == "levels" else self.build_irc(fig)
+        F, notes = self.build_levels(fig) if mode == "levels" else self.build_irc(fig)
+        TABS.own_texts(self.tab, F, fig)                     # eigene feste Texte (Karte „Beschriftungen im Bild“)
+        return F, notes
 
     # -- Bildunterschriften (HTML, englisch) ---------------------------------------------------
     def levels_caption(self, name):
@@ -1800,6 +1806,7 @@ class DftPages:
                 schematic = self.style_of("levels")[1].get("mode", "scaled") == "schematic"
                 self.profile_linker = DL.LinkMouse(F, F.profile_rows, self.link, self.level_moved, free_y=schematic)
         self.lbl_prof.setText("\n".join("⚠ " + n for n in notes))
+        self.prof_texts.fill(F)
         # SimpleFigure resets inches while Qt keeps the widget's pixel dimensions.
         # Fit both together after every rebuild (also on Retina screens).
         self.canvas_host.set_figure_size(*self.canvas_fig.get_size_inches())
@@ -1923,6 +1930,7 @@ class DftPages:
         f.addRow(T("view_row"), XRAY.view_reset_button(lambda: self.nics, lambda: (self.sync_nics(), self.changed())))
         self._nics_form = f
         self.nics_display = g
+        self.nics_texts = TABS.PageTexts(self.tab, lambda: "nics", self.sync_nics, "lab_card_nics")   # feste Texte des NICS-Scans
         self.nics_enabled = True                           # im Reaktionspfad aus: NICS gehört zur einzelnen Verbindung
 
     def _nics_group(self):
@@ -2065,6 +2073,11 @@ class DftPages:
         return rows
 
     def build_nics(self, fig):
+        F, notes = self._build_nics_scan(fig)
+        TABS.own_texts(self.tab, F, fig)                     # eigene feste Texte (Karte „Beschriftungen im Bild“)
+        return F, notes
+
+    def _build_nics_scan(self, fig):
         data, notes = self.nics_data()
         scans = [d for d in data if d["scan"]]
         if not scans:
@@ -2213,6 +2226,9 @@ class DftPages:
                 F, notes = self.build_nics(self.nics_fig)
         except Exception as ex:
             F, notes = None, [str(ex)]
+        two_d = F is not None and not (grid and (st["show"] == "3d" or not scan))
+        self.nics_texts.fill(F if two_d else None)
+        self.nics_texts.box.setVisible(self.nics_enabled and two_d)   # nur der Scan hat Achsen und Legende
         if F is None:
             self.nics_fig.clear()
             self.nics_fig.text(0.5, 0.5, T("dft_nics_empty"), ha="center", va="center", color="gray")

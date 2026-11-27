@@ -1331,6 +1331,7 @@ class Figure:
 
     def _place_legend(self):
         """Legende in freie Fläche setzen (Kurven, Bilder und Labels meiden), falls nicht verschoben."""
+        self._own_texts()
         if self.legend is None or self.layout.get("legend"):
             return
         hit = self._legend_spot()
@@ -1389,9 +1390,17 @@ class Figure:
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
 
+    def _own_texts(self):
+        """Eigene Texte (Achsentitel, Legende, Inset, Farbskala; core.figtexts) vor dem Einpassen und Platzieren, damit
+        ihre Größe zählt; ohne `text_over` nichts (Bild unverändert). Der Tab setzt sie nach dem Zeichnen noch einmal."""
+        if self.cfg.get("text_over"):
+            from elucida.core import figtexts
+            figtexts.apply(self.fig, self, self.cfg["text_over"], self.cfg)
+
     def _fit_axes(self, pad_in=0.06):
         """Achse so setzen, dass Achsenbeschriftungen exakt in die Figur passen
         (wichtig bei fester Exportgröße, da dann nicht zugeschnitten wird)."""
+        self._own_texts()
         rend = self._renderer()
         fw, fh = self.fig.get_size_inches() * self.fig.dpi
         tb = self.ax.get_tightbbox(rend)
@@ -1751,6 +1760,7 @@ class Figure:
         Tabelle, Struktur und Foto an genau dieser Stelle (wie gespeichert) die λ-Labels knapp über ihr Maximum.
         Behalten nur, wenn sie nach λ geordnet sind und nicht auf der Legende liegen und Legende, Pfeil und Labels ohne
         Notlösung frei Platz fanden – sonst zurück zum bisherigen Ergebnis (ohne dritten Durchgang)."""
+        self._own_texts()
         fixed = self._fixed_labels()
         auto = [k for k, a in self.ann_items.items() if getattr(a, "_near", False) and getattr(a, "_anchor_y", None)
                 is None and not (self.layout.get(k) or fixed.get(k))]
@@ -2247,7 +2257,11 @@ class Dragger:
     def label_key_at(self, ev):
         """Schlüssel des Labels unter der Maus (nur Labels der Karte „Beschriftungen im Bild“, keine Legende/Pfeile)."""
         keys = {r["key"] for r in getattr(self.F, "label_rows", ())}
-        return next((k for k, a in self.F.ann_items.items() if k in keys and a.get_visible() and a.contains(ev)[0]), None)
+        k = next((k for k, a in self.F.ann_items.items() if k in keys and a.get_visible() and a.contains(ev)[0]), None)
+        if k is None and getattr(self.F, "text_rows", None):     # feste Texte (Achsentitel, Legende …; core.figtexts)
+            from elucida.core import figtexts
+            k = figtexts.key_at(self.F.fig, self.F, ev)
+        return k
 
     def _over_label(self, ev):
         leg = getattr(self.F, "legend", None)

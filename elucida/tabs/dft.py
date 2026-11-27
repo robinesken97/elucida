@@ -1042,7 +1042,8 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
                    self.cb_orb_lab):
             w_.toggled.connect(self.changed)
         self.pages = PAGES.DftPages(self)
-        for card in (self.pages.nics_card, self.pages.nics_display):   # NICS: Dateien (Daten), Abbildung (Darstellung)
+        for card in (self.pages.nics_card, self.pages.nics_display,   # NICS: Dateien (Daten), Abbildung (Darstellung)
+                     self.pages.nics_texts.box):                        # feste Texte des Scans (Achsentitel, Legende)
             self.lv.addWidget(card)
         self.acid_page = ACID.AcidPage(self)                         # ACID: Cube/Rechnung (Daten), Abbildung (Darstellung)
         for card in (self.acid_page.card, self.acid_page.display, self.acid_page.arrow_card):

@@ -567,6 +567,7 @@ class SimpleFigure(core.Figure):
 
     def _fit_axes(self, pad_in=0.06):
         """Wie im Hauptplot, berücksichtigt aber auch die rechte f-Achse."""
+        self._own_texts()                                  # eigene Achsentitel vor dem Messen (core.figtexts)
         if self.ax2 is None:
             return super()._fit_axes(pad_in)
         from matplotlib.transforms import Bbox

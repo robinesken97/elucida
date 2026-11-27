@@ -70,6 +70,7 @@ class TauPart:
     def __init__(self, tab):
         self.tab = tab
         self.res = self.err = self.data = self.irf = None
+        self.text_rows = []
 
     @property
     def st(self):
@@ -127,6 +128,9 @@ class TauPart:
         for w in (self.cmb_unit, self.cmb_n, self.cmb_avg):
             w.currentIndexChanged.connect(self.tab.changed)
         self.ed_phi.editingFinished.connect(self.tab.changed)
+        self.texts = TABS.PageTexts(self.tab, lambda: "decay", self.show_page, "lab_card_decay")   # feste Texte
+        lv.addWidget(self.texts.box)
+        self.texts.box.hide()                              # erst mit Abklingkurve
         self.sync_rows()
 
     @staticmethod
@@ -352,6 +356,8 @@ class TauPart:
             lines.append(core.fmt_text(f"χ$^2_{{\\mathrm{{red}}}}$ = {r['chi2_red']:.2f}", cfg))
         ax.text(0.97, 0.95, "\n".join(lines), transform=ax.transAxes, ha="right", va="top", fontsize=fs * 1.1,
                 linespacing=1.4)
+        # eigene feste Texte (Karte „Beschriftungen: Abklingkurve“) vor dem Einpassen; gilt auch für Export und SI
+        self.text_rows = TABS.FT.apply(fig, None, self.st.get("text_over"), cfg)
         fig.tight_layout(pad=0.6, h_pad=0.3)
         if self.tab.LINE_STYLE:                         # Linienbreiten der Stilkarte wie im Spektrenbild
             TABS.apply_lines(fig, self.tab.main.text_format(self.tab.STATE_KEY))
@@ -361,6 +367,7 @@ class TauPart:
         ok = self.res is not None
         self.stack.setCurrentIndex(1 if ok else 0)
         self.stack.widget(0).setText(self.err or T("fluo_tau_empty"))
+        self.texts.box.setVisible(ok)
         if not ok:
             STYLE.fill_summary(self.tbl_fit, [])
             STYLE.fill_summary(self.tbl_fit2, [])
@@ -370,6 +377,7 @@ class TauPart:
         self.host.set_figure_size(*cfg["figsize_in"])
         self.draw(self.fig)
         self.canvas.draw_idle()
+        self.texts.card.fill(self.text_rows)
         rows, row2 = self.fit_rows()
         for t, heads in ((self.tbl_fit, self._fit_heads), (self.tbl_fit2, self._fit2_heads)):
             t.setHorizontalHeaderLabels(heads(self.tau_unit()))

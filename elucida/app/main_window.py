@@ -918,7 +918,8 @@ class MainWindow(QMainWindow):
         f.addRow(self.sec_plot)
         lv.addWidget(g)
         g, body = STYLE.card(T("lab_card"))                # Labels im Bild: eigener Text, ausblenden (je Serie)
-        self.label_card = TABS.LabelCard(body, lambda: (self.series.get(self.current) or {}).get("label_over"),
+        self.label_card = TABS.LabelCard(body, lambda: dict((self.series.get(self.current) or {}).get("label_over") or {},
+                                                            **((self.series.get(self.current) or {}).get("text_over") or {})),
                                          self.set_label_over, lambda w: self.steps.reveal(w),
                                          lambda: (self.series.get(self.current) or {}).get("extra_labels"),
                                          self.set_extra_labels)
@@ -2038,7 +2039,7 @@ class MainWindow(QMainWindow):
                         "glob": dict(self.glob), "conc": self.conc,
                         "series": dict(held.get("series", {}),
                                        **{g: dict({k: st.get(k) for k in keys},   # eigene Labeltexte nur, wenn gesetzt
-                                                  **{k: st[k] for k in ("label_over", "extra_labels") if st.get(k)})
+                                                  **{k: st[k] for k in ("label_over", "text_over", "extra_labels") if st.get(k)})
                                           for g, st in self.series.items()}),
                         "current": self.current},
                 "overlay": self.ov_state, "uvkin": self.uvkin_state, "fluo": self.fl_state, "cv": self.cv_state, "sec": self.sec_state, "hcell": self.hcell_state, "epr": self.epr_state,
@@ -3915,6 +3916,8 @@ class MainWindow(QMainWindow):
         cfg["band_hidden"] = [int(k) for k in (st.get("band_hidden") or [])]
         if st.get("label_over"):                          # eigene Texte / im Bild ausgeblendete Labels (nur die Abbildung)
             cfg["label_over"] = st["label_over"]
+        if st.get("text_over"):                           # eigene Achsentitel, Legende, Inset (core.figtexts)
+            cfg["text_over"] = st["text_over"]
         if st.get("extra_labels"):                        # eigene Labels (nur die Abbildung)
             cfg["extra_labels"] = st["extra_labels"]
         if gl["baseline"] == "off":
@@ -4155,7 +4158,7 @@ class MainWindow(QMainWindow):
             self.F = self.eps_figure(cfg2, spectra, results, g, self.fig)
             self.dragger = GuiDragger(self.F, self.layout_changed, self.label_card.popup, self.label_card.popup_empty)
             rows = getattr(self.F, "label_rows", [])
-            self.label_card.fill(rows)
+            self.label_card.fill(TABS.card_rows(self.F))
             notes = TABS.label_number_notes(rows)          # eigener Text mit Zahl: weicht von Tabelle/SI ab
             self.lbl_eps_note.setText("\n".join("⚠ " + n for n in notes))
             self.lbl_eps_note.setVisible(bool(notes))
@@ -4191,10 +4194,7 @@ class MainWindow(QMainWindow):
         st = self.series.get(self.current)
         if st is None:
             return
-        if over:
-            st["label_over"] = over
-        else:
-            st.pop("label_over", None)
+        TABS.split_over(st, over)                          # feste Texte (txt:…) nach text_over: bleiben bei neuen Messdaten
         self.render()
 
     def size_key(self):
@@ -4263,6 +4263,7 @@ class MainWindow(QMainWindow):
         """Abbildung einer ε-Serie (Vorschau, Export, SI, Folien gleich) samt Linienbreiten der Stilkarte (glob)."""
         F = core.build_figure(plt, cfg2, spectra, results, self.get_layout(g), fig=fig)
         TABS.apply_lines(F.fig, self.text_format("epsilon"))
+        TABS.FT.apply_to(F, F.fig, (self.series.get(g) or {}).get("text_over"))   # eigene feste Texte (core.figtexts)
         return F
 
     def reset_defaults(self):

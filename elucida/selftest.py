@@ -11173,7 +11173,8 @@ def _g_project_si(ctx):
             g_l = w.current
             card_l = w.label_card
             rows_l = list(w.F.label_rows)
-            assert len(rows_l) >= 2 and card_l.table.rowCount() == len(rows_l), rows_l
+            assert len(rows_l) >= 2 and card_l.table.rowCount() == len(card_l.rows), rows_l   # dazu feste Texte, Gruppenköpfe (1.5.0)
+            r0_l = [r_["key"] for r_ in card_l.rows].index(rows_l[0]["key"])          # Zeile des ersten Labels
             k_l, auto_l = rows_l[0]["key"], rows_l[0]["auto"]
             hid_l, uv_l = list(w.series[g_l].get("band_hidden") or []), w._uv_line
             tbl_l = [w.table.item(r_, 7).text() for r_ in range(w.table.rowCount())]
@@ -11209,7 +11210,7 @@ def _g_project_si(ctx):
             assert w._uv_line == uv_l and [w.table.item(r_, 7).text() for r_ in range(w.table.rowCount())] == tbl_l
             assert not w.lbl_eps_note.isHidden() and T("lab_num_differs", label=TABS._label_line(auto_l)) in \
                 w.lbl_eps_note.text(), w.lbl_eps_note.text()
-            assert card_l.table.item(0, 1).foreground().color().name() == "#c77c0e"
+            assert card_l.table.item(r0_l, 1).foreground().color().name() == "#c77c0e"
             assert card_l.menu(k_l).actions()[2].isEnabled()
             exp_l = out / "labels_eps"
             w.export_all(exp_l)
@@ -11228,7 +11229,7 @@ def _g_project_si(ctx):
             pump(0.3)
             w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
             w.render()
-            assert w.F.ann_items[k_l].get_text() == "Zqx own" and w.label_card.table.item(0, 1).text() == "Zqx own"
+            assert w.F.ann_items[k_l].get_text() == "Zqx own" and w.label_card.table.item(r0_l, 1).text() == "Zqx own"
             # Zurücksetzen = ein Schritt; Rückgängig / Wiederholen
             n_l = len(w._undo)
             card_l = w.label_card
@@ -11244,11 +11245,11 @@ def _g_project_si(ctx):
             # im Bild ausblenden (Häkchen): Bande bleibt in Tabelle und SI-Zeile, band_hidden unverändert
             w.render()
             card_l = w.label_card
-            card_l.table.item(0, 0).setCheckState(Qt.Unchecked)
+            card_l.table.item(r0_l, 0).setCheckState(Qt.Unchecked)
             pump(0.2)
             assert w.series[w.current]["label_over"] == {k_l: {"hidden": True}}
             assert k_l not in w.F.ann_items and [r_["key"] for r_ in w.F.label_rows][0] == k_l
-            assert card_l.table.item(0, 0).checkState() == Qt.Unchecked
+            assert card_l.table.item(r0_l, 0).checkState() == Qt.Unchecked
             assert list(w.series[w.current].get("band_hidden") or []) == hid_l and w._uv_line == uv_l
             # „Standardwerte“ und Layout behalten eigene Texte (eingegebene Angaben; Rücksetzen je Label)
             w.reset_defaults()
@@ -11287,7 +11288,7 @@ def _g_project_si(ctx):
             t_l.label_card.edit(k_s)
             t_l.label_card.ed.setPlainText("Zqy band")
             t_l.label_card._commit()
-            assert t_l.st["label_over"] == {k_s: {"text": "Zqy band"}} and t_l.methods_text() == meth_s
+            assert t_l.st["label_over"] == {k_s: {"text": "Zqy band", "view": t_l.card_view()}} and t_l.methods_text() == meth_s
             assert any(T("lab_num_differs", label=TABS._label_line(a_s)) in n_ for n_ in t_l._notes), t_l._notes
             assert "Zqy" in pdf_text_(t_l, "own")
             t_l.label_card.menu(k_s).actions()[1].trigger()                # Menü „Im Bild ausblenden“
@@ -11437,7 +11438,8 @@ def _g_project_si(ctx):
             t_ep.render()
             assert t_ep.F.ann_items["label_epr_0"].get_text() == "Zq" and not t_ep.F.label_rows[0]["text"]
             t_ep.label_card.menu("label_epr_0").actions()[1].trigger()          # neues erstes Label: ohne den alten Text
-            assert t_ep.st["label_over"]["label_epr_0"] == {"hidden": True, "id": f"Zq@{float(p2_ep):g}"}, t_ep.st["label_over"]
+            assert t_ep.st["label_over"]["label_epr_0"] == {"hidden": True, "id": f"Zq@{float(p2_ep):g}",
+                                                             "view": t_ep.card_view()}, t_ep.st["label_over"]
             t_ep.label_card.reset("label_epr_0")
             t_ep.st["labels"] = labs_ep
             t_ep.render()
@@ -11456,7 +11458,7 @@ def _g_project_si(ctx):
             assert t_ir.dragger.on_empty_menu is None
             t_ir.btn_thr.setChecked(False)
             t_ir.label_card.menu(k_ir).actions()[1].trigger()
-            assert t_ir.st["label_over"] == {k_ir: {"hidden": True}} and k_ir not in t_ir.F.ann_items
+            assert t_ir.st["label_over"] == {k_ir: {"hidden": True, "view": "ir"}} and k_ir not in t_ir.F.ann_items
             assert t_ir._ir_line == line_ir and json.dumps(w.irms_state.get("ir_off")) == ir_off_l
             assert len(t_ir.F.ann_items) == len(rows_ir) - 1
             t_ir.label_card.reset(k_ir)
@@ -14056,7 +14058,10 @@ def _g_comparison(ctx):
             ct_.label_card.edit(kl_)
             ct_.label_card.ed.setPlainText("Zqc own")
             ct_.label_card._commit()
-            assert ct_.st["label_over"] == {kl_: {"text": "Zqc own"}} and ct_.F.ann_items[kl_].get_text() == "Zqc own"
+            lo_c_ = ct_.st.get("label_over") or {}                # Ansicht im Eintrag wie die Karte (Robin 27.11.)
+            assert list(lo_c_) == [kl_] and lo_c_[kl_]["text"] == "Zqc own" and \
+                lo_c_[kl_].get("view", "") == ct_.label_card.get_view(), (lo_c_, ct_.label_card.get_view())
+            assert ct_.F.ann_items[kl_].get_text() == "Zqc own"
             ct_.move_row(2, 0)                                    # Reihenfolge = Liste: T3 jetzt oben
             assert [c_["label"] for c_ in ct_.figure_spec()[1]] == ["T3", "T1", "T2"]
             ct_.cb["normalize"].setChecked(True)
@@ -14066,7 +14071,7 @@ def _g_comparison(ctx):
             assert out_cv_ and {p_.suffix for p_ in out_cv_} >= {".pdf", ".svg", ".png"}, out_cv_
             cp_.save()
             assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["normalize"] is True
-            assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["label_over"] == {kl_: {"text": "Zqc own"}}
+            assert PUB_c_.load(cvp_)["comparisons"][0]["st"]["label_over"][kl_]["text"] == "Zqc own"
             w.close_publication()
             report.append("Comparison CV stack (three synthetic compounds: offsets, peak labels, structures beside "
                           "the curves, one scan arrow each, other reference refused) and spectra overlay (structures "
@@ -19861,7 +19866,7 @@ def _g_lanes(ctx):
                 seen_l3.append(key_l3)
                 over_l3 = json.dumps(card_l3.get_over() or {}, sort_keys=True)
                 for i_, r_ in enumerate(list(card_l3.rows)):
-                    if r_["text"] is not None or r_.get("extra"):
+                    if r_["text"] is not None or r_.get("extra") or r_.get("group"):   # Gruppenkopf (1.5.0)
                         continue
                     card_l3.table.selectRow(i_)
                     QApplication.processEvents()
@@ -21099,6 +21104,310 @@ def _g_lanes(ctx):
                           "(text removed, no box, images/table/acquisition kept, same reading), unknown MS PDF unchanged "
                           "and listed as 'check PDF headers', IR copy and package without content changes untouched, "
                           "originals unchanged: OK")
+        with section:
+            # 1.5.0 (Spur s3texte): feste Texte der Abbildung (Achsentitel, Inset, Legende ...) über die Karte
+            # „Beschriftungen im Bild“: ein zentraler Mechanismus (core.figtexts), Zustand text_over neben label_over
+            import pymupdf
+            from matplotlib.backend_bases import MouseEvent as _ME_t
+            from elucida.core import figtexts as FT_t
+            dp_t = ctx["demo_pub"](w, out / "s3texte_pub")
+            assert w.open_project(dp_t / "S3", ask=False, recent=False)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            pump(0.3)
+            w.render()
+            g_t, card_t = w.current, w.label_card
+            st_t = w.series[g_t]
+            assert not st_t.get("text_over")
+            roles_t = {r_["role"]: r_["key"] for r_ in w.F.text_rows}
+            assert {"x", "y", "inset.x", "inset.y", "inset.head"} <= set(roles_t), roles_t
+            # ohne eigene Texte: nichts gesetzt (Bild unverändert), Zeilen nach den Labels, Spalte Element
+            assert all(t_._elu_shown == t_._elu_auto for _, t_ in FT_t.items(w.F.fig, w.F) if hasattr(t_, "_elu_auto"))
+            n_lab_t = len(w.F.label_rows)
+            assert [r_["key"] for r_ in card_t.rows if not r_.get("group")][:n_lab_t] == [r_["key"] for r_ in w.F.label_rows]
+            # gruppiert (Robin 27.11.): Labels offen, Achsen und Legende / Inset zugeklappt, Wahl klappt die Gruppe auf
+            assert [r_["group"] for r_ in card_t.rows if r_.get("group")] == ["labels", "axes", "inset"]
+            card_t._set_group("axes", False)
+            i_t = [r_["key"] for r_ in card_t.rows].index(roles_t["x"])
+            h_t = [r_.get("group") for r_ in card_t.rows].index("axes")
+            assert card_t.table.isRowHidden(i_t) and not card_t.table.isRowHidden(h_t)
+            card_t.select(roles_t["x"])
+            assert not card_t.table.isRowHidden(i_t) and card_t.current() == roles_t["x"]
+            card_t._group_clicked(h_t, 0)                                        # Kopfzeile: zu
+            assert card_t.table.isRowHidden(i_t) and card_t.table.cellWidget(h_t, 0).text().startswith("\u25b6")
+            card_t._group_clicked(h_t, 0)                                        # und wieder auf
+            assert not card_t.table.isRowHidden(i_t)
+            kx_t = roles_t["x"]
+            i_t = [r_["key"] for r_ in card_t.rows].index(kx_t)
+            assert card_t.table.item(i_t, 2).text() == T("txt_part_x"), card_t.table.item(i_t, 2).text()
+            # eigener Text wie ein Label eingeben: schlichtes λ wird gesetzt wie in den automatischen Titeln
+            n_t = len(w._undo)
+            card_t.edit(kx_t)
+            assert card_t.ed.toPlainText() == "" and card_t.ed.placeholderText() == TABS._label_line(card_t.row_of(kx_t)["auto"])
+            card_t.ed.setPlainText("\u03bb / nm Zqt")
+            card_t._commit()
+            assert st_t["text_over"] == {kx_t: {"text": "\u03bb / nm Zqt"}}, st_t.get("text_over")   # eine Ansicht: ohne
+            assert not st_t.get("label_over") and len(w._undo) == n_t + 1
+            xl_t = w.F.ax.xaxis.label.get_text()
+            assert xl_t == core.fmt_text("\u03bb / nm Zqt", w.F.cfg) and "\\mathtt{\u03bb}" in xl_t, xl_t
+            # Rückgängig / Wiederholen nehmen den eigenen Text mit
+            w.undo()
+            pump(0.3)
+            assert kx_t not in (w.series[g_t].get("text_over") or {}) and "Zqt" not in w.F.ax.xaxis.label.get_text()
+            w.redo()
+            pump(0.3)
+            assert w.F.ax.xaxis.label.get_text() == xl_t
+            card_t, st_t = w.label_card, w.series[g_t]
+            # Labels über dieselbe Karte: weiter nach label_over, ohne Ansicht (Format unverändert)
+            kl_t = w.F.label_rows[0]["key"]
+            card_t.edit(kl_t)
+            card_t.ed.setPlainText("Zql card")
+            card_t._commit()
+            assert st_t.get("label_over") == {kl_t: {"text": "Zql card"}}, st_t.get("label_over")
+            card_t.reset(kl_t)
+            assert not st_t.get("label_over") and kx_t in st_t["text_over"]
+            # Feld „Eigener Text“ = Editor der Synthese (Nutzerwunsch Robin): Format über B/I/X2/X², ohne Syntax
+            import html as _html_t
+            from PySide6.QtGui import QTextCursor as _QTC_t
+            assert len(card_t.fmt_buttons) == 4 and all(b_.focusPolicy() == Qt.NoFocus for b_ in card_t.fmt_buttons)
+            card_t.edit(kx_t)
+            card_t.ed.setPlainText("E / V Zqf")
+            c_t = card_t.ed.textCursor()
+            c_t.setPosition(0)
+            c_t.setPosition(1, _QTC_t.KeepAnchor)
+            card_t.ed.setTextCursor(c_t)
+            card_t.fmt_buttons[1].click()                                       # kursiv
+            c_t.setPosition(6)
+            c_t.setPosition(9, _QTC_t.KeepAnchor)
+            card_t.ed.setTextCursor(c_t)
+            card_t.fmt_buttons[2].click()                                       # tief
+            n_t = len(w._undo)
+            card_t._commit()
+            own_t = st_t["text_over"][kx_t]["text"]
+            assert own_t == "$\\mathit{E}$ / V $_{Zqf}$" and len(w._undo) == n_t + 1, own_t
+            assert w.F.ax.xaxis.label.get_text() == core.fmt_text(own_t, w.F.cfg)
+            card_t.select(w.F.label_rows[0]["key"])
+            card_t.select(kx_t)
+            assert card_t._doc_html(card_t.ed) == "<i>E</i> / V <sub>Zqf</sub>", card_t._doc_html(card_t.ed)
+            n_t = len(w._undo)
+            card_t._commit()
+            assert len(w._undo) == n_t
+            # alte Schreibweise ($…$): formatiert im Feld, unverändert übernommen = kein Schritt, Text bleibt
+            for old_t in ("E$_{1/2}$ [V]", "cm$^{-1}$ $\\lambda_{max}$", "$\\frac{a}{b}$"):
+                card_t.set_over(dict(card_t.over(), **{kx_t: {"text": old_t, "view": ""}}))
+                card_t.select(w.F.label_rows[0]["key"])
+                card_t.select(kx_t)
+                n_t = len(w._undo)
+                card_t._commit()
+                assert len(w._undo) == n_t and st_t["text_over"][kx_t]["text"] == old_t, old_t
+            assert card_t.ed.toPlainText() == "$\\frac{a}{b}$"                 # nicht als Format zu zeigen: Quelltext
+            # Umwandlung zentral (core.figtexts): Sonderzeichen in Format-Läufen setzbar, hin und zurück gleich
+            cfgs_t = ({}, {"greek_symbol_font": False}, {"labels": {"bold": True, "italic": True}}, {"labels": {"bold": True}})
+            for ch_t in "$_^{}\\%#& ~":
+                for f_t in ("<i>%s</i>", "<sub>%s</sub>", "<sup>%s</sup>", "<b><i>%s</i></b>", "<b>%s</b>"):
+                    h_t = f_t % _html_t.escape(ch_t, quote=False)
+                    t_t = FT_t.from_html(h_t)
+                    assert FT_t.to_html(t_t) == h_t and all(core.label_text_ok(core.fmt_text(t_t, c_, label=l_))
+                                                          for c_ in cfgs_t for l_ in (False, True)), (h_t, t_t)
+            t_t = FT_t.from_html("<i>a</i><br><sub>b</sub><sub><i>c</i></sub><sup>2</sup>")
+            assert t_t == "$\\mathit{a}$\n$_{b\\mathit{c}}{}^{2}$" and core.label_text_ok(t_t), t_t
+            # vor dem Einpassen gesetzt: ein langer Titel bleibt bei fester Größe im Bild
+            card_t.edit(kx_t)
+            card_t.ed.setPlainText("Zqt " + "very long axis title " * 4)
+            card_t._commit()
+            w.canvas.draw()
+            bb_t = w.F.ax.xaxis.label.get_window_extent(w.F.fig.canvas.get_renderer())
+            assert bb_t.y0 >= -0.5, bb_t
+            # kaputte oder heikle Eingaben brechen weder Zeichnen noch Export
+            for bad_t in ("$", "50 %", "_", "^", "{", "\\", "a $x^$ b"):
+                card_t.edit(kx_t)
+                card_t.ed.setPlainText(bad_t)
+                card_t._commit()
+                assert w.F is not None and w.F.ax.xaxis.label.get_text()
+            assert st_t["text_over"][kx_t]["text"] == "\\" and card_t.lbl_warn.text() == T("lab_bad_math")
+            card_t.edit(kx_t)
+            card_t.ed.setPlainText("Zqt own")
+            card_t._commit()
+            # Inset-Tabellenkopf über den Rechtsklick-Weg (Menü der Labels, Zeile gewählt)
+            kh_t = roles_t["inset.head"]
+            card_t.set_over(dict(card_t.over(), **{kh_t: {"text": FT_t.from_html("<i>Zqh</i>"), "view": ""}}))
+            w.canvas.draw()
+            t_h = next(t_ for r_, t_ in FT_t.items(w.F.fig, w.F) if getattr(t_, "_elu_key", None) == kh_t)
+            assert "\\mathit{Zqh}" in t_h.get_text(), t_h.get_text()
+            bb_h = w.F.ax.xaxis.label.get_window_extent(w.F.fig.canvas.get_renderer())
+            ev_t = _ME_t("button_release_event", w.F.fig.canvas, (bb_h.x0 + bb_h.x1) / 2, (bb_h.y0 + bb_h.y1) / 2, button=3)
+            assert w.dragger.label_key_at(ev_t) == kx_t
+            got_t = []
+            w.dragger.on_label_menu = got_t.append
+            _ME_t("button_press_event", w.F.fig.canvas, ev_t.x, ev_t.y, button=3)._process()
+            ev_t._process()
+            pump(0.2)
+            assert got_t == [kx_t], got_t
+            card_t.select(kx_t)
+            assert card_t.current() == kx_t
+            assert [a_.text() for a_ in card_t.menu(kx_t).actions()] == [T("lab_menu_edit"), T("lab_menu_hide"),
+                                                                         T("lab_menu_reset")]
+            # Export (PDF) und Word-Bild tragen den eigenen Text
+            exp_t = out / "s3texte_eps"
+            w.export_all(exp_t)
+            pdf_t = "".join(p_.get_text() for p_ in pymupdf.open(str(next(exp_t.glob("*.pdf")))))
+            assert "Zqt own" in pdf_t and "Zqh" in pdf_t, "own figure text missing in export"
+            seen_t, real_si_t = [], TABS.si_image
+            TABS.si_image = lambda F_, svg_: (seen_t.append((F_.ax.xaxis.label.get_text(), [
+                t_.get_text() for r_, t_ in FT_t.items(F_.fig, F_) if r_ == "inset.head"])), real_si_t(F_, svg_))[1]
+            try:
+                w.si_eps_figures(out / "s3texte_si", "S3")
+            finally:
+                TABS.si_image = real_si_t
+            assert seen_t and seen_t[0][0] == "Zqt own" and any("Zqh" in h_ for h_ in seen_t[0][1]), seen_t
+            # ausblenden über das Häkchen
+            i_t = [r_["key"] for r_ in card_t.rows].index(kx_t)
+            card_t.table.item(i_t, 0).setCheckState(Qt.Unchecked)
+            pump(0.2)
+            assert st_t["text_over"][kx_t].get("hidden") and not w.F.ax.xaxis.label.get_visible()
+            card_t.reset(kx_t)
+            assert kx_t not in st_t["text_over"] and w.F.ax.xaxis.label.get_visible()
+            # nicht still verlieren: Eintrag, dessen automatischer Text nicht mehr im Bild steht -> Zeile „nicht im Bild“
+            old_t = "txt:x|wavelength old [nm]"
+            card_t.set_over(dict(st_t["text_over"], **{old_t: {"text": "Zqo", "view": ""},
+                                                       "txt:x|other view [nm]": {"text": "Zqv", "view": "zz"}}))
+            stale_t = [r_ for r_ in card_t.rows if r_.get("stale")]
+            assert [r_["key"] for r_ in stale_t] == [old_t], stale_t                # andere Ansicht: keine Zeile
+            j_t = [r_["key"] for r_ in card_t.rows].index(old_t)
+            assert card_t.table.item(j_t, 2).text() == T("lab_stale", el=T("txt_part_x"))
+            card_t.select(old_t)
+            assert card_t.btn_adopt.isEnabled() and not card_t.ed.isEnabled() and card_t.btn_reset.isEnabled()
+            n_t = len(w._undo)
+            card_t.adopt(old_t)
+            assert st_t["text_over"].get(kx_t) == {"text": "Zqo"} and old_t not in st_t["text_over"]
+            assert w.F.ax.xaxis.label.get_text() == "Zqo" and len(w._undo) == n_t + 1
+            # Sprachwechsel: Texte aus der Übersetzung behalten ihren Schlüssel
+            ids_t = set()
+            for lang_t in ("en", "de"):
+                w.switch_lang(lang_t)
+                ids_t.add(FT_t._text_id(FT_t._plain(T("sec_index"))))
+            assert ids_t == {"Spectrum no."}, ids_t
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            pump(0.3)
+            w.render()
+            card_t, st_t = w.label_card, w.series[w.current]
+            # Rückgängig / gespeichert / Alle zurücksetzen leert Labels und Texte in einem Schritt
+            w.save_project()
+            assert PRJ.load(dp_t / "S3")["eps"]["series"][g_t]["text_over"][kx_t]["text"] == "Zqo"
+            assert w.open_project(dp_t / "S3", ask=False, recent=False)              # wieder geöffnet: Text im Bild
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("eps"))
+            pump(0.3)
+            w.render()
+            assert w.F.ax.xaxis.label.get_text() == "Zqo", w.F.ax.xaxis.label.get_text()
+            card_t, st_t = w.label_card, w.series[g_t]
+            st_t["label_over"] = {w.F.label_rows[0]["key"]: {"text": "Zql"}}
+            w.render()
+            n_t = len(w._undo)
+            card_t.btn_reset_all.click()                                            # Einträge anderer Ansichten bleiben
+            assert st_t.get("text_over") == {"txt:x|other view [nm]": {"text": "Zqv", "view": "zz"}}, st_t.get("text_over")
+            assert not st_t.get("label_over") and len(w._undo) == n_t + 1
+            assert not card_t.btn_reset_all.isEnabled()
+            card_t.set_over({})
+            # FigureTab (CV): Eintrag gehört zur Ansicht; in einer anderen Ansicht weder gesetzt noch „nicht im Bild“
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            pump(0.3)
+            cv_t = w.cv_tab
+            cv_t.render()
+            kc_t = next(r_["key"] for r_ in cv_t.F.text_rows if r_["role"] == "x")
+            cv_t.label_card.edit(kc_t)
+            cv_t.label_card.ed.setPlainText("Zqc axis")
+            cv_t.label_card._commit()
+            assert cv_t.st["text_over"][kc_t] == {"text": "Zqc axis", "view": cv_t.card_view()}
+            assert cv_t.F.ax.xaxis.label.get_text() == "Zqc axis"
+            plot0_t = cv_t.st["plot"]
+            n_cv_t = 0
+            for p_t in ("dep", "rs"):
+                cv_t.st["plot"] = p_t
+                cv_t.render()
+                if cv_t.F is not None:
+                    n_cv_t += 1
+                    assert cv_t.F.ax.xaxis.label.get_text() != "Zqc axis"
+                    assert not [r_ for r_ in cv_t.label_card.rows if r_.get("stale")]
+            assert n_cv_t, "no other CV view drawn"
+            cv_t.st["plot"] = plot0_t
+            cv_t.render()
+            assert cv_t.F.ax.xaxis.label.get_text() == "Zqc axis"
+            cv_t.label_card.reset(kc_t)
+            assert "text_over" not in cv_t.st
+            kcl_t = cv_t.F.label_rows[0]["key"]
+            cv_t.label_card.edit(kcl_t)
+            cv_t.label_card.ed.setPlainText("Zqcl")
+            cv_t.label_card._commit()
+            assert cv_t.st["label_over"] == {kcl_t: {"text": "Zqcl", "view": cv_t.card_view()}}, cv_t.st.get("label_over")
+            cv_t.label_card.set_over(dict(cv_t.label_card.over(), label_zq_here={"text": "Zqh1", "view": cv_t.card_view()},
+                                          label_zq_other={"text": "Zqh2", "view": "zz"}, label_zq_old={"text": "Zqh3"}))
+            st_cv_t = [r_["key"] for r_ in cv_t.label_card.rows if r_.get("stale")]
+            assert st_cv_t == ["label_zq_here"], st_cv_t                        # nur diese Ansicht, alte ohne Ansicht nie
+            cv_t.label_card.select("label_zq_here")
+            assert not cv_t.label_card.btn_adopt.isEnabled() and cv_t.label_card.btn_reset.isEnabled()
+            assert cv_t.label_card.lbl_info.text() == T("lab_stale_info", t="Zqh1"), cv_t.label_card.lbl_info.text()
+            cv_t.label_card.btn_reset_all.click()
+            assert "label_over" not in cv_t.st
+            # Seiten mit eigener Abbildung (PageTexts): Abklingkurve, PXRD, Energieprofil – gleiche Funktion, auch im Export
+            from matplotlib.figure import Figure as _MF_t
+            from matplotlib.backends.backend_agg import FigureCanvasAgg as _FCA_t
+            assert w.open_project(dp_t / "S3", ask=False, recent=False)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("fluo"))
+            pump(0.3)
+            fl_t = w.fl_tab
+            fl_t.render()
+            tau_t = fl_t.tau
+            kd_t = next(r_["key"] for r_ in tau_t.text_rows if r_["role"] == "ax1.x")
+            tau_t.texts.card.set_over(dict(tau_t.texts.get(), **{kd_t: {"text": "Zqd t / ns", "view": "decay"}}))
+            fig_t = tau_t.figure()
+            assert fig_t.axes[1].xaxis.label.get_text() == "Zqd t / ns" and fl_t.st["text_over"][kd_t]["view"] == "decay"
+            assert not fl_t.F.ax.xaxis.label.get_text().startswith("Zqd")             # Hauptabbildung unberührt
+            tau_t.texts.card.btn_reset_all.click()
+            assert "text_over" not in fl_t.st
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("xray"))
+            pump(0.5)
+            xr_t = w.xray_tab
+            xr_t.show_pxrd()
+            kp_t = next((r_["key"] for r_ in xr_t.pxrd_texts.card.rows if r_["role"] == "x"), None)
+            if kp_t is not None:                                                   # Beispiel mit Struktur: PXRD da
+                xr_t.pxrd_texts.card.set_over({kp_t: {"text": "Zqp 2θ", "view": "pxrd"}})
+                f_t = _MF_t(); _FCA_t(f_t)
+                P_t = xr_t.build_pxrd(f_t, xr_t.entry())
+                assert P_t.ax.xaxis.label.get_text() == core.fmt_text("Zqp 2θ", P_t.cfg)
+                xr_t.pxrd_texts.card.reset(kp_t)
+                assert "text_over" not in xr_t.st
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("dft"))
+            pump(1.0)
+            pg_t = w.dft_tab.pages
+            pg_t.refresh()
+            roles_p = {r_["role"] for r_ in pg_t.prof_texts.card.rows}
+            if pg_t.prof["mode"] == "levels" and roles_p:
+                assert "y" not in roles_p, roles_p                                 # Achsentitel: eigenes Feld (axis_title)
+            # NTO (Overlay): „hole“/„particle“ in beiden Anordnungen derselbe Schlüssel, eigener Text auch im Export-Bild
+            nt_t = w.ov_tab.nto
+            keys_n = []
+            for shape_n in ((40, 40, 3), (40, 100, 3)):                             # untereinander / nebeneinander
+                f_n = _MF_t()
+                _FCA_t(f_n)
+                nt_t.draw(f_n, [{"w": 0.9}], [np.zeros(shape_n, np.uint8)] * 2)
+                keys_n.append(sorted((r_["role"], r_["auto"]) for r_ in nt_t.text_rows))
+            assert keys_n[0] == keys_n[1] == [("ax1.title", "particle"), ("title", "hole")], keys_n
+            kn_t = next(r_["key"] for r_ in nt_t.text_rows if r_["auto"] == "hole")
+            nt_t.texts.card.set_over({kn_t: {"text": "Zqn hole"}})
+            assert w.ov_tab.st["text_over"][kn_t] == {"text": "Zqn hole"}
+            nt_t.texts.card._store(kn_t, text="Zqn hole")                             # über die Karte: mit Ansicht
+            assert w.ov_tab.st["text_over"][kn_t]["view"] == "nto"
+            f_n = _MF_t()
+            _FCA_t(f_n)
+            nt_t.draw(f_n, [{"w": 0.9}], [np.zeros((40, 100, 3), np.uint8)] * 2)
+            assert any(t_.get_text() == "Zqn hole" for a_ in f_n.axes for t_ in a_.texts), "own NTO head missing"
+            nt_t.texts.fill(nt_t)                                                    # wie refresh: Karte zeigt die Zeilen
+            assert kn_t in {r_["key"] for r_ in nt_t.texts.card.rows}
+            nt_t.texts.card.btn_reset_all.click()
+            assert "text_over" not in w.ov_tab.st
+            w.go_home()
+            report.append("Own figure texts (lane s3texte): axis titles, inset header, hide, reset, undo, stale entry "
+                          "adopt, view-bound keys, language-stable keys, export PDF and Word image, decay/PXRD/profile/NTO pages, "
+                          "synthesis editor without syntax, grouped card, label views: OK")
     finally:
         ctx.update(locals())
 
