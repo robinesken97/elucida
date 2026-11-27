@@ -185,7 +185,7 @@ def color_button(color, on_pick, cell=False, small=False):
     return b
 
 
-ALL_TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
+ALL_TEXT_OPTS = ("fonts", "greek", "axis_sizes", "labels", "label_size", "axes_frame", "struct_frame")
 
 
 def _label_line(s):
@@ -744,6 +744,16 @@ class TextFormatCard(QWidget):
                 self.cb_greek.setProperty("chip_here", True)      # gehört zur Symbolschrift darüber
                 self.cb_greek.toggled.connect(lambda on: self._set("greek", on))
                 f.addRow(self.cb_greek)
+        self.sp_sizes = {}                                # Achsentitel, -zahlen, Legende (core.SIZE_KEYS), 0 = auto
+        if "axis_sizes" in opts:
+            for k_ in core.SIZE_KEYS:
+                sp = QDoubleSpinBox(decimals=1, minimum=0, maximum=40, singleStep=0.5, suffix=" pt")
+                sp.setSpecialValueText(T("tf_auto"))
+                tk_ = f"tf_{k_}_tip_{key}"                # X-Ray/DFT: wo die Größen wirken (Achsen nur auf Seiten)
+                sp.setToolTip(T(tk_ if tk_ in TEXTS else f"tf_{k_}_tip"))
+                sp.valueChanged.connect(lambda v, k_=k_: self._set(k_, v))
+                f.addRow(T(f"tf_{k_}"), sp)
+                self.sp_sizes[k_] = sp
         if "labels" in opts:
             if "label_size" in opts:
                 self.sp_size = QDoubleSpinBox(decimals=1, minimum=0, maximum=40, singleStep=0.5, suffix=" pt")
@@ -830,6 +840,8 @@ class TextFormatCard(QWidget):
                 self.cmb_sym.setEnabled(bool(tf["greek"]))
             if self.sp_size is not None:
                 self.sp_size.setValue(tf["label_pt"] or 0)
+            for k_, sp in self.sp_sizes.items():
+                sp.setValue(tf.get(k_) or 0)
             for cb, k_ in ((self.cb_bold, "bold"), (self.cb_italic, "italic"), (self.cb_axes, "axes_frame"),
                            (self.cb_struct, "struct_frame")):
                 if cb is not None:
@@ -908,7 +920,8 @@ class TextFormatCard(QWidget):
                 self.tab.st.pop(k, None)
             self.tab.timer.start()
             self.load()
-        self.main.update_text_format(self.key if self.own() else None, dict(core.TEXT_DEFAULTS))
+        self.main.update_text_format(self.key if self.own() else None,
+                                     dict(core.TEXT_DEFAULTS, **dict.fromkeys(core.SIZE_KEYS, 0.0)))
 
 
 # ---------------------------------------------------------------------------- Anleitung im leeren Tab
@@ -2206,7 +2219,7 @@ class FigureTab(QWidget):
     # ebenso st["extra_labels"] (eigene Labels, Rechtsklick auf eine freie Stelle)
     LABEL_CARD = False
     # was der Tab im Bild hat (Menü Format zeigt nur das): Schriften, Symbolschrift für λ/ε, Labels, Labelgröße, Rahmen
-    TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame")
+    TEXT_OPTS = ("fonts", "axis_sizes", "labels", "label_size", "axes_frame")
     X_RANGE = (100, 3500, 0, 10)         # x-Achse: min, max, Nachkommastellen, Schritt (Spektren: nm)
     GUIDE = ""                           # Schlüssel der Anleitung im leeren Tab (guide_<GUIDE>_…), "" = nur Text
     GUIDE_ACTION = None                  # (Textschlüssel, Methode) für den Knopf in der Anleitung
@@ -3280,7 +3293,7 @@ class OverlayTab(FigureTab):
     STATE_KEY = "overlay"
     LABEL_CARD = True                    # Karte „Beschriftungen im Bild“ (eigene Labels; Entscheidung 169: alle Tabs)
     GUIDE, GUIDE_ACTION, GUIDE_EXTRA = "overlay", ("guide_add", "add_exp"), "tabs_button"
-    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
+    TEXT_OPTS = ("fonts", "greek", "axis_sizes", "labels", "label_size", "axes_frame", "struct_frame")
     RESET_KEEP = ("entries", "structure", "mode", "baseline",          # y-Größe und Basislinie: Rechenweg
                   "tdt_f_on", "tdt_f", "tdt_w", "tdt_range", "tdt_si",  # Auswahl der TD-DFT-Tabelle (SI)
                   "x_auto", "x_min", "x_max")           # mit „nur im Bereich“ (tdt_range) Zeilen der Tabelle
@@ -4683,7 +4696,7 @@ class FluoTab(FigureTab):
     LABEL_CARD = True                    # Karte „Beschriftungen im Bild“
     STATE_KEY = "fluorescence"
     GUIDE, GUIDE_ACTION = "fluo", None
-    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame", "struct_frame")
+    TEXT_OPTS = ("fonts", "greek", "axis_sizes", "labels", "label_size", "axes_frame", "struct_frame")
     SI_CAPTION = "Fluorescence spectra of {name}."
     CAP_FIELDS = ("solvent", "conc", "cuvette")
     RESET_KEEP = ("abs_file", "abs_sample", "em_file", "em_sample", "ex", "eps", "structure", "photo_day", "photo_uv",

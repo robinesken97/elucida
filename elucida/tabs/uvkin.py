@@ -136,7 +136,7 @@ class UVKinTab(TABS.FigureTab):
         return self.st.get("view") or ""
     STATE_KEY = "uvkin"
     GUIDE, GUIDE_ACTION = "uvkin", ("guide_add", "add_files")
-    TEXT_OPTS = ("fonts", "axes_frame")
+    TEXT_OPTS = ("fonts", "axis_sizes", "axes_frame")
     CAP_FIELDS = ("solvent", "conc", "reagent")
     SI_CAPTION = "UV-Vis spectra of {name}."
     X_RANGE = (100, 3500, 0, 10)

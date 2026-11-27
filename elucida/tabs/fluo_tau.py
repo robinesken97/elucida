@@ -339,11 +339,12 @@ class TauPart:
         m = float(np.nanmax(np.abs(r["resid"]))) or 1.0
         axr.set_ylim(-1.15 * m, 1.15 * m)
         ax.set_xlim(float(d["t"][0]), float(d["t"][-1]))
-        ax.set_ylabel(core.fmt_text("counts" if r["weighted"] else "intensity [arb. u.]", cfg), fontsize=fs * 1.3)
-        axr.set_ylabel(core.fmt_text("res.", cfg), fontsize=fs * 1.3)
-        axr.set_xlabel(core.fmt_text("t [ns]", cfg), fontsize=fs * 1.3)
+        ax.set_ylabel(core.fmt_text("counts" if r["weighted"] else "intensity [arb. u.]", cfg),
+                      fontsize=core.axis_title_size(cfg))
+        axr.set_ylabel(core.fmt_text("res.", cfg), fontsize=core.axis_title_size(cfg))
+        axr.set_xlabel(core.fmt_text("t [ns]", cfg), fontsize=core.axis_title_size(cfg))
         for a in (ax, axr):
-            a.tick_params(which="both", direction=cfg.get("tick_direction", "out"), labelsize=fs)
+            a.tick_params(which="both", direction=cfg.get("tick_direction", "out"), labelsize=core.tick_size(cfg))
             a.tick_params(which="major", length=6 * sc, width=max(0.6, sc))
             a.tick_params(which="minor", length=3 * sc, width=max(0.5, 0.8 * sc))
             if not cfg.get("frame", True):

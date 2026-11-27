@@ -196,9 +196,10 @@ class SECFigure(X.SimpleFigure):
         ax.set_yticklabels(h["yticklabels"])
         self.cax = self.fig.add_axes([0.9, 0.1, 0.02, 0.8])
         cb = self.fig.colorbar(im, cax=self.cax)
-        cb.set_label(TABS.core.fmt_text(h["clabel"], cfg), fontsize=cfg["font_size"] * 1.3)
+        cb.set_label(TABS.core.fmt_text(h["clabel"], cfg), fontsize=TABS.core.axis_title_size(cfg))
         sc = cfg.get("scale", 1.0)
         self.cax.tick_params(direction=cfg["tick_direction"], length=3 * sc, width=max(0.5, 0.8 * sc))
+        TABS.core.set_tick_size(cfg, self.cax)
         cb.outline.set_linewidth(ax.spines["left"].get_linewidth())
 
     def _fit_axes(self, pad_in=0.06):
@@ -252,7 +253,7 @@ class SECTab(TABS.FigureTab):
     COLOR_ROLES = (("col_start", START_COLOR, "tf_col_start"), ("col_end", END_COLOR, "tf_col_end"))   # Stilkarte
     STATE_KEY = "sec"
     GUIDE, GUIDE_ACTION = "sec", ("guide_add", "choose_spectra")
-    TEXT_OPTS = ("fonts", "greek", "labels", "label_size", "axes_frame")
+    TEXT_OPTS = ("fonts", "greek", "axis_sizes", "labels", "label_size", "axes_frame")
     CAP_FIELDS = ("solvent", "start", "mid", "end")
     SI_CAPTION = "UV-Vis spectroelectrochemistry of {name}."
     RESET_KEEP = ("spec_files", "dta", "offset_s", "e_shift", "electrode", "ref_from_cv", "mid", "quantity",

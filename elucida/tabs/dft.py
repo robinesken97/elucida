@@ -730,7 +730,7 @@ class DFTTab(XRAY.MeasureAlign, TABS.FigureTab):
     DRAG_HINT = "drag_hint_plain"      # keine Kurven: kein Satz zur Einblendung am Mauszeiger
     STATE_KEY = "dft"
     GUIDE, GUIDE_ACTION = "dft", ("guide_add", "add_xyz")
-    TEXT_OPTS = ("fonts", "labels")               # Labelgröße hat der Tab selbst
+    TEXT_OPTS = ("fonts", "axis_sizes", "labels")             # Labelgröße hat der Tab selbst
     DEFAULT_STATE = dict(size="half_a4", w_cm=16.0, h_cm=11.0, fmt={"pdf": True, "svg": True, "png": True},
                          layout={}, entries=[], current=None, show_h=True, labels=True, h_labels=True, export_labels=False,
                          label_style="el_num", zero_based=False, radius=0.25, bond_w=0.08, style="mercury",

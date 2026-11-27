@@ -21802,6 +21802,94 @@ def _g_lanes(ctx):
             report.append("Own figure texts (lane s3texte): axis titles, inset header, hide, reset, undo, stale entry "
                           "adopt, view-bound keys, language-stable keys, export PDF and Word image, decay/PXRD/profile/NTO pages, "
                           "synthesis editor without syntax, grouped card, label views: OK")
+        with section:
+            # 1.5.0 (Spur s3c, Robin 2026-11-27): Schriftgrößen Achsentitel, Achsenzahlen, Legende in „Schrift und
+            # Linien“ (core.SIZE_KEYS, pt, 0 = auto); auto pixelgleich, gesetzt in Vorschau, Export und Word; nur
+            # gespeichert, wenn gesetzt
+            import io as io_z
+            import pymupdf
+            dp_z = ctx["demo_pub"](w, out / "s3c_pub")
+            assert w.open_project(dp_z / "S3", ask=False, recent=False)
+            w.main_tabs.setCurrentIndex(w._tab_keys.index("cv"))
+            pump(0.3)
+            cv_z, card_z = w.cv_tab, w.cv_tab.tf_card
+            assert not set(core.SIZE_KEYS) & set(w.text_fmt) and not set(core.SIZE_KEYS) & set(w.get_state()["text"])
+            assert not set(core.SIZE_KEYS) & set(core.TEXT_DEFAULTS)                # alte Projekte: kein Schlüssel
+
+            def sizes_z(F_):
+                ax_ = F_.ax
+                return (ax_.xaxis.label.get_size(), ax_.yaxis.label.get_size(),
+                        {round(t_.get_size(), 2) for t_ in ax_.get_xticklabels() + ax_.get_yticklabels()},
+                        {round(t_.get_size(), 2) for t_ in ax_.get_legend().get_texts()} if ax_.get_legend() else set())
+
+            def png_z():
+                f_ = MplFigure(figsize=(8, 6), dpi=PREVIEW_DPI)
+                FigureCanvasAgg(f_)
+                cv_z.build(f_)
+                b_ = io_z.BytesIO()
+                f_.savefig(b_, format="png")
+                return b_.getvalue()
+            cv_z.render()
+            fs_z = cv_z.F.cfg["font_size"]
+            auto_z = sizes_z(cv_z.F)
+            assert auto_z[:2] == (fs_z * 1.3, fs_z * 1.3) and auto_z[2] == {round(fs_z, 2)} and \
+                auto_z[3] == {round(fs_z * 0.8, 2)}, (auto_z, fs_z)                    # auto = bisherige Größen
+            png0_z = png_z()
+            # Karte: drei Felder mit „auto“ in jedem Tab mit Achsen, X-Ray/DFT mit eigenem Hinweis (PXRD, IRC, NICS)
+            assert list(card_z.sp_sizes) == list(core.SIZE_KEYS)
+            assert all(sp_.specialValueText() == T("tf_auto") and sp_.value() == 0 for sp_ in card_z.sp_sizes.values())
+            for k_z in ("overlay", "uvkin", "fluo", "sec", "hcell", "epr", "irms", "hrms", "xray", "dft"):
+                t_z = getattr(w, w._tab_spec(k_z)[0])
+                assert "axis_sizes" in t_z.TEXT_OPTS and len(t_z.tf_card.sp_sizes) == 3, k_z
+            assert len(w.tf_card.sp_sizes) == 3 and w.other_tab.tf_card is None
+            assert w.xray_tab.tf_card.sp_sizes["tick_pt"].toolTip() == T("tf_tick_pt_tip_xray")
+            assert w.dft_tab.tf_card.sp_sizes["axis_pt"].toolTip() == T("tf_axis_pt_tip_dft")
+            # gesetzt (global): Vorschau, Export (PDF in pt) und Word-Bild
+            for k_z, v_z in zip(core.SIZE_KEYS, (18.0, 14.0, 12.0)):
+                card_z.sp_sizes[k_z].setValue(v_z)
+            card_z.flush()
+            pump(0.2)
+            assert {k_: w.text_fmt[k_] for k_ in core.SIZE_KEYS} == dict(axis_pt=18.0, tick_pt=14.0, legend_pt=12.0)
+            assert sizes_z(cv_z.F) == (18.0, 18.0, {14.0}, {12.0}), sizes_z(cv_z.F)
+            w.render()
+            assert w.F.ax.xaxis.label.get_size() == 18.0
+            assert {t_.get_size() for t_ in w.F.ax.get_xticklabels()} == {14.0}
+            assert w.F.axes_items and all(a_.xaxis.label.get_size() != 18.0 for a_ in w.F.axes_items.values()
+                                          if a_.xaxis.label.get_text())             # ε-Inset: eigene Größen (Robin)
+            files_z = cv_z.export_to(out / "s3c_cv" / "cv")
+            spans_z = [(round(sp_["size"], 1), sp_["text"].strip()) for b_ in pymupdf.open(str(files_z[0]))[0].get_text(
+                "dict")["blocks"] for l_ in b_.get("lines", []) for sp_ in l_["spans"]]
+            assert (18.0, "[µA]") in spans_z and (14.0, "0.2") in spans_z and (12.0, "Fc") in spans_z, spans_z
+            seen_z, real_si_z = [], TABS.si_image
+            TABS.si_image = lambda F_, svg_: (seen_z.append(sizes_z(F_)), real_si_z(F_, svg_))[1]
+            try:
+                (out / "s3c_si").mkdir(exist_ok=True)
+                assert cv_z.si_figure(out / "s3c_si", "S3")
+            finally:
+                TABS.si_image = real_si_z
+            assert seen_z == [(18.0, 18.0, {14.0}, {12.0})], seen_z
+            # „Nur dieser Tab“: eigenes Format erbt spätere globale Größen nicht; auto = kein Schlüssel
+            card_z.cb_own.setChecked(True)
+            card_z.sp_sizes["tick_pt"].setValue(9.0)
+            card_z.flush()
+            w.update_text_format(None, {"legend_pt": 20.0})
+            assert w.text_format("cv")["tick_pt"] == 9.0 and w.text_format("cv")["legend_pt"] == 12.0
+            assert w.text_format("overlay")["tick_pt"] == 14.0 and w.text_format("overlay")["legend_pt"] == 20.0
+            card_z.sp_sizes["legend_pt"].setValue(0)
+            card_z.flush()
+            assert "legend_pt" not in w.tab_fmt["cv"] and w.text_format("cv")["legend_pt"] == 0.0
+            card_z.cb_own.setChecked(False)
+            assert "cv" not in w.tab_fmt
+            # zurück auf auto: kein Schlüssel im Projekt, Bild Pixel für Pixel wie vorher
+            w.tf_card.restore_defaults()
+            assert not set(core.SIZE_KEYS) & set(w.text_fmt), w.text_fmt
+            w.save_project()
+            assert not set(core.SIZE_KEYS) & set(PRJ.load(dp_z / "S3").get("text") or {})
+            assert sizes_z(cv_z.F) == auto_z and png_z() == png0_z
+            w.go_home()
+            report.append("Axis font sizes (lane s3c): axis titles, tick labels, legend in the text format card, auto "
+                          "unchanged (pixel-identical), set values in preview/export PDF/Word image, eps inset kept, "
+                          "own tab format, auto stores no key: OK")
     finally:
         ctx.update(locals())
 

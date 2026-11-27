@@ -511,7 +511,7 @@ class CVTab(TABS.FigureTab):
         return self.st.get("plot", "cv")
     STATE_KEY = "cv"
     GUIDE, GUIDE_ACTION = "cv", ("guide_add", "add_files")
-    TEXT_OPTS = ("fonts", "labels", "label_size", "axes_frame", "struct_frame")
+    TEXT_OPTS = ("fonts", "axis_sizes", "labels", "label_size", "axes_frame", "struct_frame")
     CAP_FIELDS = ("conc", "solvent", "el", "temp")
     CAP_REMEMBER = ("el",)
     SI_CAPTION = "Cyclic voltammograms of {name}."

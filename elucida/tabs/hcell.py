@@ -115,11 +115,12 @@ class HCellFigure(X.SimpleFigure):
             y0, y1 = ax.get_ylim()
             ax2 = ax.twinx()
             ax2.set_ylim(y0 * r1 / y1, r1)
-            ax2.set_ylabel(core.fmt_text(label, cfg), fontsize=cfg["font_size"] * 1.3)
+            ax2.set_ylabel(core.fmt_text(label, cfg), fontsize=core.axis_title_size(cfg))
             ax2.minorticks_on()
             ax2.tick_params(which="both", direction=cfg["tick_direction"])
             ax2.tick_params(which="major", length=6 * sc, width=max(0.6, sc))
             ax2.tick_params(which="minor", length=3 * sc, width=max(0.5, 0.8 * sc))
+            core.set_tick_size(cfg, ax2)
             ax2.spines["top"].set_visible(False)
             ax.tick_params(which="both", right=False)
             self.ax2 = ax2
@@ -127,7 +128,7 @@ class HCellFigure(X.SimpleFigure):
             pos, labels = cfg["xticks"]
             ax.xaxis.set_minor_locator(NullLocator())        # Nebenstriche gälten der gestauchten Achse
             ax.set_xticks(pos)
-            ax.set_xticklabels(labels, fontsize=cfg["font_size"])
+            ax.set_xticklabels(labels, fontsize=core.tick_size(cfg))
         for xg in cfg.get("xbreaks") or []:                  # Bruchzeichen auf der unteren (und oberen) Achse
             tr = ax.get_xaxis_transform()
             d = 0.006 * (ax.get_xlim()[1] - ax.get_xlim()[0])

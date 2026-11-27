@@ -4050,7 +4050,8 @@ class MainWindow(QMainWindow):
         if not own:
             return {**core.TEXT_DEFAULTS, **self.text_fmt}
         # eigenes Format ohne Linien (vor der Stilkarte gespeichert): Standard, nicht die globalen Linien
-        return {**core.TEXT_DEFAULTS, **self.text_fmt, **TABS.LINE_DEFAULTS, **own}
+        return {**core.TEXT_DEFAULTS, **self.text_fmt, **TABS.LINE_DEFAULTS, **dict.fromkeys(core.SIZE_KEYS, 0.0),
+                **own}
 
     def text_tab(self):
         """Offener Tab -> (Schlüssel für das Textformat oder None, Name, Optionen, die der Tab im Bild hat)."""
@@ -4088,6 +4089,10 @@ class MainWindow(QMainWindow):
             self.text_fmt = {**self.text_fmt, **changes}
         else:
             self.tab_fmt[key] = {**self.text_format(key), **changes}
+        for tf in [self.text_fmt] + ([self.tab_fmt[key]] if key is not None else []):
+            for k in core.SIZE_KEYS:                   # Achsen-Schriftgrößen: auto = kein Schlüssel (alte Projekte)
+                if not tf.get(k, 1):
+                    tf.pop(k)
         self.text_format_changed()
 
     def set_own_text_format(self, key, on):

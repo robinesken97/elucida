@@ -249,6 +249,30 @@ TEXT_DEFAULTS = {"font": "Arial", "symbol_font": "Times New Roman", "greek": Tru
                  "line_w": 1.0, "axis_w": 0.0}           # Stilkarte (R8): Kurven × Faktor, Achsenlinien in pt (0 = wie gezeichnet)
 
 
+# Schriftgrößen der Achsen (Nutzerwunsch 2026-11-27): Achsentitel, Achsenzahlen, Legende in pt; fehlt oder 0 = auto
+# (aus der Exportgröße wie bisher, Bild pixelgleich). Bewusst nicht in TEXT_DEFAULTS: nur gespeichert, wenn gesetzt
+SIZE_KEYS = ("axis_pt", "tick_pt", "legend_pt")
+
+
+def axis_title_size(cfg):
+    return cfg.get("axis_pt") or cfg["font_size"] * 1.3
+
+
+def legend_size(cfg):
+    return cfg.get("legend_pt") or cfg["font_size"] * 0.8
+
+
+def tick_size(cfg):
+    return cfg.get("tick_pt") or cfg["font_size"]
+
+
+def set_tick_size(cfg, *axes):
+    """Eigene Größe der Achsenzahlen; auto fasst nichts an (Zahlen bleiben bei rcParams font.size)."""
+    if cfg.get("tick_pt"):
+        for a in axes:
+            a.tick_params(which="both", labelsize=cfg["tick_pt"])
+
+
 def apply_text_format(cfg, tf):
     """Textformat übernehmen. Nach apply_export_size aufrufen (setzt die Labelgröße sonst zurück)."""
     tf = dict(TEXT_DEFAULTS, **(tf or {}))
@@ -261,6 +285,9 @@ def apply_text_format(cfg, tf):
     lc.update(bold=bool(tf["bold"]), italic=bool(tf["italic"]), color=tf["color"] or "#000000")
     if tf["label_pt"] and tf["label_pt"] > 0:
         lc["font_size"] = float(tf["label_pt"])
+    for k in SIZE_KEYS:
+        if (tf.get(k) or 0) > 0:
+            cfg[k] = float(tf[k])
     return cfg
 
 
@@ -1325,7 +1352,7 @@ class Figure:
             return
         loc = self.layout.get("legend")
         self.legend = self.ax.legend(handles=handles, loc=tuple(loc) if loc else "best", frameon=False,
-                                     fontsize=self.cfg["font_size"] * 0.8, handlelength=1.8)
+                                     fontsize=legend_size(self.cfg), handlelength=1.8)
         self.legend.set_draggable(True, use_blit=True, update="loc")
         self._place_legend()
 
@@ -1379,10 +1406,11 @@ class Figure:
                     lw=cfg["line_width"], solid_joinstyle="round", solid_capstyle="butt")
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
-        ax.set_xlabel(fmt_text(cfg["xlabel"], cfg), fontsize=cfg["font_size"] * 1.3)
-        ax.set_ylabel(fmt_text(cfg["ylabel"], cfg), fontsize=cfg["font_size"] * 1.3)
+        ax.set_xlabel(fmt_text(cfg["xlabel"], cfg), fontsize=axis_title_size(cfg))
+        ax.set_ylabel(fmt_text(cfg["ylabel"], cfg), fontsize=axis_title_size(cfg))
         ax.minorticks_on()
         ax.tick_params(which="both", direction=cfg["tick_direction"], top=False, right=False)
+        set_tick_size(cfg, ax)
         sc = cfg.get("scale", 1.0)
         ax.tick_params(which="major", length=6 * sc, width=max(0.6, sc))
         ax.tick_params(which="minor", length=3 * sc, width=max(0.5, 0.8 * sc))

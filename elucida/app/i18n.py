@@ -6713,6 +6713,51 @@ TEXTS.update({
                        "sie wird nicht still übernommen.",
                        "Couple {couple}: n = {n} ({src}), entered n = {rs} – check the entry in “Diffusion and k⁰”; "
                        "it is never adopted silently."),
+    # tf_*_pt: Schriftgrößen der Achsen in der Karte „Schrift und Linien“ (core.SIZE_KEYS, Spur s3c 1.5.0)
+    "tf_axis_pt": ("Größe Achsentitel", "Axis title size"),
+    "tf_tick_pt": ("Größe Achsenzahlen", "Tick label size"),
+    "tf_legend_pt": ("Größe Legende", "Legend size"),
+    "tf_axis_pt_tip": ("Schriftgröße der Achsentitel (auch Zweitachse und Farbskala) in pt; „Automatisch“ = "
+                       "aus der Bildgröße wie bisher",
+                       "Font size of the axis titles (also secondary axis and colour scale) in pt; “Automatic” = "
+                       "from the figure size as before"),
+    "tf_tick_pt_tip": ("Schriftgröße der Zahlen an den Achsen in pt; „Automatisch“ = aus der Bildgröße wie "
+                       "bisher", "Font size of the numbers on the axes in pt; “Automatic” = from the figure size as "
+                       "before"),
+    "tf_legend_pt_tip": ("Schriftgröße der Legende (auch Kurvennamen statt Legende) in pt; „Automatisch“ = "
+                         "aus der Bildgröße wie bisher",
+                         "Font size of the legend (also curve names instead of a legend) in pt; “Automatic” = "
+                         "from the figure size as before"),
+    "tf_axis_pt_tip_xray": (
+        "Schriftgröße der Achsentitel in pt, gilt im X-Ray-Tab nur für das Pulverdiffraktogramm (PXRD); "
+        "„Automatisch“ = aus der Bildgröße wie bisher",
+        "Font size of the axis titles in pt; applies in the X-Ray tab only to the powder pattern (PXRD); "
+        "“Automatic” = from the figure size as before"),
+    "tf_axis_pt_tip_dft": (
+        "Schriftgröße der Achsentitel in pt, gilt im DFT-Tab nur für IRC und NICS-Scan; "
+        "„Automatisch“ = aus der Bildgröße wie bisher",
+        "Font size of the axis titles in pt; applies in the DFT tab only to the IRC and the NICS scan; "
+        "“Automatic” = from the figure size as before"),
+    "tf_tick_pt_tip_xray": (
+        "Schriftgröße der Zahlen an den Achsen in pt, gilt im X-Ray-Tab nur für das Pulverdiffraktogramm (PXRD); "
+        "„Automatisch“ = aus der Bildgröße wie bisher",
+        "Font size of the numbers on the axes in pt; applies in the X-Ray tab only to the powder pattern (PXRD); "
+        "“Automatic” = from the figure size as before"),
+    "tf_tick_pt_tip_dft": (
+        "Schriftgröße der Zahlen an den Achsen in pt, gilt im DFT-Tab nur für IRC und NICS-Scan; "
+        "„Automatisch“ = aus der Bildgröße wie bisher",
+        "Font size of the numbers on the axes in pt; applies in the DFT tab only to the IRC and the NICS scan; "
+        "“Automatic” = from the figure size as before"),
+    "tf_legend_pt_tip_xray": (
+        "Schriftgröße der Legende in pt, gilt im X-Ray-Tab nur für das Pulverdiffraktogramm (PXRD); "
+        "„Automatisch“ = aus der Bildgröße wie bisher",
+        "Font size of the legend in pt; applies in the X-Ray tab only to the powder pattern (PXRD); "
+        "“Automatic” = from the figure size as before"),
+    "tf_legend_pt_tip_dft": (
+        "Schriftgröße der Legende in pt, gilt im DFT-Tab nur für IRC und NICS-Scan; "
+        "„Automatisch“ = aus der Bildgröße wie bisher",
+        "Font size of the legend in pt; applies in the DFT tab only to the IRC and the NICS scan; "
+        "“Automatic” = from the figure size as before"),
 })
 
 # Spur s2fehler (1.5.0)

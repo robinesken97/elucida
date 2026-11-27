@@ -502,9 +502,10 @@ class SimpleFigure(core.Figure):
                                lw=max(0.6, cfg["line_width"]), alpha=0.8)
                     fmax = max(fmax, float(st["h"][sel].max()))
             ax2.set_ylim(0, (fmax or 1.0) * 1.1)
-            ax2.set_ylabel(core.fmt_text("oscillator strength f", cfg), fontsize=cfg["font_size"] * 1.3)
+            ax2.set_ylabel(core.fmt_text("oscillator strength f", cfg), fontsize=core.axis_title_size(cfg))
             sc = cfg.get("scale", 1.0)
             ax2.tick_params(direction=cfg["tick_direction"], length=6 * sc, width=max(0.6, sc))
+            core.set_tick_size(cfg, ax2)
             ax2.spines["top"].set_visible(False)
             self.ax2 = ax2
         ax.set_xlim(xlim)
@@ -512,9 +513,10 @@ class SimpleFigure(core.Figure):
         if cfg.get("f_axis") and self.ax2 is None:      # f als zweite Skala derselben Striche (ein Faktor)
             ax2 = ax.twinx()
             ax2.set_ylim(ylim[0] * cfg["f_axis"], ylim[1] * cfg["f_axis"])
-            ax2.set_ylabel(core.fmt_text("oscillator strength f", cfg), fontsize=cfg["font_size"] * 1.3)
+            ax2.set_ylabel(core.fmt_text("oscillator strength f", cfg), fontsize=core.axis_title_size(cfg))
             sc = cfg.get("scale", 1.0)
             ax2.tick_params(direction=cfg["tick_direction"], length=6 * sc, width=max(0.6, sc))
+            core.set_tick_size(cfg, ax2)
             ax2.spines["top"].set_visible(False)
             self.ax2 = ax2
         if cfg.get("right_ticks") and self.ax2 is None:
@@ -523,7 +525,7 @@ class SimpleFigure(core.Figure):
             ys, texts, colors = zip(*cfg["right_ticks"])
             ax2 = ax.twinx()
             ax2.set_ylim(ylim)
-            size = cfg["font_size"] * 0.8
+            size = core.legend_size(cfg)
             if len(set(ys)) > 1:
                 h_pt = self.fig.get_size_inches()[1] * 72 * ax.get_position().height
                 size = min(size, 0.9 * h_pt * float(np.min(np.diff(sorted(set(ys))))) / abs(ylim[1] - ylim[0]))
@@ -531,16 +533,17 @@ class SimpleFigure(core.Figure):
             for t, c in zip(ax2.set_yticklabels([core.fmt_text(str(t), cfg) for t in texts], fontsize=size), colors):
                 t.set_color(c or "black")
             if cfg.get("right_label"):
-                ax2.set_ylabel(core.fmt_text(cfg["right_label"], cfg), fontsize=cfg["font_size"] * 1.3)
+                ax2.set_ylabel(core.fmt_text(cfg["right_label"], cfg), fontsize=core.axis_title_size(cfg))
             sc = cfg.get("scale", 1.0)
             ax2.tick_params(direction=cfg["tick_direction"], length=3 * sc, width=max(0.5, 0.8 * sc))
             for sp in ax2.spines.values():               # Rahmen zeichnet die Hauptachse
                 sp.set_visible(False)
             self.ax2 = ax2
-        ax.set_xlabel(core.fmt_text(cfg["xlabel"], cfg), fontsize=cfg["font_size"] * 1.3)
-        ax.set_ylabel(core.fmt_text(cfg["ylabel"], cfg), fontsize=cfg["font_size"] * 1.3)
+        ax.set_xlabel(core.fmt_text(cfg["xlabel"], cfg), fontsize=core.axis_title_size(cfg))
+        ax.set_ylabel(core.fmt_text(cfg["ylabel"], cfg), fontsize=core.axis_title_size(cfg))
         ax.minorticks_on()
         ax.tick_params(which="both", direction=cfg["tick_direction"], top=False, right=False)
+        core.set_tick_size(cfg, ax)
         sc = cfg.get("scale", 1.0)
         ax.tick_params(which="major", length=6 * sc, width=max(0.6, sc))
         ax.tick_params(which="minor", length=3 * sc, width=max(0.5, 0.8 * sc))
@@ -602,7 +605,7 @@ class SimpleFigure(core.Figure):
             yt = min(float(np.nanmax(y[sel])), y1) + 0.03 * (y1 - y0)
             self.curve_texts.append(ax.text(hi - 0.01 * (hi - lo), yt, core.fmt_text(c["tag"], self.cfg),
                                             ha="right", va="bottom", color=c.get("color") or "black",
-                                            fontsize=self.cfg["font_size"] * 0.8, zorder=5))
+                                            fontsize=core.legend_size(self.cfg), zorder=5))
 
     def _extra_blocks(self, rend):
         return [self._measure_af(t.get_window_extent(rend)) for t in self.curve_texts]
@@ -613,7 +616,7 @@ class SimpleFigure(core.Figure):
             return
         loc = self.layout.get("legend")
         self.legend = self.ax.legend(handles=handles, loc=tuple(loc) if loc else "best",
-                                     fontsize=self.cfg["font_size"] * 0.8 * scale, frameon=False,
+                                     fontsize=core.legend_size(self.cfg) * scale, frameon=False,
                                      handlelength=1.8)
         self.legend.set_draggable(True, use_blit=True, update="loc")
 
