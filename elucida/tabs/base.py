@@ -3406,6 +3406,7 @@ class OverlayTab(FigureTab):
         self.det = QGroupBox(T("ov_details"))
         f = make_form(self.det)
         self.cb_own = QCheckBox(T("ov_own_norm"))
+        self.cb_own.setProperty("auto_unchecked", True)    # tidy/AutoRange: ohne eigenes Fenster zeigen die Felder „auto“
         row = QHBoxLayout()
         self.sp_elo = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=300)
         self.sp_ehi = QDoubleSpinBox(decimals=0, minimum=100, maximum=3500, value=500)

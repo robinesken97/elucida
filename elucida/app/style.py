@@ -1796,12 +1796,14 @@ def special_resets(root):
 class AutoRange(QObject):
     """Bereich ohne Kästchen „gesamt/auto“ (Nutzerwunsch 2026-11-10): ist der Bereich automatisch, zeigen beide Felder
     „auto“; ein Klick hinein schaltet auf eigene Grenzen (die zuletzt benutzten Werte), ein geleertes Feld zurück auf
-    automatisch. Das Kästchen bleibt verborgen als Träger des Zustands: Signale, Speichern und Code der Tabs wie bisher."""
+    automatisch. Das Kästchen bleibt verborgen als Träger des Zustands: Signale, Speichern und Code der Tabs wie bisher.
+    Kästchen mit Eigenschaft `auto_unchecked` (z. B. „eigener Bereich“) heißen umgekehrt: aus = „auto“."""
 
     def __init__(self, cb, spins):
         super().__init__(cb)
         from elucida.app.i18n import T
         self.cb, self.spins, self.ghosts = cb, list(spins), []
+        self.inv = bool(cb.property("auto_unchecked"))
         cb.setProperty("nochip", True)
         cb.hide()
         for sp in self.spins:
@@ -1818,15 +1820,22 @@ class AutoRange(QObject):
             sp.setToolTip((sp.toolTip() + "\n" if sp.toolTip() else "") + T("auto_range_clear_tip"))
             sp.installEventFilter(self)
             sp.lineEdit().installEventFilter(self)
-            SpecialReset(sp, cb.isChecked, lambda: cb.setChecked(True), T("auto"))   # ein Klick zurück auf „auto“
+            SpecialReset(sp, self.auto, lambda: self.set_auto(True), T("auto"))   # ein Klick zurück auf „auto“
         cb.toggled.connect(self.sync)
         _watch(cb, "setChecked", self.sync)
         self.sync()
 
+    def auto(self):
+        return self.cb.isChecked() != self.inv
+
+    def set_auto(self, on):
+        self.cb.setChecked(on != self.inv)
+
     def sync(self, *_):
-        auto = self.cb.isChecked()
+        auto = self.auto()
         for g, sp in zip(self.ghosts, self.spins):
-            if auto and not sp.isEnabled():
+            # Tab sperrt den ganzen Bereich (auch das Kästchen, z. B. Überlagerung außerhalb „normiert“): gesperrt lassen
+            if auto and not sp.isEnabled() and not self.cb.testAttribute(Qt.WA_ForceDisabled):
                 sp.setEnabled(True)                           # der Tab sperrt die Felder bei „auto“: hier ersetzt das die Anzeige
             g.parentWidget().setGeometry(sp.rect())
             g.parentWidget().setVisible(auto)
@@ -1840,7 +1849,7 @@ class AutoRange(QObject):
             if t == QEvent.MouseButtonPress or (t == QEvent.KeyPress and (ev.text().strip() or ev.key() in (
                     Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space))):
                 sp = self.spins[self.ghosts.index(obj)]
-                self.cb.setChecked(False)
+                self.set_auto(False)
                 sp.setFocus()
                 sp.selectAll()
                 return True
@@ -1849,8 +1858,8 @@ class AutoRange(QObject):
                 self.sync()
         elif t == QEvent.FocusOut or (t == QEvent.KeyPress and ev.key() in (Qt.Key_Return, Qt.Key_Enter)):
             sp = next((x for x in self.spins if x.lineEdit() is obj), None)
-            if sp is not None and not sp.cleanText().strip() and not self.cb.isChecked():
-                self.cb.setChecked(True)                      # Feld geleert: wieder automatisch
+            if sp is not None and not sp.cleanText().strip() and not self.auto():
+                self.set_auto(True)                           # Feld geleert: wieder automatisch
         return False
 
 

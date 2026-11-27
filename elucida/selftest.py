@@ -1323,6 +1323,55 @@ def _g_uvvis(ctx):
             w.ov_state["entries"] = ents0
             ov.fill_table()
             report.append("overlay: y range, x range without sticks, tail normalisation, own window, remove, weights: OK")
+        with section:
+            # Fehler 1.4.0 (Nutzer 2026-11-27): Normierungsfenster der gewaehlten Kurve sprang bei Pfeil/Zahl auf "auto",
+            # AutoRange hielt das Kaestchen "eigenes Fenster" fuer "auto". Echte Ersatzfelder, jede Eintragsart.
+            from PySide6.QtGui import QFocusEvent
+            from PySide6.QtTest import QTest as QT_nw
+            ov, ents0 = w.ov_tab, w.ov_state["entries"]
+            ar_nw = next(x_ for x_ in ov.cb_own.children() if isinstance(x_, STYLE.AutoRange))
+            b_nw = {"color": "#1764e8", "visible": True, "own_norm": False, "nlo": 450, "nhi": 520, "label": "x"}
+            c_nw = dict(b_nw, kind="calc", file=str(orca), fwhm=0.5, shift=-0.5)
+            kinds_nw = {"calc": c_nw, "combined": dict(c_nw, sources=[{"file": str(orca), "weight": 1.0}] * 2),
+                        "esd": dict(b_nw, kind="esd", file=str(orca), shift=0.0, unit="cm-1"),
+                        "exp": dict(b_nw, kind="exp", file=str(csv), sample="TEST-A-0p25mgml_THF", conc=None, unit="mM",
+                                    mw=None, d=1.0),
+                        "eps": dict(b_nw, kind="exp", link="eps", file=str(csv), sample=None, conc=None, unit="mM", mw=None,
+                                    d=1.0),
+                        "sec": dict(b_nw, kind="sec", file=str(csv)), "secser": dict(b_nw, kind="secser", file=str(csv)),
+                        "stacked": dict(c_nw, stack_with_prev=True)}
+            for k_nw, e_nw in kinds_nw.items():
+                w.ov_state.update(mode="norm", nlo=250, nhi=350, entries=[dict(c_nw, label="top"), dict(e_nw)])
+                ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("norm"))
+                ov.fill_table()
+                ov.table.setCurrentCell(1, 1)
+                ov.show_details()
+                E_nw = w.ov_state["entries"][1]
+                g0_, g1_ = ar_nw.ghosts
+                assert g0_.isVisibleTo(ov) and g1_.isVisibleTo(ov), f"{k_nw}: without own window the fields show 'auto'"
+                QT_nw.mouseClick(g0_, Qt.LeftButton)                       # Klick ins Feld: eigenes Fenster
+                assert E_nw["own_norm"] and not g0_.isVisibleTo(ov), k_nw
+                assert (ov.sp_elo.value(), ov.sp_ehi.value()) == (450, 520), (k_nw, ov.sp_elo.value())
+                QT_nw.keyClick(ov.sp_elo, Qt.Key_Up)                       # Pfeil: bleibt eigenes Fenster
+                assert E_nw["own_norm"] and E_nw["nlo"] == 451 and not g0_.isVisibleTo(ov), (k_nw, E_nw["nlo"])
+                ov.sp_ehi.selectAll()
+                QT_nw.keyClicks(ov.sp_ehi, "480")                          # Zahl getippt: bleibt
+                QT_nw.keyClick(ov.sp_ehi, Qt.Key_Return)
+                assert E_nw["own_norm"] and E_nw["nhi"] == 480 and not g1_.isVisibleTo(ov), (k_nw, E_nw["nhi"])
+                assert ov.sp_elo._special_reset.act.isVisible()            # Ruecksetz-Symbol: zurueck auf das globale
+                ov.sp_elo._special_reset.act.trigger()
+                assert not E_nw["own_norm"] and g0_.isVisibleTo(ov) and (E_nw["nlo"], E_nw["nhi"]) == (451, 480), k_nw
+                QT_nw.mouseClick(g1_, Qt.LeftButton)
+                ov.sp_ehi.lineEdit().clear()                               # geleertes Feld: wieder "auto"
+                QApplication.sendEvent(ov.sp_ehi.lineEdit(), QFocusEvent(QEvent.FocusOut))
+                assert not E_nw["own_norm"] and g1_.isVisibleTo(ov), k_nw
+                ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("eps"))  # wirkt nur beim Normieren: gesperrt
+                assert not ov.sp_elo.isEnabled() and not ov.sp_ehi.isEnabled(), k_nw
+            ov.cmb_ymode.setCurrentIndex(ov.cmb_ymode.findData("norm"))
+            w.ov_state.update(nlo=450, nhi=520, entries=ents0)
+            ov.fill_table()
+            report.append("overlay own normalisation window: click, arrow, typed value, reset, cleared field, "
+                          "locked outside 'normalised', every entry kind: OK")
 
         with section:
             # TD-DFT-Tab (früher Overlay) gestapelt: Ebenen in Listenreihenfolge, TD-DFT auf der Ebene der Messung, y ohne
