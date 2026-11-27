@@ -96,7 +96,8 @@ paths:
   (`_make_off_spin`: ☑ + Zahlenfeld in einer Zeile automatisch, getrennte Zeilen über `STYLE.off_spin(cb, spin)`; ☑ +
   Auswahlliste: `_make_off_combo`); Kästchen und Feld des Tabs bleiben verborgen als Träger, der Wert bleibt bei „aus“
   erhalten. (3) ☑ gesamt/auto + von–bis = **Felder zeigen „auto“** (`AutoRange`; Klick = eigene Grenzen, geleertes Feld =
-  automatisch). Programmatische Änderungen erreichen die Ersatzfelder auch bei blockierten Signalen (`_watch`). Ausnahme:
+  automatisch). Heißt das Kästchen umgekehrt (an = eigener Bereich, z. B. Normierung der gewählten Kurve), trägt es die
+  Eigenschaft `auto_unchecked`; sonst kehrt `AutoRange` die Bedeutung um. Programmatische Änderungen erreichen die Ersatzfelder auch bei blockierten Signalen (`_watch`). Ausnahme:
   Eigenschaft `nochip`. Kästchen bleiben in Tabellenzeilen und Dialogen. Der Selbsttest verlangt: kein sichtbares Kästchen
   in einer linken Spalte.
 - Felder mit „auto“ oder „aus“ (Nutzerwunsch 2026-11-12 „schwer, wieder auf auto zu stellen“, gilt in allen Tabs):
