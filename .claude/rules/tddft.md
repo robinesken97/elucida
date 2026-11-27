@@ -57,8 +57,7 @@ paths:
   „overlay“, `ov_*`-Schlüssel, `data/overlay`, Export `<Verbindung>_Overlay`, `SI_CAPTION`), sonst bräuchte jedes
   Projekt eine Migration. Der Tab vergleicht Messung gegen Rechnung **einer** Verbindung; mehrere Messungen derselben
   Verbindung bleiben (Grenze bei den Funktionen, nicht bei der Zahl der Spektren). Entfernt, weil der Projekt-Vergleich
-  es besser macht: nur die Struktur je Spektrum (`structure`/`struct_color` im Eintrag). Statt dessen Zeile „Vergleich“
-  im Schritt Daten mit „Öffnen …“ (Projektseite › Vergleich, nur mit Projekt). Alte Zustände: `figure_spec` liest die
+  es besser macht: nur die Struktur je Spektrum (`structure`/`struct_color` im Eintrag). Kein Sprung zur Projektseite (Robin 2026-11-27): im Tab steht nur, was er selbst vergleicht. Alte Zustände: `figure_spec` liest die
   Schlüssel weiter (Bild/SI wie bisher), nichts schreibt sie (`detail_changed`); Hinweis `ov_cmp_old` (`legacy_compare`).
   Stapeln samt y-Achse/Namen an den Kurven/Nulllinien und „Ebene wie darüber“ (`stack_with_prev`) wieder eingebaut
   (Nutzerentscheid 1.2.0, wörtlich „Wieder einbauen so wie du vorgeschlagen hast“): mehrere Spektren derselben Verbindung

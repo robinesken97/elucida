@@ -9,6 +9,7 @@ paths:
 - Textformat (Menü Format): global `text_fmt`, je Tab optional eigenes (`tab_fmt[STATE_KEY]`, ε = `epsilon`, gespeichert als
   `text_tabs`); `main.text_format(key)` mischt. Die Karte (`TABS.TextFormatCard`) zeigt nur `TEXT_OPTS` des Tabs. Geschlossener Rahmen
   (`axes_frame`) Standard seit 1.24.
+- Tabs enthalten keine Sprünge zur Projektseite; nur was im Tab selbst verglichen oder ausgewertet wird (Robin 2026-11-27).
 - Navigation (Nutzerwunsch 2.3.1): Pfadleiste in der Werkzeugleiste (Fensterbreite) `Übersicht › Projekt › Verbindung ▾` (Haus als Symbol in Leistengröße, nicht als Zeichen ⌂: Ersatzschrift hob die Grundlinie)
   (`btn_home`/`btn_pub`/`btn_comp`, `_update_crumbs`, Verbindungsmenü `_fill_comp_menu`), `go_home`. Beispiele
   (`demo.is_demo`, Datenordner) nie in den Zuletzt-Listen. Löschen nur in den Papierkorb (`trash_folder`,
