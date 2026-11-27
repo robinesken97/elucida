@@ -38,9 +38,9 @@ paths:
   Warnung > 0.4 %; immer optional (nie als fehlend melden, auch nicht in der Checkliste).
   Word-Export exakt wie die SI-PDF der Gruppe: A4, Ränder 2.5 cm, Arial 11 (Schriftart wählbar über `SI.set_font`/QSettings
   `si_font`, Größe fest wegen `two_per_page`), Blocksatz, 1.5-zeilig; „Synthesis of **Name**“,
-  Absatz mit fettem **m.p.**/**IR**/**HR-MS-ESI(+)**/**UV-Vis**/**λ**max, Exponenten als „-1“; „**Figure Sn**: X-ray solid state
+  Absatz mit fettem **m.p.**/**IR**/**HR-MS-ESI(+)**/**UV-Vis**/**λ**max, *ε* kursiv, Exponenten als „-1“; „**Figure Sn**: X-ray solid state
   structure of **Name**. Thermal ellipsoids are shown with 50% probability.“ (Besetzung bei Fehlordnung „60% (A) and 40% (B)“);
-  ≤ 8 ausgewählte Werte in der Unterschrift, sonst „**Table Sn:** Selected bond lengths/angles for **Name**.“ (Atom | … |
+  ≤ 8 ausgewählte Werte in der Unterschrift, sonst „**Table Sn**: Selected bond lengths/angles for **Name**.“ (Atom | … |
   Length / Å); Kristalldaten mit zentrierter erster Spalte, „a / Å“ usw.; Nummern als Word-SEQ-Felder (fortlaufend).
 - Reinheit und Bezeichner (1.2.0, Auftrag 2026-11-13): `compound.purity` (Schlüssel aus `SI.PURITY_METHODS`) + `purity_other`
   ergeben in `si_char_blocks` den Satz „Purity was established by …“ (`SI.purity_line`), nur aus Eingetragenem; der
