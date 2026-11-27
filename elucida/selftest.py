@@ -5169,7 +5169,7 @@ def _g_ui(ctx):
             # ε: Reiter „SI-Text“ aus Karten wie in den anderen Tabs (UV-Vis-Zeile, Bildunterschrift, Methodentext)
             si_eps_ = [c_ for c_ in w.tabs.widget(2).widget().findChildren(QFrame, "card")]
             assert len(si_eps_) == 3 and all(c_.findChild(QPushButton) is not None for c_ in si_eps_), len(si_eps_)
-            assert w.lbl_eps_cap.text().startswith("<b>Figure Sn:</b> UV-Vis spectra of") and w.lbl_eps_methods.text()
+            assert w.lbl_eps_cap.text().startswith("<b>Figure Sn</b>: UV-Vis spectra of") and w.lbl_eps_methods.text()
             # Raster: jedes sichtbare Zahlenfeld der linken Spalten genau so breit wie seine Rasterbreite (fieldw: Feld A
             # des Formulars, sonst STYLE.FIELD_W) – das Stylesheet darf die feste Breite nicht nachträglich aufheben
             w.show()
@@ -14879,7 +14879,8 @@ def _g_comparison(ctx):
                                                ("tabcap", "HOMA values of the rings of", "S3_opt_freq"),
                                                ("params", ["a", "b"], [["1", "2"]])])
             x_r2 = _zf_r2.ZipFile(d_r2 / "m.docx").read("word/document.xml").decode("utf-8")
-            assert ">-4<" in x_r2 and ">−4<" not in x_r2, x_r2[:400]
+            # s2fehler: hochgestelltes „-“ als geschützter Bindestrich (Word bricht „cm-1“ sonst um)
+            assert '<w:noBreakHyphen/><w:t xml:space="preserve">4<' in x_r2 and ">−4<" not in x_r2, x_r2[:400]
             assert "S3_opt_freq" in x_r2 and "\\_" not in x_r2
             # Beispielprojekt S3
             dz_r2 = demo_pub(w, out / "r2_pub")
@@ -23650,7 +23651,8 @@ def _g_nmr_own(ctx):
             data_tp = out / "tempo_data"
             DEMO_tp.IMG.app_data_dir = lambda: data_tp
             pcts_tp, real_prog_tp = [], w.demo_progress
-            w.demo_progress = lambda p_: (pcts_tp.append(p_), real_prog_tp(p_))
+            views_tp = []                                  # s2fehler: Startseite bleibt während des Baus (kein Sprung S3 -> Projekt)
+            w.demo_progress = lambda p_: (pcts_tp.append(p_), views_tp.append(w.center.currentIndex()), real_prog_tp(p_))
             try:
                 t_tp = time.perf_counter()
                 d_tp = w.open_demo_publication()
@@ -23660,6 +23662,7 @@ def _g_nmr_own(ctx):
                 assert (root_tp / "key.txt").read_text(encoding="utf-8") == DEMO_tp.template_key(w)
                 assert len(pcts_tp) == DEMO_tp.BUILD_TICKS and pcts_tp == sorted(pcts_tp) and pcts_tp[-1] == 99, pcts_tp
                 assert not w._demo_building
+                assert set(views_tp) == {0} and w.center.currentIndex() == 2, views_tp
                 tree_tp = _DemoPub._tree(d_tp)
                 assert tree_tp == _DemoPub._tree(root_tp / "pub")
                 # zweites Öffnen: Kopie, kein Bau, gleicher Inhalt, Dateizeiten wie neu
@@ -24945,6 +24948,185 @@ def _g_nmr_own(ctx):
                           "rows, footer caption typeset, DFT energy tables share the name column, X-Ray tables stack when "
                           "narrow, 3D atom labels half a font height apart, MR lines typeset, capitals in cells, US -ize, "
                           "Fc0/+, chip padding, locked swatches pale, export names keep their end: OK")
+        # ---------------------------------------------------------------- Spur s2fehler (1.5.0)
+        with section:
+            # FR-2: MNova schneidet die Seite an der Kante zu, die Endzahlen der ppm-Achse ragen halb hinaus (erfundenes SVG
+            # im MNova-Stil: Zahlen in einer transformierten Gruppe, „10.0“ links und „0.0“ rechts über den Rand)
+            import pymupdf as fz_s2a
+            from elucida.tabs import nmr as NMR_s2a
+            src_s2a = out / "input" / "s2f_edge" / "edge_1H.svg"
+            src_s2a.parent.mkdir(parents=True, exist_ok=True)
+            src_s2a.write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="287.867mm" height="200.819mm" viewBox="0 0 1088 759">'
+                '<title>MestReNova SVG (test)</title>'
+                '<polyline fill="none" stroke="#800000" points="40,640 300,640 310,200 320,640 1048,640"/>'
+                '<line x1="40" y1="700" x2="1048" y2="700" stroke="#000000"/>'
+                '<g transform="matrix(0.5,0,0,0.5,0,0)" font-size="28">'
+                + "".join(f'<text x="{x_}" y="1446">{v_}</text>' for x_, v_ in ((-26, "10.0"), (1060, "5.0"), (2148, "0.0")))
+                + '</g><text x="500" y="745" font-size="14">δ <tspan dy="-4" font-size="9">1</tspan>'
+                  '<tspan dy="4">H (ppm)</tspan></text></svg>', encoding="utf-8")
+            before_s2a = src_s2a.read_bytes()
+
+            def ink_s2a(f_):                                   # Tinte in den äußeren zwei Pixelspalten/-zeilen
+                pg_ = fz_s2a.open(str(f_))[0]
+                px_ = pg_.get_pixmap(dpi=144, colorspace=fz_s2a.csGRAY)
+                a_ = np.frombuffer(px_.samples, np.uint8).reshape(px_.height, px_.width) < 200
+                return int(a_[:, :2].sum() + a_[:, -2:].sum() + a_[:2].sum() + a_[-2:].sum()), pg_.rect
+            assert ink_s2a(src_s2a)[0] > 0                     # ohne Rand: beide Endzahlen angeschnitten
+            assert w.create_project(out / "s2f_edge")
+            pump(0.3)
+            t_s2a = w.nmr_tab
+            w.main_tabs.setCurrentWidget(t_s2a)
+            t_s2a.load_svg(str(src_s2a))
+            pump(0.3)
+            s_s2a = t_s2a.current()
+            s_s2a["struct_on"] = False
+            f_s2a = Path(t_s2a.figure_svg(s_s2a))              # Word ohne Struktur: die Kopie unter .elucida
+            n_s2a, r_s2a = ink_s2a(f_s2a)
+            assert n_s2a == 0 and f_s2a != Path(s_s2a["file"]), (n_s2a, f_s2a)
+            vb_s2a = NMR_s2a.svg_viewbox(f_s2a.read_text(encoding="utf-8"))
+            assert vb_s2a[0] < -12 and vb_s2a[0] + vb_s2a[2] > 1088 + 12 and vb_s2a[1] == 0 and vb_s2a[3] == 759, vb_s2a
+            assert abs(r_s2a.width / r_s2a.height - vb_s2a[2] / vb_s2a[3]) < 1e-3   # Maßstab bleibt (width/height mit)
+            assert src_s2a.read_bytes() == before_s2a and Path(s_s2a["file"]).read_bytes() == before_s2a
+            blk_s2a = [b_ for b_ in t_s2a.docx_blocks(out / "input" / "s2f_edge") if b_[0] == "image"]   # Word: Maße der Kopie
+            assert blk_s2a and abs(blk_s2a[0][3] / blk_s2a[0][2] - r_s2a.height / r_s2a.width) < 1e-3, blk_s2a
+            t_s2a.update_preview()                             # Vorschau: Seite der Kopie
+            assert abs(w.extra_cache[("nmraspect", s_s2a["file"])] - r_s2a.width / r_s2a.height) < 1e-3
+            plain_s2a = NMR_s2a.make_test_svg(out / "input" / "s2f_edge" / "plain.svg").read_text(encoding="utf-8")
+            assert NMR_s2a.svg_fit(plain_s2a) == plain_s2a     # ohne Überstand unverändert (Bilder bleiben gleich)
+            w.close_project()
+            report.append("NMR MNova SVG: axis end labels beyond the page get a margin in the working copy (preview, Word), "
+                          "original untouched (lane s2fehler): OK")
+        with section:
+            # A2: Einfügen aus ChemDraw – Zwischenablage wie Octets Tauri-Host lesen (erfundenes Molekül, MDLCT mit einer
+            # Zeile der Länge 10: ihr Längenbyte ist ein Zeilenumbruch, früher blieb der Molfile dann unlesbar)
+            from elucida.app import drawing_clipboard as DC_s2b
+            ln_s2b = [b"", b"  test", b"", b"  2  1  0  0  0  0  0  0  0  0999 V2000",
+                      b"    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+                      b"    1.2500    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0", b"  1  2  1 ", b"M  END"]
+            assert len(ln_s2b[6]) == 10
+            mdlct_s2b = b"".join(bytes([len(l_)]) + l_ for l_ in ln_s2b) + b"\x00\x00"     # Windows hängt NULs an
+            mol_s2b = DC_s2b._molfile_text(mdlct_s2b)
+            assert mol_s2b == "\n".join(l_.decode() for l_ in ln_s2b) + "\n", repr(mol_s2b)
+            assert DC_s2b._molfile_text(b"x\r\nM  END\r\n") == "x\nM  END\n"
+            assert DC_s2b._smiles_text(b"CO\x00") == "CO" and DC_s2b._smiles_text(b"\x00") is None
+            if sys.platform != "darwin":                       # macOS: NSPasteboard wäre die Zwischenablage des Nutzers
+                mime_s2b = STYLE.clip_mime()
+                mime_s2b.setData(DC_s2b._types()["molfile"][0], mdlct_s2b)
+                QApplication.clipboard().setMimeData(mime_s2b)
+                got_s2b = DC_s2b.paste_drawing()
+                assert got_s2b["filled"] and got_s2b["molfile"] == mol_s2b, got_s2b
+                mime_s2b = STYLE.clip_mime()
+                mime_s2b.setData("application/x-elucida-test", b"1")      # nur Unlesbares: filled, nichts sonst
+                QApplication.clipboard().setMimeData(mime_s2b)
+                got_s2b = DC_s2b.paste_drawing()
+                assert got_s2b["filled"] and not any(got_s2b[k_] for k_ in ("cdx", "molfile", "smiles", "text")), got_s2b
+                QApplication.clipboard().clear()
+            report.append("Drawing paste: clipboard molfile/SMILES read as Octet's own host does, 'filled' reported "
+                          "(lane s2fehler): OK")
+        with section:
+            # Punkt 13 (Windows 1.4.0): dunkle Zeichenfläche blitzt beim Laden weiß – Seitengrund schwarz und Octets Inhalt
+            # verhüllt, bis das Thema gesetzt ist; danach ist die Hülle weg (Seite und Skriptliste)
+            from elucida.app.drawing_editor import DrawingEditor as DE_s2c
+            host_s2c = QWidget()
+            host_s2c.resize(600, 400)
+            QVBoxLayout(host_s2c)
+            ed_s2c = DE_s2c(host_s2c, scheme_actions=False)
+            host_s2c.layout().addWidget(ed_s2c)
+            if ed_s2c.view is not None:
+                ed_s2c.set_canvas_dark(True)
+                assert ed_s2c.page.backgroundColor().name() == "#000000"
+                assert ed_s2c.page.scripts().find("Elucida veil")
+                host_s2c.show()
+                assert _until(lambda: ed_s2c.ready, pump, limit=30.0)
+                assert not ed_s2c.page.scripts().find("Elucida veil")
+                assert _until(lambda: ed_s2c._js("!document.getElementById('elucida-veil')") is True, pump, limit=5.0)
+                ed_s2c.set_canvas_dark(False)                      # Wechsel nach dem Laden: ohne Hülle, Grund weiß
+                assert ed_s2c.page.backgroundColor().name() == "#ffffff" and not ed_s2c.page.scripts().find("Elucida veil")
+            host_s2c.close()
+            host_s2c.deleteLater()
+            pump(0.2)
+            report.append("Drawing editor, dark canvas: black page and veiled content until Octet has its theme "
+                          "(lane s2fehler): OK")
+        with section:
+            # Windows-Bericht 1.4.0: Datei-Menü zeigte im NMR-Tab das Untermenü „UV-Vis (ε)“ – nur noch im Tab UV-Vis (ε)
+            dp_s2d = demo_pub(w, out / "s2d_pub")
+            assert w.open_project(dp_s2d / "S3", ask=False, recent=False)
+            seen_s2d = {}
+            for k_ in ("eps", "nmr", "export", "eps"):
+                w.main_tabs.setCurrentIndex(w._tab_keys.index(k_))
+                pump(0.1)
+                seen_s2d[k_] = w._menu_eps.isVisible()
+            assert seen_s2d == {"eps": True, "nmr": False, "export": False}, seen_s2d
+            w.go_home()
+            pump(0.2)
+            assert not w._menu_eps.isVisible()
+            report.append("File menu: UV-Vis submenu only in the UV-Vis tab (lane s2fehler): OK")
+        with section:
+            # Sprachwechsel zweimal hintereinander: die erste Projektseite ist gelöscht, bevor ihr erster Cluster-Abruf
+            # (singleShot 0) läuft -> vorher RuntimeError am gelöschten QLineEdit (cluster.py configured)
+            from PySide6.QtCore import QEvent as QE_s2e
+            errs_s2e, hook_s2e = [], sys.excepthook
+            sys.excepthook = lambda t_, v_, tb_: errs_s2e.append(f"{t_.__name__}: {v_}")
+            try:
+                for lang in ("de", "en"):
+                    w.switch_lang(lang)
+                    app.sendPostedEvents(None, QE_s2e.DeferredDelete)
+                pump(0.5)
+            finally:
+                sys.excepthook = hook_s2e
+            assert not errs_s2e, errs_s2e
+            report.append("Language switch twice in a row: no cluster poll on the deleted project page (lane s2fehler): OK")
+        with section:
+            # Robin 2026-11-27: Word-SI „Figure Sn:“ und „Table Sn:“ – Nummer fett, Doppelpunkt nie; ε kursiv wie J, N
+            import zipfile as _zf_s2f
+            from elucida.core import uvvis as core_s2f
+            from elucida.si import lines as SI_s2f
+            res_s2f = [{"lam": 298.0, "fit": {"n": 5}, "eps": 24100.2, "eps_err": 0.4}]
+            uvp_s2f, uvh_s2f = SI_s2f.uvvis_line(res_s2f, dict(core_s2f.DEFAULTS, conc_unit="mM"), "THF")
+            assert "(ε = 24100 cm-1 M-1)" in uvp_s2f and "(<i>ε</i> = 24100" in uvh_s2f, uvh_s2f
+            d_s2f = out / "s2f_colon"
+            d_s2f.mkdir(parents=True, exist_ok=True)
+            SI_s2f.write_docx(d_s2f / "c.docx", [("char", uvh_s2f), ("figcap", "Invented spectrum of <b>X</b>."),
+                                                 ("tabcap", "Invented values for", "X"),
+                                                 ("params", ["a", "b"], [["1", "2"]])])
+            x_s2f = _zf_s2f.ZipFile(d_s2f / "c.docx").read("word/document.xml").decode("utf-8")
+            runs_s2f = re.findall(r"<w:r>(.*?)</w:r>", x_s2f)
+            colon_s2f = [r_ for r_ in runs_s2f if re.search(r'<w:t[^>]*>:</w:t>', r_)]
+            assert len(colon_s2f) == 2 and not any("<w:b/>" in r_ for r_ in colon_s2f), colon_s2f
+            assert any("<w:i/>" in r_ and ">ε<" in r_ for r_ in runs_s2f), "epsilon not italic"
+            report.append("Word SI: caption colon never bold (Figure and Table), epsilon italic in the UV-Vis line "
+                          "(lane s2fehler): OK")
+        with section:
+            # Robin 2026-11-27: „Whole drawing“ nennt Ionen mit Ladung (lokale Octet-Änderung, UPSTREAM.md); erfundenes Salz
+            from elucida.app.drawing_editor import DrawingEditor as DE_s2g
+            salt_s2g = out / "input" / "s2g_salt.cdxml"
+            salt_s2g.parent.mkdir(parents=True, exist_ok=True)
+            salt_s2g.write_text(
+                '<?xml version="1.0" encoding="UTF-8" ?><CDXML BondLength="14.40"><page id="1"><fragment id="2">'
+                '<n id="3" p="100 100" Element="7" Charge="1"/><n id="4" p="114.4 100"/><n id="5" p="85.6 100"/>'
+                '<n id="6" p="100 85.6"/><n id="7" p="100 114.4"/><b id="8" B="3" E="4"/><b id="9" B="3" E="5"/>'
+                '<b id="10" B="3" E="6"/><b id="11" B="3" E="7"/></fragment><fragment id="12">'
+                '<n id="13" p="160 100" Element="17" Charge="-1"/></fragment></page></CDXML>', encoding="utf-8")
+            host_s2g = QWidget()
+            host_s2g.resize(1000, 700)
+            QVBoxLayout(host_s2g)
+            ed_s2g = DE_s2g(host_s2g, scheme_actions=False)
+            host_s2g.layout().addWidget(ed_s2g)
+            if ed_s2g.view is not None:
+                host_s2g.show()
+                assert _until(lambda: ed_s2g.ready, pump, limit=30.0)
+                ed_s2g.open_path(salt_s2g)
+                ed_s2g._js("document.querySelector('.actions-reopen') && document.querySelector('.actions-reopen').click()")
+                facts_s2g = lambda: ed_s2g._js("JSON.stringify([...document.querySelectorAll('.facts')]"
+                                               ".map(e => e.textContent))") or "[]"
+                assert _until(lambda: len(json.loads(facts_s2g())) == 2, pump, limit=10.0), facts_s2g()
+                got_s2g = json.loads(facts_s2g())
+                assert got_s2g[0].startswith("C\u2084H\u2081\u2082N+") and got_s2g[1].startswith("Cl\u2212"), got_s2g
+            host_s2g.close()
+            host_s2g.deleteLater()
+            pump(0.2)
+            report.append("Drawing editor Actions panel: ions of an invented salt with their charge (lane s2fehler): OK")
         with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)

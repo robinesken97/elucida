@@ -308,7 +308,7 @@ def uvvis_line(results, cfg, solvent: str = ""):
         lam = core.fmt_lam(r["lam"])
         if molar:
             items_p.append(f"{lam} nm (ε = {v} cm-1 M-1{sh})")
-            items_h.append(f"{lam} nm (ε = {v} cm<sup>-1</sup> M<sup>-1</sup>{sh})")
+            items_h.append(f"{lam} nm (<i>ε</i> = {v} cm<sup>-1</sup> M<sup>-1</sup>{sh})")   # Größe kursiv wie J, N
         else:
             items_p.append(f"{lam} nm (a = {v} L g-1 cm-1{sh})")
             items_h.append(f"{lam} nm (<i>a</i> = {v} L g<sup>-1</sup> cm<sup>-1</sup>{sh})")
@@ -540,6 +540,8 @@ def _run_xml(text, st, size=22):
         props += '<w:vertAlign w:val="superscript"/>'
     props += f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
     t = _html.escape(text, quote=False)
+    if "sup" in st:                         # Exponent „-1“: geschützter Trennstrich, Word bricht „cm-1“ sonst nach dem „-“
+        t = t.replace("-", '</w:t><w:noBreakHyphen/><w:t xml:space="preserve">')
     return f'<w:r><w:rPr>{props}</w:rPr><w:t xml:space="preserve">{t}</w:t></w:r>'
 
 
@@ -676,12 +678,12 @@ def _para(runs, size=22, **kw):
 
 
 def _label_para(kind, num, runs, **kw):
-    """„Figure S1: …“ / „Table S1: …“ – Kürzel und Nummer fett, Doppelpunkt bei Tabellen fett, bei Abbildungen nicht
-    (wie in der SI)."""
+    """„Figure S1: …“ / „Table S1: …“ – Kürzel und Nummer fett, der Doppelpunkt nie (Robin 2026-11-27, Abbildungen und
+    Tabellen gleich); Vorlagen mit Punkt (Zeitschriften) wie bisher."""
     tpl = TEMPLATES[_TEMPLATE]
     lab = _run_xml(labels()[0] if kind == "Figure" else labels()[1], {"b"})
-    if _TEMPLATE == "group":                   # SI der Gruppe: Doppelpunkt nur bei Tabellen fett
-        colon = _run_xml(":", {"b"} if kind == "Table" else set())
+    if _TEMPLATE == "group":                   # SI der Gruppe: Doppelpunkt nie fett
+        colon = _run_xml(":", set())
     else:
         colon = _run_xml(tpl["colon"], {"b"}) if tpl["colon"] else ""
     return "<w:p>" + _ppr(**kw) + lab + _seq_xml(kind, num) + colon + _run_xml(" ", set()) + \

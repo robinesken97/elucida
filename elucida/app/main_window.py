@@ -532,6 +532,7 @@ class MainWindow(QMainWindow):
         m_eps.addAction(QAction(T("act_open"), self, shortcut=QKeySequence("Ctrl+Shift+O"), triggered=self.choose_csv))
         m_eps.addAction(QAction(T("act_conc"), self, triggered=self.edit_concentrations))
         m_eps.addAction(QAction(T("act_restart"), self, triggered=self.restart_file))
+        self._menu_eps = m_eps.menuAction()             # sichtbar nur im Tab UV-Vis (ε): _sync_eps_menu
         m.addSeparator()
         act_export = QAction(STYLE.icon("export"), T("act_export"), self, shortcut="Ctrl+E",
                              triggered=self.export_current)
@@ -1254,6 +1255,17 @@ class MainWindow(QMainWindow):
             self.ov_tab.show_details()                # verknüpfte ε-Serien: Änderungen im ε-Tab übernehmen
             self.ov_tab.timer.start()
         self.sync_main_button()
+        self._sync_eps_menu()
+
+    def _sync_eps_menu(self):
+        """Untermenü „UV-Vis (ε)“ im Datei-Menü nur im offenen Tab UV-Vis (ε) einer Verbindung (Windows-Bericht 1.4.0:
+        im NMR-Tab stand es noch da)."""
+        act = getattr(self, "_menu_eps", None)
+        tabs = getattr(self, "main_tabs", None)
+        if act is None or tabs is None:
+            return
+        i = tabs.currentIndex()
+        act.setVisible(bool(self.project_dir) and 0 <= i < len(self._tab_keys) and self._tab_keys[i] == "eps")
 
     def sync_main_button(self, *_):
         """Ein Hauptknopf (blau) je Ansicht: in Tabs, deren Ergebnis nur in die SI geht (`MAIN_SI`: HRMS, Weitere), ist es
@@ -2801,6 +2813,8 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl(url))
 
     def _center_index(self):
+        if self.__dict__.get("_demo_building"):         # erster Bau des Beispielprojekts: Startseite bleibt bis zur
+            return 0                                     # Projektseite stehen (vorher sprang die Ansicht von S3 dorthin)
         return 1 if self.project_dir else 2 if self.publication_dir else 0
 
     def showEvent(self, ev):
@@ -2862,8 +2876,8 @@ class MainWindow(QMainWindow):
     def update_title(self):
         if getattr(self, "center", None) is not None:
             self.center.setCurrentIndex(self._center_index())
-            if self._center_index() == 0:                # Liste nur lesen, wenn sie zu sehen ist
-                self.fill_recent_list()
+            if self._center_index() == 0 and not self.__dict__.get("_demo_building"):   # Liste nur lesen, wenn sie
+                self.fill_recent_list()                                                  # zu sehen ist (nicht je Bauschritt)
             elif self._center_index() == 2:              # Projektseite: Seitenleiste nur bei neuen Projekten neu aufbauen
                 if self.__dict__.pop("_pub_stale", False):   # Design gewechselt, während sie verborgen war
                     self.pub_page.refresh()
@@ -3462,19 +3476,22 @@ class MainWindow(QMainWindow):
         """Werkzeugleiste und Seitenleiste je Ebene: Übersicht/Projekt oder Arbeit (Verbindung, offener Pfad)."""
         if getattr(self, "btn_home", None) is None:
             return
+        # erster Bau des Beispielprojekts: Leisten wie auf der Startseite, die bis zur Projektseite stehen bleibt
+        prj_ = None if self.__dict__.get("_demo_building") else self.project_dir
         page = self.__dict__.get("pub_page")
         path = page.path_workspace if page is not None else None
-        cmp_ = page.compare_page if page is not None and page.compare_page.opened and not self.project_dir else None
-        work = bool(self.project_dir or path or cmp_)
+        cmp_ = page.compare_page if page is not None and page.compare_page.opened and not prj_ else None
+        work = bool(prj_ or path or cmp_)
         self.act_crumbs.setVisible(work)
         for a_ in self._tb_edit + [self._sep_compound]:
-            a_.setVisible(bool(self.project_dir))
-        self.act_si.setVisible(bool(self.project_dir))
+            a_.setVisible(bool(prj_))
+        self.act_si.setVisible(bool(prj_))
+        self._sync_eps_menu()
         # Übersicht/Projektseite: Befehle einer Verbindung wirkten dort auf einen verborgenen Tab (oder fragten nach einer
         # neuen Verbindung); im offenen Vergleich exportiert Strg+E den Vergleich
-        self.act_export.setEnabled(bool(self.project_dir or cmp_))
+        self.act_export.setEnabled(bool(prj_ or cmp_))
         for a_ in (self.act_export_si, self.act_datapack, self.act_text_format):
-            a_.setEnabled(bool(self.project_dir))
+            a_.setEnabled(bool(prj_))
         if getattr(self, "canvas_toggle", None) is not None:
             self.canvas_toggle.setVisible(work)
         self._tb_theme.setVisible(work)
@@ -4323,7 +4340,7 @@ class MainWindow(QMainWindow):
         self.ed_solvent.setText(st.get("solvent", ""))
         self._uv_line = SI.uvvis_line(results, cfg, st.get("solvent", ""))
         self.txt_si.setText(self._uv_line[1] or T("si_uv_none"))
-        cap = "<b>Figure Sn:</b> " + self.eps_caption(self.current, cfg["path_length_cm"], self.export_name())
+        cap = "<b>Figure Sn</b>: " + self.eps_caption(self.current, cfg["path_length_cm"], self.export_name())
         self.lbl_eps_cap.setText(cap)
         self.lbl_cap_bar.set_full(T("caption_bar") + " · " + html.unescape(re.sub(r"<[^>]+>", "", cap)),
                                   rich=html.escape(T("caption_bar")) + " · " + cap)
@@ -4568,8 +4585,10 @@ class MainWindow(QMainWindow):
         if not self.ensure_project():
             return
         with self.collecting_skips():                  # unlesbare Teile auslassen und in der Meldung nennen
+            self._si_progress = True
             try:
                 blocks, missing = self.si_blocks(parts, skip_figs)
+                self.si_step("Word")
                 pdir = Path(self.project_dir)
                 name = core.safe_name(self.export_name())
                 p = SI.write_docx(PRJ.export_dir(pdir, PRJ.SI_DIR) / f"{name}_SI.docx", blocks)
@@ -4579,12 +4598,22 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self.log_signal.emit(traceback.format_exc())
                 return self.error(str(e))
+            finally:
+                self.__dict__.pop("_si_progress", None)
+                self.statusBar().clearMessage()
             used = self.__dict__.pop("_si_pre_used", []) + self.si_used(parts, skip_figs) + \
                 ([T("si_missing", parts=", ".join(missing))] if missing else [])
             links = [(T("si_card_link"), self.show_si_card)] + \
                 [(T(self._tab_spec(k)[3]), lambda k=k: self.show_tab(k)) for k in dict.fromkeys(k for k, _ in self._si_tables)]
             rel = p.relative_to(pdir) if p.is_relative_to(pdir) else p      # Einblendung: kurz, ohne Benutzerpfad
             self.exported([p.parent], [p], used, links, head=T("si_written", p=str(rel)))
+
+    def si_step(self, part):
+        """SI (Word) läuft (≈ 30–60 s): Teil in der Fußleiste nennen und neu zeichnen, damit das Fenster nicht als „Keine
+        Rückmeldung“ gilt; Eingaben warten wie bei „Alles exportieren“. Nur aus export_si (Gesamt-SI hat ihren Dialog)."""
+        if self.__dict__.get("_si_progress"):
+            self.statusBar().showMessage(T("si_progress", part=part))     # wie demo_progress: keine Meldung, kein Protokoll
+            QApplication.processEvents(QEventLoop.ExcludeUserInputEvents)
 
     def si_used(self, parts, skip_figs):
         """Zeilen der Exportmeldung: benutzte Teile, abgewählte Abbildungen (Karte „SI-Export“), Tabellen mit eigenem
@@ -4618,6 +4647,7 @@ class MainWindow(QMainWindow):
         self._si_tables = []                            # Tabellen mit eigenem „In die SI“ (Exportmeldung)
         blocks, missing, plain = [], [], ""
         if "char" in parts:
+            self.si_step(T("si_chip_char"))
             blocks, missing, plain = self.si_part("syn", lambda: self.si_char_blocks(comp, title),
                                                   ([("synthesis", title)], [], ""))
             blocks = self.si_part("syn", self.syn_tab.gp_blocks, []) + blocks     # Einzel-SI: allgemeine Vorschrift davor
@@ -4625,6 +4655,7 @@ class MainWindow(QMainWindow):
             blocks = [("heading", title)]
         self._si_plain = plain
         if "nmr" in parts and self.nmr_tab.spectra() and self.project_dir:
+            self.si_step(T("tab_nmr"))
             blocks += [("pagebreak",)] + self.si_part(
                 "nmr", lambda: self.nmr_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si")))
         if "figs" in parts and self.project_dir:
@@ -4637,8 +4668,10 @@ class MainWindow(QMainWindow):
             if mb:
                 blocks += [("gap",)] + mb
         if "xray" in parts:
+            self.si_step(T("tab_xray"))
             blocks += self.si_part("xray", self.si_xray_part, [])
         if "dft" in parts and self.project_dir and self.dft_has_data():
+            self.si_step(T("tab_dft"))
             db = self.si_part("dft", lambda: self.dft_tab.docx_blocks(PRJ.work_dir(self.project_dir, "si")), [])
             if "dft" in skip_figs:                     # Chip „DFT“ unter „Abbildungen“ ab: auch Orbital-/NBO-Bilder weg
                 db = self.drop_captioned_images(db)
@@ -4823,9 +4856,11 @@ class MainWindow(QMainWindow):
             "eps", lambda: self.si_eps_figures(out_dir, name))) if "eps" not in skip else []
         for t in self.figure_tabs():                      # Reihenfolge der Tabs (Entscheidung 99): IR + EA, HRMS vor ε
             if self.tab_key_of(t) not in ("irms", "hrms") and not eps_done:
+                self.si_step(T("tab_eps"))
                 figs, eps_done = figs + eps(), True
             if self.tab_key_of(t) in skip:
                 continue
+            self.si_step(T(self._tab_spec(self.tab_key_of(t))[3]))
             try:
                 fb = EXPORTTAB.si_keep(self, self.tab_key_of(t), t.si_figure(out_dir, name))   # Auswahl je Karte
                 if fb and t.si_setup_text():                 # Aufbau-Absatz der Methode (lokal hinterlegt)
@@ -4836,6 +4871,7 @@ class MainWindow(QMainWindow):
         if not eps_done:
             figs += eps()
         if "dft" not in skip and self.dft_has_data():         # Energieprofil, IRC, NICS, ACID (NBO/Orbitale: si_blocks)
+            self.si_step(T("tab_dft"))
             figs += EXPORTTAB.si_keep(self, "dft", self.si_part("dft", lambda: self.dft_tab.pages.si_figures(out_dir, name)))
         return SI.two_per_page(figs)
 
@@ -5935,7 +5971,7 @@ class MainWindow(QMainWindow):
         self._place_toast()
 
     def closeEvent(self, ev):
-        if self.__dict__.get("_demo_building") or not self.maybe_save():
+        if self.__dict__.get("_demo_building") or self.__dict__.get("_si_progress") or not self.maybe_save():
             ev.ignore()
             return
         self.settings.setValue("geometry", self.saveGeometry())

@@ -298,7 +298,7 @@ class OtherTab(TABS.FigureTab):
             return
         self.lbl_cap.empty = T("other_cap_empty" if self.entries() else "si_caption_empty")
         cap = self.si_caption("")
-        self.lbl_cap.setText("<b>Figure Sn:</b> " + cap if cap else "")
+        self.lbl_cap.setText("<b>Figure Sn</b>: " + cap if cap else "")
 
     def chapter_blocks(self, out_dir, name):
         """-> [(Kapitelschlüssel bzw. „new:<Überschrift>“, [image, figcap])] in Reihenfolge der Liste."""

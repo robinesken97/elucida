@@ -102,18 +102,58 @@ def copy_picture(svg, png):
     return True
 
 
+def _molfile_text(raw):
+    """Molfile von der Zwischenablage wie Octets Tauri-Host (clipboard.rs molfile_text): erst NULs am Ende weg, dann
+    ChemDraws MDLCT (je Zeile ein Längenbyte, keine Zeilenenden) oder gewöhnlicher Text. Früher entschied ein
+    Zeilenumbruch im Ganzen, und das Längenbyte 10 ist selbst ein Zeilenumbruch."""
+    raw = raw.rstrip(b'\x00')
+    if not raw:
+        return None
+    lines, i = [], 0
+    while i < len(raw):
+        n = raw[i]
+        line = raw[i + 1:i + 1 + n]
+        if len(line) < n or b'\r' in line or b'\n' in line:
+            lines = []
+            break
+        lines.append(line)
+        i += 1 + n
+    text = (b'\n'.join(lines).decode('utf-8', errors='replace') if lines else
+            raw.decode('utf-8', errors='replace').replace('\r\n', '\n').replace('\r', '\n'))
+    return text if text.endswith('\n') else text + '\n'
+
+
+def _smiles_text(raw):
+    """SMILES wie clipboard.rs smiles_text: ASCII, ohne NULs und Leerraum am Rand, sonst None."""
+    try:
+        s = raw.decode('utf-8').strip('\x00 \t\r\n')
+    except UnicodeDecodeError:
+        return None
+    return s if s and s.isascii() and '\x00' not in s else None
+
+
 def paste_drawing():
+    """Was Octet aus der Zwischenablage einfügen kann (wie Octets Tauri-Host). `filled`: die Zwischenablage hält etwas,
+    lesbar oder nicht – Octet sagt dann „cannot read“ statt still nichts zu tun (Windows-Bericht 1.4.0, Punkt 11);
+    `present`: die Namen aller Formate, fürs Protokoll, wenn nichts davon lesbar war."""
     types = _types()
     if sys.platform == 'darwin':
         from AppKit import NSPasteboard
         board = NSPasteboard.generalPasteboard()
+        present = [str(x) for x in (board.types() or [])]
         def read(name):
             value = board.dataForType_(name)
             return bytes(value) if value is not None and len(value) <= MAX else None
     else:
         mime = QApplication.clipboard().mimeData()
+        present = list(mime.formats()) if mime else []
+        by_lower = {f.lower(): f for f in present}         # Qt nennt Windows-Formate je nach Weg anders geschrieben
         def read(name):
-            return bytes(mime.data(name)) if mime and mime.hasFormat(name) and mime.data(name).size() <= MAX else None
+            f = by_lower.get(name.lower(), name)
+            if not mime or not mime.hasFormat(f):
+                return None
+            data = mime.data(f)
+            return bytes(data) if 0 < data.size() <= MAX else None
     out = {k: None for k in ['octet', 'cdxml', 'cdx', 'molfile', 'smiles', 'text', 'picture']}
     for key in ['octet', 'cdxml', 'cdx', 'molfile', 'smiles', 'text']:
         raw = next((b for name in types[key] if (b := read(name))), None)
@@ -123,14 +163,10 @@ def paste_drawing():
             if raw.startswith(b'VjCD0100'):
                 out[key] = base64.b64encode(raw).decode()
             continue
-        if key == 'molfile' and b'\n' not in raw:
-            lines, i = [], 0
-            while i < len(raw):
-                n = raw[i]; i += 1
-                if i+n > len(raw): break
-                lines.append(raw[i:i+n]); i += n
-            if i == len(raw): raw = b'\n'.join(lines)
-        out[key] = raw.rstrip(b'\x00').decode('utf-8', errors='replace')
+        out[key] = _molfile_text(raw) if key == 'molfile' else _smiles_text(raw) if key == 'smiles' else \
+            raw.rstrip(b'\x00').decode('utf-8', errors='replace')
+    out['filled'] = bool(present)
+    out['present'] = present[:40]
     if not out['cdxml'] and not out['cdx']:
         raw = next((b for name in types['pdf'] if (b := read(name))), None)
         if raw:

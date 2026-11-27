@@ -267,6 +267,12 @@ class Bridge(QObject):
             elif method in ('copy', 'paste'):
                 from elucida.app.drawing_clipboard import copy_drawing, paste_drawing
                 value = copy_drawing(data) if method == 'copy' else paste_drawing()
+                if method == 'paste':                          # nichts Lesbares: Formate ins Protokoll (Windows-Prüfung)
+                    present = value.pop('present', [])
+                    if present and not any(value.get(k) for k in ('octet', 'cdxml', 'cdx', 'molfile', 'smiles', 'text')):
+                        log = getattr(self.owner.window(), 'log_signal', None)
+                        if log is not None:
+                            log.emit(T('draw_paste_formats', f=', '.join(present)))
             elif method == 'prediction':                       # Octets NMR-Vorhersage (nmr_compare.Predictor)
                 QTimer.singleShot(0, self.owner, lambda: self.owner.predicted.emit(data if isinstance(data, dict) else {}))
                 value = True
@@ -652,10 +658,35 @@ class DrawingEditor(QWidget):
         finally:
             self._saving = False
 
+    # Dunkle Zeichenfläche: bis Octet sein Thema hat, zeigt die Seite nur Schwarz (sonst blitzte sie beim Laden weiß
+    # auf, Windows-Bericht 1.4.0 Punkt 13). Fällt nach 3 s von selbst, falls das Thema nie ankommt.
+    _VEIL = ("(function(){function put(){var s=document.createElement('style');s.id='elucida-veil';"
+             "s.textContent='html{background:#000!important}body{visibility:hidden!important}';"
+             "document.documentElement.appendChild(s);setTimeout(function(){s.remove();},3000);}"
+             "if(document.documentElement)put();else new MutationObserver(function(m,o){if(document.documentElement)"
+             "{o.disconnect();put();}}).observe(document,{childList:true});})();")
+    _UNVEIL = ("requestAnimationFrame(function(){requestAnimationFrame(function(){"
+               "var v=document.getElementById('elucida-veil');if(v)v.remove();});});")
+
     def set_canvas_dark(self, dark):
         self.canvas_dark = bool(dark)
+        if self.view is None:
+            return
+        from PySide6.QtGui import QColor
+        self.page.setBackgroundColor(QColor('#000000' if self.canvas_dark else '#ffffff'))   # vor dem ersten Bild
+        old = self.page.scripts().find('Elucida veil')
+        for s in old:
+            self.page.scripts().remove(s)
         if self.ready:
-            self.page.runJavaScript('window.elucida.theme(' + json.dumps(self.canvas_dark) + ')')
+            self.page.runJavaScript('window.elucida.theme(' + json.dumps(self.canvas_dark) + ');' + self._UNVEIL)
+        elif self.canvas_dark:
+            from PySide6.QtWebEngineCore import QWebEngineScript
+            veil = QWebEngineScript()
+            veil.setName('Elucida veil')
+            veil.setInjectionPoint(QWebEngineScript.DocumentCreation)
+            veil.setWorldId(QWebEngineScript.MainWorld)
+            veil.setSourceCode(self._VEIL)
+            self.page.scripts().insert(veil)
 
     def export_files(self):
         if not self.ready or not self.path:

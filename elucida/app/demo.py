@@ -195,7 +195,7 @@ def cuvette_photo(path, liquid, uv=False):
     from PIL import Image, ImageDraw
     im = Image.new("RGB", (600, 900), (22, 20, 34) if uv else (190, 185, 175))
     dr = ImageDraw.Draw(im)
-    dr.rectangle([240, 100, 360, 200], fill=(25, 25, 25))
+    dr.rectangle([240, 100, 360, 200], fill=(150, 150, 168) if uv else (236, 235, 230))   # weißer Deckel, wie echt
     dr.rectangle([220, 200, 380, 820], fill=(70, 72, 96) if uv else (215, 220, 228))
     dr.rectangle([235, 420, 365, 805], fill=tuple(int(v) for v in liquid))
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -2351,6 +2351,7 @@ def open_demo_publication(w, folder=None) -> Path:
             _build_publication(w, d)
         finally:
             _progress, w._demo_building = None, False
+            w.update_title()                              # jetzt erst die Projektseite (während des Baus: Startseite)
         save_template(w, d)
         return d
     _build_publication(w, d)

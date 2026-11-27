@@ -1816,7 +1816,10 @@ export function structures(mol: Mol, groups = fragments(mol)): (Structure | unde
 // with written labels counted as their atoms. Each structure is worked out on its own and kept by its content.
 // Undefined while Indigo is loading or if it cannot read any structure. cite: the abbreviation for a structure's
 // standard InChI (names.ts abbreviationOf), given as each structure's abbreviation (TREN).
-export type Analysis = { formula: string; weight: number; exact: number; repeat?: Repeat; abbreviation?: string }[];
+export type Analysis = { formula: string; weight: number; exact: number; repeat?: Repeat; abbreviation?: string; charge?: number }[];
+// Elucida: a structure's net charge from its atoms (Indigo's gross formula has none), so the Actions panel writes an
+// ion as C4H12N+ and Cl- rather than C4H12N and Cl.
+const charged = <T extends object>(e: T, m: Mol): T & { charge?: number } => { const q = m.atoms.reduce((t, a) => t + (a.charge ?? 0), 0); return q ? { ...e, charge: q } : e; };
 const analysed = new Map<string, Analysis | undefined>(), inchis = new Map<string, string | undefined>();
 // The largest structure Octet asks a name or an abbreviation for by its InChI (here, and the names for screen readers
 // in Editor.tsx). The InChI of a larger fused ring system can take seconds, or overflow Indigo's stack (watched) and
@@ -1834,7 +1837,7 @@ export function analyse(mol: Mol, limit = Infinity, cite?: (inchi: string | unde
     if (abbreviation && entries.length) {
       const total: Record<string, number> = {};
       for (const e of entries) for (const [el, n] of Object.entries(counts(e.formula) ?? {})) total[el] = (total[el] ?? 0) + n;
-      return [{ formula: hill(total), weight: entries.reduce((t, e) => t + e.weight, 0), exact: entries.reduce((t, e) => t + e.exact, 0), abbreviation }];
+      return [charged({ formula: hill(total), weight: entries.reduce((t, e) => t + e.weight, 0), exact: entries.reduce((t, e) => t + e.exact, 0), abbreviation }, mol)];
     }
   }
   for (const part of parts) {
@@ -1847,8 +1850,10 @@ export function analyse(mol: Mol, limit = Infinity, cite?: (inchi: string | unde
     if (entries.length > 1 && part.atoms.some((a) => a.centre)) {
       const total: Record<string, number> = {};
       for (const e of entries) for (const [el, n] of Object.entries(counts(e.formula) ?? {})) total[el] = (total[el] ?? 0) + n;
-      out.push({ formula: hill(total), weight: entries.reduce((t, e) => t + e.weight, 0), exact: entries.reduce((t, e) => t + e.exact, 0) });
-    } else out.push(...(abbreviation ? [{ ...entries[0], abbreviation }] : entries));
+      out.push(charged({ formula: hill(total), weight: entries.reduce((t, e) => t + e.weight, 0), exact: entries.reduce((t, e) => t + e.exact, 0) }, part));
+    } else if (entries.length === 1) out.push(charged(abbreviation ? { ...entries[0], abbreviation } : entries[0], part));
+    // shortcut: pieces joined only by a hydrogen bond keep Indigo's entries without a charge; split the charge by piece if one is asked for
+    else out.push(...entries);
   }
   return out.length ? out.slice(0, limit) : undefined;
 }

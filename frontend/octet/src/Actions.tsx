@@ -139,6 +139,8 @@ const ENDS = [["OH", "O"], ["NH₂", "N"], ["Me", "Me"], ["OMe", "OMe"], ["CO₂
 // mass number ([13C]) and a hydrate's number (·5H2O) stay as they are.
 const SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
 export const formula = (f: string) => f.replace(/(?<=[A-Za-z)\]])\d+/g, (n) => n.replace(/\d/g, (d) => SUBSCRIPT[Number(d)]));
+// Elucida: an ion's net charge after its formula (chem.ts analyse), "2+" or "-" as typed.
+const chargeText = (q?: number) => (q ? `${Math.abs(q) > 1 ? Math.abs(q) : ""}${q > 0 ? "+" : "-"}` : "");
 
 // A setting with a few choices, as one small button showing the current choice: a click opens its choices (a Pick
 // list), each drawn as itself with its name. Colours are ColourPick's (ColourPicker.tsx), which works the same way.
@@ -810,10 +812,10 @@ export function Actions({ open, context, analysis, problems, fonts, hiddenWarnin
       </header>
 
       {facts.current && whole && facts.current.slice(0, 3).map((a, k) => (
-        <button key={k} className="facts" onClick={() => run(`copy_text:${a.abbreviation ? `${a.abbreviation}, ` : ""}${a.formula}, ${massText(a, "weight", 2)} g/mol`)} data-tip={`${Number.isFinite(a.exact) ? `Exact mass ${massText(a, "exact", 4)}. ` : ""}Click to copy.`}>
+        <button key={k} className="facts" onClick={() => run(`copy_text:${a.abbreviation ? `${a.abbreviation}, ` : ""}${a.formula}${chargeText(a.charge)}, ${massText(a, "weight", 2)} g/mol`)} data-tip={`${Number.isFinite(a.exact) ? `Exact mass ${massText(a, "exact", 4)}. ` : ""}Click to copy.`}>
           <span className="facts-what">
             {a.abbreviation && <><span className="facts-abbreviation">{a.abbreviation}</span><span aria-hidden> · </span></>}
-            <span className="formula">{formula(a.formula)}</span>
+            <span className="formula">{formula(a.formula)}{a.charge ? <sup>{chargeText(a.charge).replace("-", "−")}</sup> : null}</span>
           </span>
           <span>{massText(a, "weight", 2)} g/mol</span>
         </button>

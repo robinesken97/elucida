@@ -384,6 +384,16 @@ class CardArea(QWidget):
         return super().keyPressEvent(ev)
 
 
+class SameWidthButton(QPushButton):
+    """Ausgabeknopf der Fußleiste: so breit wie der breiteste der Reihe (Windows-Bericht 1.4.0: 79–110 px)."""
+    row = ()
+
+    def sizeHint(self):
+        s = super().sizeHint()
+        s.setWidth(max([QPushButton.sizeHint(b).width() for b in self.row if not b.isHidden()] or [s.width()]))
+        return s
+
+
 class ExportTab(QWidget):
     STATE_KEY = "export"
     STEP_LABELS = ("step_export",)
@@ -481,7 +491,10 @@ class ExportTab(QWidget):
         # ausgewählt, Ausnahme in ui.md); Zahlen im Tooltip, ohne passende Auswahl grau mit Grund im Tooltip
         self.lbl_count = QLabel(objectName="recentSub")
         self.btn_img, self.btn_tables, self.btn_slides, self.btn_si = (
-            QPushButton(T("export_btn_" + b)) for b in ("img", "tab", "pptx", "si"))
+            SameWidthButton(T("export_btn_" + b)) for b in ("img", "tab", "pptx", "si"))
+        row_ = (self.btn_img, self.btn_tables, self.btn_slides, self.btn_si)
+        for b_ in row_:
+            b_.row = row_
         self.btn_img.clicked.connect(self.run)
         self.btn_tables.clicked.connect(self.run_tables)
         self.btn_slides.clicked.connect(self.run_slides)

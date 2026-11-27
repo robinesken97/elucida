@@ -558,7 +558,7 @@ class NtoView:
         self._drag_key = (s["key"], repr(pairs), float(self.st.get("iso", 0.0)), repr(self.item(s).get("view")))
         self.canvas.draw_idle()
         cap = self.caption_html(s, pairs)
-        self.txt_cap.setText("<b>Figure Sn:</b> " + cap)
+        self.txt_cap.setText("<b>Figure Sn</b>: " + cap)
 
     # -- Unterschrift, SI, Export ------------------------------------------------------------------
     def level(self, s):

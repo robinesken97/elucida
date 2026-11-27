@@ -6714,3 +6714,10 @@ TEXTS.update({
                        "Couple {couple}: n = {n} ({src}), entered n = {rs} – check the entry in “Diffusion and k⁰”; "
                        "it is never adopted silently."),
 })
+
+# Spur s2fehler (1.5.0)
+TEXTS.update({
+    "draw_paste_formats": ("Zeichenfläche: nichts Lesbares in der Zwischenablage. Formate: {f}",
+                           "Drawing: nothing readable on the clipboard. Formats: {f}"),
+    "si_progress": ("SI (Word) wird geschrieben … {part}", "Writing SI (Word) … {part}"),
+})

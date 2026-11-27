@@ -434,6 +434,48 @@ def svg_viewbox(svg_text):
     return (0.0, 0.0, float(w.group(1)) if w else 1000.0, float(h.group(1)) if h else 700.0)
 
 
+def _svg_box(txt, box, vw, vh):
+    """Wurzel-<svg> mit neuem viewBox; width/height (mit Einheit) im selben Verhältnis, damit der Maßstab bleibt."""
+    m = re.search(r"<svg\b[^>]*>", txt)
+    head = re.sub(r'viewBox="[^"]*"', 'viewBox="{:.3f} {:.3f} {:.3f} {:.3f}"'.format(*box), m.group(0))
+    for att, k in (("width", box[2] / vw), ("height", box[3] / vh)):
+        head = re.sub(rf'(\s{att}=")([\d.]+)', lambda q, k=k: f"{q.group(1)}{float(q.group(2)) * k:.3f}", head)
+    return txt[:m.start()] + head + txt[m.end():]
+
+
+def svg_fit(txt, slack=0.012, cap=0.08):
+    """MNova schneidet seine Seite genau an der Kante zu, die Endzahlen der ppm-Achse ragen halb hinaus (FR-2): Rahmen
+    um den Überstand plus `slack` (Anteil der Breite; Word setzt eine etwas andere Schrift) vergrößern, je Seite höchstens
+    `cap`. Gemessen am Bild (Text steht in transformierten Gruppen). Ohne Überstand, ohne viewBox oder nicht lesbar:
+    unverändert."""
+    if not re.search(r"<svg\b[^>]*\sviewBox=", txt):
+        return txt
+    try:
+        import numpy as np
+        import pymupdf
+        vx, vy, vw, vh = svg_viewbox(txt)
+        g = cap * max(vw, vh)
+        probe = _svg_box(txt, (vx - g, vy - g, vw + 2 * g, vh + 2 * g), vw, vh)
+        page = pymupdf.open(stream=probe.encode("utf-8"), filetype="svg")[0]
+        pix = page.get_pixmap(dpi=max(10, int(1200 / max(page.rect.width, 1) * 72)), colorspace=pymupdf.csGRAY)
+        a = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width) < 250
+    except Exception:                                      # nur Darstellung: lieber MNovas Rahmen als kein Bild
+        return txt
+    ys, xs = np.nonzero(a.any(1))[0], np.nonzero(a.any(0))[0]
+    if not xs.size:
+        return txt
+    ux, uy = (vw + 2 * g) / pix.width, (vh + 2 * g) / pix.height     # Benutzereinheiten je Pixel
+    ink = (vx - g + xs[0] * ux, vy - g + ys[0] * uy, vx - g + (xs[-1] + 1) * ux, vy - g + (ys[-1] + 1) * uy)
+    pad, tol = slack * vw, 0.5 * max(ux, uy)
+    x0 = ink[0] - pad if ink[0] < vx - tol else vx
+    y0 = ink[1] - pad if ink[1] < vy - tol else vy
+    x1 = ink[2] + pad if ink[2] > vx + vw + tol else vx + vw
+    y1 = ink[3] + pad if ink[3] > vy + vh + tol else vy + vh
+    if (x0, y0, x1, y1) == (vx, vy, vx + vw, vy + vh):
+        return txt
+    return _svg_box(txt, (x0, y0, x1 - x0, y1 - y0), vw, vh)
+
+
 def occupancy(spec_svg, px_w=400):
     """Belegte Fläche des Spektrums (alles, was nicht weiß ist: Signale, Labels, Integrale, Achsen, Insets) -> bool[H, W]."""
     import numpy as np
@@ -4128,8 +4170,8 @@ class NMRTab(QWidget):
         return self.raw_svg(s) if s.get("source") == "bruker" and s.get("proc") else self.fonts_svg(s["file"])
 
     def fonts_svg(self, path):
-        """MNova-SVG mit lesbaren Schriften (`svg_fonts`) als Kopie unter .elucida/nmr; die Datei selbst bleibt
-        unverändert. Ohne Änderung der Pfad selbst."""
+        """MNova-SVG mit lesbaren Schriften (`svg_fonts`) und Rand um überstehende Achsenzahlen (`svg_fit`) als Kopie
+        unter .elucida/nmr; die Datei selbst bleibt unverändert. Ohne Änderung der Pfad selbst."""
         import zlib
         from elucida.formats.mnova import svg_fonts
         p = Path(path)
@@ -4139,7 +4181,7 @@ class NMRTab(QWidget):
         key = ("nmrfonts", str(p), st.st_mtime_ns, st.st_size)
         if key not in self.main.extra_cache or not Path(self.main.extra_cache[key]).exists():
             txt = p.read_text(encoding="utf-8", errors="replace")
-            fixed, out = svg_fonts(txt), str(path)
+            fixed, out = svg_fit(svg_fonts(txt)), str(path)
             if fixed != txt:
                 import tempfile                                  # ohne Verbindung nie neben die Datei des Nutzers
                 o = PRJ.work_dir(self.main.project_dir or tempfile.gettempdir(), self.STATE_KEY) / \
@@ -4321,7 +4363,7 @@ class NMRTab(QWidget):
         akey = ("nmraspect", s["file"])
         if akey not in cache:
             try:
-                r_ = pymupdf.open(s["file"])[0].rect
+                r_ = pymupdf.open(self.fonts_svg(s["file"]))[0].rect      # Seite der Kopie (Rand, svg_fit)
             except Exception as ex:                        # gespeicherte Datei, die sich nicht öffnen lässt: Tab bleibt
                 self.lbl_prev.setPixmap(QPixmap())         # bedienbar, Grund mit Dateinamen statt Vorschau
                 self.lbl_prev.setText(T("skip_item", f=Path(s["file"]).name, e=ex))
@@ -4487,7 +4529,12 @@ class NMRTab(QWidget):
             try:
                 f = self.figure_svg(s)
                 png = svg_png(f, Path(img_dir) / (Path(f).stem + "_nmr.png"))
-                w, h = OWN_SIZE_CM if s.get("source") == "bruker" else (s.get("size") or spectrum_info(s["file"])["size_cm"])
+                if s.get("source") == "bruker":
+                    w, h = OWN_SIZE_CM
+                else:                                      # Seite der Kopie: svg_fit kann den Rand vergrößern
+                    import pymupdf
+                    r_ = pymupdf.open(f)[0].rect
+                    w, h = r_.width, r_.height
             except Exception as ex:                        # nur dieses Spektrum fehlt, mit Datei und Grund gemeldet
                 self.main.skip_part(ex, s["file"])
                 continue

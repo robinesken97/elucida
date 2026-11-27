@@ -111,6 +111,17 @@ console.log("chem.check: attachment points ok");
   console.log("chem.check: clean up keeps the scale");
 }
 
+// Elucida: a salt of two pieces gives each ion with its charge (Whole drawing: C4H12N+, Cl-), not C4H12N and Cl.
+{
+  const salt: Mol = {
+    atoms: [{ label: "N", charge: 1, location: [0, 0, 0] }, { label: "C", location: [1, 0, 0] }, { label: "C", location: [-1, 0, 0] },
+      { label: "C", location: [0, 1, 0] }, { label: "C", location: [0, -1, 0] }, { label: "Cl", charge: -1, location: [4, 0, 0] }],
+    bonds: [{ type: 1, atoms: [0, 1] }, { type: 1, atoms: [0, 2] }, { type: 1, atoms: [0, 3] }, { type: 1, atoms: [0, 4] }],
+  };
+  assert.deepEqual(analyse(salt)?.map((a) => [a.formula, a.charge]), [["C4H12N", 1], ["Cl", -1]]);
+  console.log("chem.check: ions keep their charge in the analysis");
+}
+
 // The formula and masses come one entry per structure, in the drawing's order (a lone label and a lone carbon too),
 // up to the number asked for. Each structure's values are kept by its content: moving it gives the same values, and
 // a change to a label gives new ones.
@@ -120,6 +131,8 @@ console.log("chem.check: attachment points ok");
     bonds: [{ type: 1, atoms: [1, 2] }, { type: 1, atoms: [2, 3] }],
   };
   assert.deepEqual(analyse(drawn)?.map((a) => a.formula), ["F6P", "C2H6O", "CH4"]);
+  // Elucida: an ion carries its net charge (Actions panel C2H6O, PF6-), a neutral structure none
+  assert.deepEqual(analyse(drawn)?.map((a) => a.charge), [-1, undefined, undefined]);
   assert.deepEqual(analyse(drawn, 2)?.map((a) => a.formula), ["F6P", "C2H6O"]);
   assert.deepEqual(analyse(drawn), analyse(drawn));
   const moved = { ...drawn, atoms: drawn.atoms.map((a) => ({ ...a, location: [a.location[0] + 5, a.location[1] - 3, 0] as [number, number, number] })) };

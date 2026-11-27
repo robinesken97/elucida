@@ -5887,7 +5887,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
         lo, hi = self.pxrd_range(e)
         n_ = sum(1 for r in self.pxrd_calc(e) or [] if lo <= r["tth"] <= hi)
         self.lbl_pxrd_res.setText(T("pxrd_res_note", n=n_, src=_f0_citation()), plain=True)
-        self.txt_pxrd_cap.setText("<b>Figure Sn:</b> " + self.pxrd_caption(e)[1])
+        self.txt_pxrd_cap.setText("<b>Figure Sn</b>: " + self.pxrd_caption(e)[1])
 
     def pxrd_caption(self, e=None):
         """Unterschrift des Pulverdiffraktogramms -> (Klartext, HTML): gemessen/berechnet, Strahlung, Temperatur der
@@ -6458,7 +6458,7 @@ class XrayTab(MeasureAlign, TABS.FigureTab):
 
     def update_tables(self):
         cap_ = self.shown_caption()[1]
-        self.txt_cap.setText("<b>Figure Sn:</b> " + cap_ if self.entries() else "")
+        self.txt_cap.setText("<b>Figure Sn</b>: " + cap_ if self.entries() else "")
         if not self.entries():
             self.txt_tab.setHtml("")
             return

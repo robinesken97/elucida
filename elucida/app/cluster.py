@@ -13,6 +13,7 @@ import sys
 import tempfile
 from pathlib import Path, PurePosixPath
 
+import shiboken6
 from PySide6.QtCore import QProcess, QSize, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (QApplication, QGridLayout, QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -307,7 +308,8 @@ class ClusterPage(QWidget):
         self.timer = QTimer(self, interval=POLL_MS)
         self.timer.timeout.connect(self.poll)
         self.timer.start()                             # läuft, solange die App offen ist, unabhängig von der Ansicht
-        QTimer.singleShot(0, self.poll)
+        QTimer.singleShot(0, self, self.poll)          # mit self: entfällt, wenn die Seite vorher gelöscht wird (zwei
+                                                       # Sprachwechsel hintereinander -> RuntimeError am gelöschten Feld)
         self.show_login()
 
     def configured(self):
@@ -344,7 +346,7 @@ class ClusterPage(QWidget):
     def run(self, command, done, out_file=None, timeout=TIMEOUT_MS):
         """Einen Lesebefehl ausführen, ohne die Oberfläche anzuhalten; done(Text) nur bei Erfolg."""
         if self.busy:                                  # Abfrage im Hintergrund läuft noch: kurz danach dran
-            return QTimer.singleShot(300, lambda: self.run(command, done, out_file, timeout))
+            return QTimer.singleShot(300, self, lambda: self.run(command, done, out_file, timeout))
         ssh = shutil.which("ssh")
         if not ssh:
             return self.fail(T("cluster_no_ssh"))
@@ -365,6 +367,8 @@ class ClusterPage(QWidget):
         limit.timeout.connect(p.kill)
 
         def finished(code, _status):
+            if not shiboken6.isValid(p):                # Seite gelöscht (Sprachwechsel): QProcess meldet sich im Abbau
+                return
             self.busy = False
             err = bytes(p.readAllStandardError()).decode("utf-8", "replace").strip()
             out = "" if out_file else bytes(p.readAllStandardOutput()).decode("utf-8", "replace")

@@ -77,3 +77,11 @@ Local change on November 22: a double bond in a ring of more than nine atoms sti
 ringsThrough (which stops at nine atoms) finds no ring, render.ts takes the smallest ring found breadth first
 (shortestRing), so a macrocycle's double bond goes inside it instead of taking a chain's side. The own drawer
 (elucida/formats/cdxml.py) searches rings of any size too.
+
+Elucida 1.5.0 (local, not upstream; report to upstream, drop when upstream ships an equivalent): chem.ts `analyse`
+gives each single-piece entry (and a salt with an abbreviation, ferrocene-like merges) its net atom charge as
+`charge`; Actions.tsx writes it after the formula ("Whole drawing": C4H12N+, Cl- instead of C4H12N, Cl), also in
+the copied text. Formula strings themselves stay Indigo's (counts, stoichiometry and contract-label text unchanged).
+Pieces joined only by a hydrogen bond keep entries without a charge. Check: chem.check.ts (invented salt).
+The host (drawing_clipboard.py) now reports `filled` like the Tauri host, so an unreadable clipboard is no longer
+silent (see the November 7 note above).

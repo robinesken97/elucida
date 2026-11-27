@@ -3182,7 +3182,7 @@ class FigureTab(QWidget):
         if getattr(self, "lbl_cap", None) is not None:
             name = (getattr(self.main, "compound", None) or {}).get("name") or "X"
             try:
-                self.lbl_cap.setText("<b>Figure Sn:</b> " + self.si_caption(name))
+                self.lbl_cap.setText("<b>Figure Sn</b>: " + self.si_caption(name))
             except Exception:
                 self.lbl_cap.setText("")
 
@@ -5009,7 +5009,7 @@ class FluoTab(FigureTab):
         if getattr(self, "lbl_cap", None) is not None and self.tau.res is not None:
             name = (getattr(self.main, "compound", None) or {}).get("name") or "X"
             first = getattr(self.lbl_cap, "_plain", "") if self.F is not None else ""
-            self.lbl_cap.setText((first + "<br><br>" if first else "") + "<b>Figure Sn:</b> " + self.tau.caption(name))
+            self.lbl_cap.setText((first + "<br><br>" if first else "") + "<b>Figure Sn</b>: " + self.tau.caption(name))
 
     def show_info(self, pa, pe, a_ex):
         """Kennwerte unter den Daten: λabs, λem, Stokes-Verschiebung, A(λex) mit Innenfilter-Hinweis."""
