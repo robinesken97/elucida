@@ -6459,3 +6459,82 @@ TEXTS.update({
                            "Dragging in the figure rotates hole and particle together (also used for export and SI). "
                            "The button restores the automatic view."),
 })
+
+# CV: Elektronenzahl n je Welle gegen den internen Standard und aus der Coulometrie (1.5.0, Spur s5cvn)
+TEXTS.update({
+    "grp_electrons": ("Elektronenzahl n", "Electron Count n"),
+    "cv_n_cstd": ("Konzentration Standard", "Standard concentration"),
+    "cv_n_D": ("D der Probe", "D of sample"),
+    "cv_n_Dstd": ("D des Standards", "D of standard"),
+    "cv_n_D_tip": ("Selbst eingeben (z. B. aus DOSY, gleiches Lösungsmittel und gleiche Temperatur); nie aus der CV "
+                   "geschätzt. Gilt nur für n, nicht für D und k⁰.",
+                   "Enter yourself (e.g. from DOSY, same solvent and temperature); never estimated from the CV. Used "
+                   "for n only, not for D and k⁰."),
+    "cv_n_hint": ("n aus dem Hinpeakstrom gegen den Standard (Fc, Ac₂Fc) im selben Voltammogramm (Randles–Ševčík). "
+                  "c der Probe: Karte „Diffusion und k⁰“. D selbst eingeben (z. B. DOSY), nie aus der CV.",
+                  "n from the forward peak current vs. the standard (Fc, Ac₂Fc) in the same voltammogram "
+                  "(Randles–Ševčík). c of the sample: card “Diffusion and k⁰”. Enter D yourself (e.g. DOSY), never "
+                  "from the CV."),
+    "cv_n_coul_couple": ("Coulometrie, Paar", "Coulometry, couple"),
+    "cv_n_coul_q": ("Ladung Q", "Charge Q"),
+    "cv_n_coul_mol": ("Stoffmenge N", "Amount N"),
+    "cv_n_coul_tip": ("Bulk-Elektrolyse: n = Q/(F·N) aus der umgesetzten Ladung (Hintergrund abgezogen) und der "
+                      "Stoffmenge, nur aus diesen Angaben.",
+                      "Bulk electrolysis: n = Q/(F·N) from the charge passed (background subtracted) and the amount "
+                      "of substance, from these entries only."),
+    "cv_n_title": ("Elektronenzahl n je Welle", "Electron count n per wave"),
+    "cv_n_meas": ("Messung", "Measurement"),
+    "cv_n_status": ("Bewertung", "Assessment"),
+    "cv_n_coul_row": ("Coulometrie (Q = {q} mC, N = {mol} µmol)", "Coulometry (Q = {q} mC, N = {mol} µmol)"),
+    "cv_n_ok": ("Ergebnis", "Result"),
+    "cv_n_apparent": ("scheinbar", "apparent"),
+    "cv_n_apparent_tip": ("ΔEp des Standards ({dep} mV) liegt über 2,22·RT/F + 10 mV (unkompensierter Widerstand); n "
+                          "daher nur scheinbar, wie k⁰.",
+                          "ΔEp of the standard ({dep} mV) is above 2.22·RT/F + 10 mV (uncompensated resistance); n is "
+                          "therefore only apparent, like k⁰."),
+    "cv_n_bl_short_tip": ("Basislinie des Standards: Vorlauf nur 0,15 V (i_p bis etwa 6 % zu klein).",
+                          "Baseline of the standard: only 0.15 V before the peak (i_p up to about 6 % too small)."),
+    "cv_n_tip": ("n = [(i_p/i_p,Std)·(D_Std/D)^½·(c_Std/c)]^⅔ (Randles–Ševčík), Hinpeaks gegen die Basislinie, nicht "
+                 "gerundet. Liegt eine Welle auf dem abklingenden Strom einer vorangehenden, misst die lineare "
+                 "Basislinie ihr i_p etwa 2–4 % zu groß (simuliert); das wird nicht korrigiert.",
+                 "n = [(i_p/i_p,std)·(D_std/D)^½·(c_std/c)]^⅔ (Randles–Ševčík), forward peaks against the baseline, "
+                 "not rounded. If a wave sits on the decaying current of a preceding one, the linear baseline measures "
+                 "its i_p about 2–4 % too large (simulated); this is not corrected."),
+    "cv_n_why_separate": ("Standard getrennt", "standard separate"),
+    "cv_n_why_std_custom": ("eigener Standard", "custom standard"),
+    "cv_n_why_baseline": ("Basislinie fehlt", "no baseline"),
+    "cv_n_why_invalid": ("Rand/zwei Wellen", "edge/two waves"),
+    "cv_n_why_std_invalid": ("Standard ungültig", "standard invalid"),
+    "cv_n_why_overlap": ("Wellen überlappen", "waves overlap"),
+    "cv_n_why_not_rev": ("nicht reversibel", "not reversible"),
+    "cv_n_why_inputs": ("c oder D fehlt", "c or D missing"),
+    "cv_n_whyl_separate": ("Der Standard steht in einer anderen Messung: n nur aus Probe und Standard im selben "
+                           "Voltammogramm.", "The standard is in another measurement: n only from sample and standard "
+                           "in the same voltammogram."),
+    "cv_n_whyl_std_custom": ("Eigener Standard: seine Elektronenzahl ist nicht bekannt (n nur gegen Fc oder Ac₂Fc).",
+                             "Custom standard: its electron count is not known (n only vs. Fc or Ac₂Fc)."),
+    "cv_n_whyl_baseline": ("Ohne Basislinie (aus oder zu wenig Vorlauf) sind die Peakströme nicht vergleichbar.",
+                           "Without a baseline (off or too little scan before the wave) the peak currents are not "
+                           "comparable."),
+    "cv_n_whyl_invalid": ("Peak am Fensterrand oder zwei Wellen im Fenster des Paars.",
+                          "Peak at the window edge or two waves in the window of the couple."),
+    "cv_n_whyl_std_invalid": ("Im Fenster des Standards liegt kein gültiges Paar.",
+                              "The window of the standard holds no valid couple."),
+    "cv_n_whyl_overlap": ("Ein Peak der Welle liegt im Fenster des Standards oder umgekehrt.",
+                          "A peak of the wave lies in the window of the standard or vice versa."),
+    "cv_n_whyl_not_rev": ("ΔEp ({dep} mV) liegt mehr als 10 mV über ΔEp des Standards ({dep_std} mV): Welle nicht "
+                          "reversibel, Randles–Ševčík gilt nicht.",
+                          "ΔEp ({dep} mV) is more than 10 mV above ΔEp of the standard ({dep_std} mV): wave not "
+                          "reversible, Randles–Ševčík does not apply."),
+    "cv_n_whyl_inputs": ("Konzentration der Probe (Karte „Diffusion und k⁰“), Konzentration des Standards und beide D "
+                         "eingeben.", "Enter the concentration of the sample (card “Diffusion and k⁰”), the "
+                         "concentration of the standard and both D."),
+    "cv_n_only_separate": ("Keine Messung enthält Probe und Standard zugleich: n nur aus demselben Voltammogramm.",
+                           "No measurement contains sample and standard together: n only from the same voltammogram."),
+    "cv_w_n_rs": ("Berechnetes n weicht bei {n} Welle(n) vom eingegebenen n ab (D, k⁰)",
+                  "Computed n differs from the entered n for {n} wave(s) (D, k⁰)"),
+    "cv_n_rs_detail": ("Paar {couple}: n = {n} ({src}), eingegeben n = {rs} – Angabe in „Diffusion und k⁰“ prüfen, "
+                       "sie wird nicht still übernommen.",
+                       "Couple {couple}: n = {n} ({src}), entered n = {rs} – check the entry in “Diffusion and k⁰”; "
+                       "it is never adopted silently."),
+})

@@ -1079,7 +1079,7 @@ def _natural(button):
 STEP_LABELS = ("step_data", "step_eval", "step_display")
 # Karten nach ihrem deutschen Titel; alles Übrige (Dateilisten, gewählter Eintrag, Verbindung) gehört zu Schritt 1
 STEP_TITLES = {
-    1: ("Rechenweg", "Auswertung", "Verarbeitung", "Referenzierung", "Diffusion und k⁰", "Simulationen",
+    1: ("Rechenweg", "Auswertung", "Verarbeitung", "Referenzierung", "Diffusion und k⁰", "Elektronenzahl n", "Simulationen",
         "Intensität und Kinetik", "Normierung",
         "Elementaranalyse", "Ausgewählte Parameter", "Vergleich mit Rechnung", "Messen (Abstand, Winkel, Diederwinkel)",
         "NMR-Zeile (MNova-Multiplettbericht)", "Reagenzien (Mengen berechnen)", "Verbinder", "Größen",

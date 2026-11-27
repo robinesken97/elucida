@@ -3385,6 +3385,153 @@ def _g_electrochem(ctx):
             st_hc.update(entries=[], current=None, cycles="", ref="", cap_conc="", cap_solvent="", view="capacity")
             w.replace_tab("hcell")
             report.append("H-Cell cycling (reader, capacity/efficiency, two cells, broken time axis, export, reset): OK")
+
+        with section:
+            # CV, Elektronenzahl n (1.5.0, Spur s5cvn): Peakstrom gegen Fc im selben Voltammogramm, Coulometrie,
+            # Ablehnungen mit Grund. Kurven simuliert (Nernst, Halbintegral), keine Messdaten
+            t_cv, st_cv = w.cv_tab, w.cv_state
+            snap_n = json.loads(json.dumps(st_cv))
+            F_n, R_n = CVMOD.F_CONST, CVMOD.R_CONST
+
+            def rev_cv(E_, v, n, E0, D, c_mM, A=0.0707):
+                """Reversible Oxidation R -> O + n e- (D_O = D_R): C_O(0) = Halbintegral(i)/(nFA sqrt D) -> I [uA]."""
+                k_ = np.arange(len(E_) + 1)
+                w_ = 2 * np.sqrt(abs(E_[1] - E_[0]) / v / np.pi) * (np.sqrt(k_[1:]) - np.sqrt(k_[:-1]))
+                th_ = np.exp(np.clip(n * F_n / (R_n * 298.15) * (E_ - E0), -200, 200))
+                tgt_ = c_mM * 1e-6 * th_ / (1 + th_) * n * F_n * A * np.sqrt(D)
+                i_ = np.zeros(len(E_))
+                for j_ in range(len(E_)):
+                    i_[j_] = (tgt_[j_] - (i_[:j_] @ w_[j_:0:-1] if j_ else 0.0)) / w_[0]
+                return i_ * 1e6
+
+            # reine Rechnung: n = 1 und 2, D- und c-Verhaeltnis, fehlende Angaben, Coulometrie
+            ev_ = CVMOD.electrons_vs_standard
+            assert abs(ev_(10.0, 10.0, 1.0, 1.0, 1e-5, 1e-5) - 1) < 1e-12 and abs(ev_(-20.0, 10.0, 2.0, 1.0, 1e-5, 1e-5) - 1) < 1e-12
+            assert abs(ev_(10 * 2 ** 1.5 * 0.5, 10.0, 1.0, 1.0, 0.25e-5, 1e-5) - 2) < 1e-12
+            assert all(ev_(*a_) is None for a_ in ((10, 10, 0, 1, 1e-5, 1e-5), (10, 10, 1, 1, 1e-5, 0), (0, 10, 1, 1, 1, 1)))
+            assert abs(CVMOD.electrons_coulometry(2 * F_n * 5e-6, 5.0) - 2) < 1e-12
+            assert CVMOD.electrons_coulometry(0.0, 5.0) is None and CVMOD.electrons_coulometry(1.0, 0.0) is None
+            # Messungen (100 mV s-1): Probe bei -0.4 V (n = 1 oder 2, 1 mM, D 1e-5) + Fc bei +0.3 V (0.5 mM, D 2e-5)
+            up_n = np.arange(-0.9, 0.8, 0.001)
+            E_n = np.concatenate([up_n, up_n[::-1][1:]])
+            fc_n = rev_cv(E_n, 0.1, 1, 0.3, 2e-5, 0.5)
+            curves_n = {"nA": rev_cv(E_n, 0.1, 1, -0.4, 1e-5, 1.0) + fc_n,       # n = 1, Standard in derselben Messung
+                        "nB": rev_cv(E_n, 0.1, 2, -0.4, 1e-5, 1.0) + fc_n,       # n = 2, ebenso
+                        "nS": rev_cv(E_n, 0.1, 1, -0.4, 1e-5, 1.0),              # ohne Standard, Referenz = nF
+                        "nF": rev_cv(E_n, 0.1, 1, -0.4, 1e-5, 1.0) + fc_n,       # Fc am Ende zugegeben: dient nS
+                        "nR": rev_cv(E_n, 0.1, 1, -0.4, 1e-5, 1.0) + rev_cv(E_n, 0.1, 2, 0.3, 2e-5, 0.5),  # Std-dEp 29 mV
+                        "nN": rev_cv(E_n, 0.1, 1, -0.4, 1e-5, 1.0),              # gar keine Referenz
+                        # Standard nicht reversibel (dEp ~72 mV > 57 + 10 mV, wie ein iR-verbreitertes Fc): n scheinbar
+                        "nW": rev_cv(E_n, 0.1, 1, -0.4, 1e-5, 1.0) + rev_cv(E_n, 0.1, 0.8, 0.3, 2e-5, 0.5)}
+            files_n = []
+            for uid_, I_ in curves_n.items():
+                p_ = cvdir / f"cv_n_{uid_}.DTA"
+                write_dta(p_, [(E_n, I_)], 100)
+                own_ = {"nS": "nF", "nN": None}.get(uid_, uid_)
+                files_n.append({"file": str(p_), "uid": uid_, "visible": True, "color": "#000000", "label": uid_,
+                                "ref": {"mode": "internal", "uid": own_, "lo": 0.05, "hi": 0.6, "compound": "fc",
+                                        "value": 0.0} if own_ else None})
+            for k_ in ("n_c_std", "n_D", "n_D_std", "n_coul_q", "n_coul_mol", "n_coul_couple"):
+                st_cv.pop(k_, None)
+            st_cv.update(files=files_n, couples=[[-1.0, -0.4]], ref_mode="none", cycle=1, baseline=True, plot="cv",
+                         bl_gap=CVMOD.BL_GAP, rs_conc=0.0)
+            t_cv.fill_table()
+            t_cv.figure_spec()
+            why_ = lambda: {r_["uid"]: r_["why"] for r_ in t_cv.electron_counts()}      # noqa: E731
+            assert why_() == {"nA": "inputs", "nB": "inputs", "nS": "separate", "nF": "inputs", "nR": "not_rev",
+                              "nN": "no_std", "nW": "inputs"}, why_()
+            st_cv.update(rs_conc=1.0, n_c_std=0.5, n_D=1e-5, n_D_std=2e-5)
+            rows_ = {r_["uid"]: r_ for r_ in t_cv.electron_counts()}
+            assert rows_["nR"]["why"] == "not_rev" and rows_["nR"]["n"] is None, rows_["nR"]      # 58 > 29 + 10 mV
+            # Fc am Ende zugegeben (dient nS als Referenz): liefert n, bleibt sonst nur Referenz (Robin 2026-11-27)
+            assert rows_["nF"]["why"] is None and abs(rows_["nF"]["n"] - 1) < 0.04 and "nF" in t_cv.ref_only_uids()
+            assert all(r_["uid"] != "nF" for rr_ in t_cv.rate_series().values() for r_ in rr_)
+            assert rows_["nW"]["why"] is None and rows_["nW"]["apparent"] and not rows_["nA"]["apparent"], rows_["nW"]
+            for uid_, n_ in (("nA", 1), ("nB", 2)):
+                r_ = rows_[uid_]
+                assert r_["why"] is None and r_["n"] == ev_(r_["ip"], r_["ip_std"], 1.0, 0.5, 1e-5, 2e-5), r_
+                # lineare Basislinie unter dem Fc auf dem abklingenden Strom der Probe: n = 2 etwa 3 % zu klein (simuliert)
+                assert abs(r_["n"] - n_) < 0.03 * n_ + 0.01, (uid_, r_["n"])
+            assert st_cv["rs_n"] == 1                                          # n nie still in die D-Angabe
+            files_n[0]["ref"]["compound"] = "custom"                             # eigener Standard: n unbekannt
+            st_cv["baseline"] = False
+            t_cv.figure_spec()
+            rows_ = {r_["uid"]: r_["why"] for r_ in t_cv.electron_counts()}
+            assert rows_["nA"] == "std_custom" and rows_["nB"] == "baseline", rows_
+            files_n[0]["ref"]["compound"] = "fc"
+            st_cv.update(baseline=True, couples=[[-0.25, 0.3]])                 # Fenster der Probe = Welle des Standards
+            t_cv.figure_spec()
+            assert why_()["nA"] == "overlap", why_()
+            st_cv["couples"] = [[-1.0, -0.4]]
+            # Fenster aus „Referenz setzen“ (0,15 V über die Peaks): Basislinie des Standards beginnt nur dafür früher
+            t_cv.figure_spec()
+            n_full_ = {r_["uid"]: r_["n"] for r_ in t_cv.electron_counts()}["nA"]
+            fc_ = CVMOD.analyze_couple(E_n, curves_n["nA"], 0.05, 0.6)
+            win_ = t_cv.ref_window("nA", fc_["epa"], fc_["epc"])
+            assert win_ and win_[0] > 0.05 and CVMOD.analyze_couple(E_n, curves_n["nA"], *win_, True)["bl_short"], win_
+            st_cv["files"][0]["ref"].update(lo=win_[0], hi=win_[1])
+            t_cv.figure_spec()
+            r_ = {r_["uid"]: r_ for r_ in t_cv.electron_counts()}["nA"]
+            assert r_["why"] is None and not r_["std_bl_short"] and abs(r_["n"] - n_full_) < 0.01, (r_, n_full_)
+            assert st_cv["files"][0]["ref"]["lo"] == win_[0]                     # gespeichertes Fenster unverändert
+            st_cv["files"][0]["ref"].update(lo=0.05, hi=0.2)                     # Fenster des Standards ohne seine Welle
+            t_cv.figure_spec()
+            assert why_()["nA"] == "std_invalid", why_()
+            st_cv.update(n_coul_q=2 * F_n * 5e-6, n_coul_mol=5.0, n_coul_couple=1)
+            cq_ = t_cv.coulometry_n()
+            assert cq_ and cq_["couple"] == 1 and abs(cq_["n"] - 2) < 1e-12, cq_
+            st_cv["files"][0]["ref"]["hi"] = 0.6
+            # Oberfläche: Karte „Elektronenzahl n“ (Schritt Auswertung), Tabelle, Hinweis n != eingegebenes n, SI, CSV
+            w.replace_tab("cv")                                                  # Felder aus diesem Zustand
+            t_cv = w.cv_tab
+            assert t_cv.sp_rs_conc.value() == 1.0 and t_cv.sp_n_D.value() == 10.0      # gespeicherte Angaben in der Karte
+            for sp_, v_ in ((t_cv.sp_n_cstd, 0.5), (t_cv.sp_n_D, 10.0), (t_cv.sp_n_Dstd, 20.0), (t_cv.sp_n_q, 0.0),
+                            (t_cv.sp_n_mol, 0.0)):
+                sp_.setValue(v_)
+            t_cv.cmb_n_couple.setCurrentIndex(0)
+            assert abs(st_cv["n_D"] / 1e-5 - 1) < 1e-12 and abs(st_cv["n_D_std"] / 2e-5 - 1) < 1e-12 and "n_coul_q" not in st_cv and "n_coul_couple" not in st_cv
+            grp_n_ = t_cv.sp_n_cstd.parentWidget()
+            while not isinstance(grp_n_, QGroupBox):
+                grp_n_ = grp_n_.parentWidget()
+            assert T("grp_electrons") in grp_n_.title() and t_cv.steps.pages[1].isAncestorOf(grp_n_)
+            t_cv.render()
+            tn_ = t_cv.tbl_n
+            cells_ = {tn_.item(i_, 1).text(): [tn_.item(i_, j_).text() for j_ in range(6)] for i_ in range(tn_.rowCount())}
+            assert not tn_.isHidden() and set(cells_) == {"nA · 100 mV s-1", "nB · 100 mV s-1", "nF · 100 mV s-1",
+                                                          "nR · 100 mV s-1", "nW · 100 mV s-1"}, cells_
+            assert cells_["nB · 100 mV s-1"][5] == T("cv_n_ok") and cells_["nR · 100 mV s-1"][4] == "–"
+            assert cells_["nW · 100 mV s-1"][5] == T("cv_n_apparent") and cells_["nR · 100 mV s-1"][5] == T("cv_n_why_not_rev")
+            n_b_ = {r_["uid"]: r_["n"] for r_ in t_cv.electron_counts()}["nB"]
+            assert cells_["nB · 100 mV s-1"][4] == f"{n_b_:.2f}"                # Anzeige 2 Stellen, CSV roh
+            wl_ = t_cv.warn_lbls["n_rs"]                                         # n = 2 neben eingegebenem n = 1
+            assert not wl_.isHidden() and "nB" in wl_.toolTip() and st_cv["rs_n"] == 1, wl_.toolTip()
+            mt_ = t_cv.methods_text()
+            assert "Randles, Trans. Faraday Soc. 1948, 44, 327" in mt_ and "ferrocene (Fc, n = 1)" in mt_ \
+                and "cstd = 0.5 mM" in mt_ and "apparent value" in mt_ and "Elucida" not in mt_, mt_
+            assert "No n was determined" in mt_ and "(peak current vs. internal standard)" in mt_, mt_
+            tf_n = TABS.table_files(t_cv, out / "cv_n_test")
+            csv_n = next(f_ for f_ in tf_n if f_.name.endswith("_electrons.csv")).read_text(encoding="utf-8-sig")
+            import csv as csv_n_, io as io_n_
+            rows_csv_ = list(csv_n_.reader(io_n_.StringIO(csv_n)))
+            assert rows_csv_[0][4] == "n" and any(r_[1].startswith("nB") and abs(float(r_[4]) - n_b_) < 1e-9
+                                                  for r_ in rows_csv_[1:]), csv_n            # Rohwert, nicht 2 Stellen
+            assert "apparent" in csv_n and "not reversible" in csv_n, csv_n
+            t_cv.sp_n_q.setValue(2 * F_n * 5e-6 * 1e3)
+            t_cv.sp_n_mol.setValue(5.0)
+            t_cv.cmb_n_couple.setCurrentIndex(1)
+            t_cv.render()
+            assert tn_.rowCount() == 6 and tn_.item(5, 4).text() == "2.00" and "coulometry" in t_cv.methods_text()
+            for sp_ in (t_cv.sp_n_cstd, t_cv.sp_n_D, t_cv.sp_n_Dstd, t_cv.sp_n_q, t_cv.sp_n_mol):
+                sp_.setValue(0.0)
+            t_cv.cmb_n_couple.setCurrentIndex(0)
+            t_cv.render()
+            assert not any(k_ in st_cv for k_ in CVMOD.N_KEYS) and tn_.isHidden() and t_cv.lbl_n.isHidden()
+            assert "number of electrons" not in t_cv.methods_text()
+            st_cv.clear()
+            st_cv.update(snap_n)
+            w.replace_tab("cv")
+            report.append("CV electron count n vs. internal standard and coulometry (simulated, rejections, card, table, "
+                          "SI text, CSV): OK")
     finally:
         ctx.update(locals())
 

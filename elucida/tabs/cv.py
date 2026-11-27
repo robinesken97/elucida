@@ -329,6 +329,28 @@ def dep_reversible(n=1, temp_C=25.0):
     return 2.22 * R_CONST * (temp_C + 273.15) / (n * F_CONST)
 
 
+# Elektronenzahl n gegen einen internen Standard (1.5.0, audit/CV-N-LITERATUR.md): nur Standards mit bekanntem n = 1
+N_STANDARDS = ("fc", "ac2fc")
+# Angaben dafür (nicht in DEFAULT_STATE: nur mit eigenem Wert gespeichert, alte Verbindungen bleiben unverändert)
+N_KEYS = ("n_c_std", "n_D", "n_D_std", "n_coul_couple", "n_coul_q", "n_coul_mol")
+
+
+def electrons_vs_standard(ip, ip_std, c, c_std, D, D_std):
+    """n einer Welle gegen einen 1-Elektronen-Standard im selben Voltammogramm (gleiche Elektrode, v, T): nach
+    Randles–Ševčík i_p ∝ n^{3/2}·c·√D, also n = [(i_p/i_p,Std)·(D_Std/D)^½·(c_Std/c)]^{2/3}. i_p = Hinpeaks gegen die
+    Basislinie, c in mM, D in cm² s⁻¹ – c und D nur vom Nutzer (nie aus der CV geschätzt). Fehlt etwas: None."""
+    if not (ip and ip_std and c > 0 and c_std > 0 and D > 0 and D_std > 0):
+        return None
+    return float((abs(ip) / abs(ip_std) * (D_std / D) ** 0.5 * c_std / c) ** (2 / 3))
+
+
+def electrons_coulometry(q_C, n_umol):
+    """Faraday (Bulk-Elektrolyse): n = Q/(F·N), Q [C], N [µmol] – nur aus Nutzerwerten -> n oder None."""
+    if not (q_C > 0 and n_umol > 0):
+        return None
+    return float(q_C / (F_CONST * n_umol * 1e-6))
+
+
 def psi_lavagnini(x_mV):
     """Nicholsons ψ aus n·ΔE_p [mV, 25 °C] nach Lavagnini, Antiochia, Magno, Electroanalysis 2004, 16, 505:
     ψ = (−0.6288 + 0.0021·X)/(1 − 0.017·X). Gegen Nicholsons Tabelle (Anal. Chem. 1965, 37, 1351; α = 0,5) geprüft:
@@ -514,7 +536,7 @@ class CVTab(TABS.FigureTab):
 
     # CV | ΔE_p gegen v | Randles-Ševčík | log i_p gegen log v | i_r/i_f gegen v | Trumpet-Plot
     PLOTS = ("cv", "dep", "rs", "rs_v", "loglog", "ratio", "trumpet")
-    WARN_KINDS = ("bl_fail", "bl_short", "two_waves", "D", "k0", "k0_falls")      # Reihenfolge der Warnzeilen
+    WARN_KINDS = ("bl_fail", "bl_short", "two_waves", "D", "k0", "k0_falls", "n_rs")   # Reihenfolge der Warnzeilen
     MARKERS = ("s", "o", "^", "v", "D", "p")
 
     # -- Bedienelemente ------------------------------------------------------------
@@ -526,6 +548,12 @@ class CVTab(TABS.FigureTab):
                               "ref_electrode"))
         g = STYLE.split_group(self.group_titled("cv_analysis"), self.sp_rs_n, self.lbl_rs_hint, T("grp_diffusion"))
         self.fold(g, "diffusion", ("rs_n", "rs_area", "rs_conc", "rs_temp", "k0_D", "k0_alpha"))
+        # Elektronenzahl n: eigene Klappkarte direkt unter „Diffusion und k⁰“ (dort steht c der Probe)
+        n_ = STYLE.split_group(self.group_titled("cv_analysis"), self.sp_n_cstd, self.sp_n_mol, T("grp_electrons"))
+        lay = n_.parentWidget().layout()
+        lay.removeWidget(n_)
+        lay.insertWidget(lay.indexOf(g) + 1, n_)
+        self.fold(n_, "electrons", N_KEYS)
         g = STYLE.split_group(self.group_titled("cv_display"), self.cb_gradient, self.cb_invert, T("grp_more_display"))
         self.fold(g, "more", ("gradient", "density", "show_e12", "arrow", "ref_marker", "ref_color", "invert"))
         self.to_right(self.group_titled("cv_results"), T("cv_results"))
@@ -775,6 +803,38 @@ class CVTab(TABS.FigureTab):
         self.lbl_rs_hint.setStyleSheet(STYLE.HINT_CSS)
         self.lbl_rs_hint.setWordWrap(True)
         f.addRow(self.lbl_rs_hint)
+        # ab hier eigene Klappkarte „Elektronenzahl n“ (arrange): Angaben nie vorbelegt, nur mit eigenem Wert gespeichert
+        self.sp_n_cstd = QDoubleSpinBox(decimals=3, minimum=0, maximum=1000, singleStep=0.1,
+                                        value=st.get("n_c_std", 0.0), suffix=" mM")
+        self.sp_n_D = TrimSpin(decimals=3, minimum=0, maximum=1000, singleStep=0.1, value=st.get("n_D", 0.0) * 1e6,
+                               suffix=" × 10⁻⁶ cm² s⁻¹")
+        self.sp_n_Dstd = TrimSpin(decimals=3, minimum=0, maximum=1000, singleStep=0.1,
+                                  value=st.get("n_D_std", 0.0) * 1e6, suffix=" × 10⁻⁶ cm² s⁻¹")
+        self.cmb_n_couple = QComboBox()
+        self.cmb_n_couple.setToolTip(T("cv_n_coul_tip"))
+        self.sp_n_q = QDoubleSpinBox(decimals=2, minimum=0, maximum=1e6, value=st.get("n_coul_q", 0.0) * 1e3,
+                                     suffix=" mC")
+        self.sp_n_mol = QDoubleSpinBox(decimals=3, minimum=0, maximum=1e6, value=st.get("n_coul_mol", 0.0),
+                                       suffix=" µmol")
+        for sp_ in (self.sp_n_cstd, self.sp_n_D, self.sp_n_Dstd, self.sp_n_q, self.sp_n_mol):
+            sp_.setSpecialValueText(T("off"))
+            sp_.valueChanged.connect(self.changed)
+        for sp_ in (self.sp_n_D, self.sp_n_Dstd):
+            sp_.setToolTip(T("cv_n_D_tip"))
+        for sp_ in (self.sp_n_q, self.sp_n_mol):
+            sp_.setToolTip(T("cv_n_coul_tip"))
+        f.addRow(T("cv_n_cstd"), self.sp_n_cstd)
+        f.addRow(T("cv_n_D"), self.sp_n_D)
+        f.addRow(T("cv_n_Dstd"), self.sp_n_Dstd)
+        self.lbl_n_hint = STYLE.HintLabel(T("cv_n_hint"))
+        self.lbl_n_hint.setStyleSheet(STYLE.HINT_CSS)
+        self.lbl_n_hint.setWordWrap(True)
+        f.addRow(self.lbl_n_hint)
+        f.addRow(T("cv_n_coul_couple"), self.cmb_n_couple)
+        f.addRow(T("cv_n_coul_q"), self.sp_n_q)
+        f.addRow(T("cv_n_coul_mol"), self.sp_n_mol)
+        self.fill_n_couples()
+        self.cmb_n_couple.currentIndexChanged.connect(self.changed)
         self.lv.addWidget(g)
 
         g = QGroupBox(T("cv_display"))
@@ -870,6 +930,18 @@ class CVTab(TABS.FigureTab):
         self.tbl_dk.horizontalHeaderItem(1).setToolTip(T("cv_fit_D_tip"))
         self.tbl_dk.horizontalHeaderItem(2).setToolTip(T("cv_fit_k0_tip"))
         v.addWidget(self.tbl_dk)
+        # Elektronenzahl n je Welle (Messung, Paar) und aus der Coulometrie; Bewertung kurz, Grund im Tooltip
+        self.lbl_n = QLabel(T("cv_n_title"))
+        self.lbl_n.setProperty("formlabel", True)
+        self.lbl_n.setWordWrap(True)
+        v.addWidget(self.lbl_n)
+        self.tbl_n = STYLE.name_table(STYLE.summary_grid([T("cv_fit_couple"), T("cv_n_meas"), "i_p [µA]", "i_p,Std [µA]",
+                                                          "n", T("cv_n_status")], rich=(2, 3, 4)),
+                                      "electrons", "Electron count", csv=True)
+        self.tbl_n.setItemDelegateForColumn(1, STYLE.RichDelegate(self.tbl_n, core.unit_html))   # „mV s⁻¹“ wie oben
+        self.tbl_n.elide_col = 1                         # Name gibt nach, die Bewertung bleibt lesbar
+        self.tbl_n.horizontalHeaderItem(4).setToolTip(T("cv_n_tip"))
+        v.addWidget(self.tbl_n)
         self.lbl_res = STYLE.SciLabel("")                 # Referenz
         self.lbl_res.setWordWrap(True)
         self.lbl_res.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -1138,6 +1210,14 @@ class CVTab(TABS.FigureTab):
                   bl_gap=self.sp_bl_gap.value(), show_bl=self.cb_show_bl.isChecked(),
                   rs_n=self.sp_rs_n.value(), rs_area=self.sp_rs_area.value(), rs_conc=self.sp_rs_conc.value(),
                   rs_temp=self.sp_rs_temp.value(), k0_D=self.sp_k0_D.value() * 1e-6, k0_alpha=self.sp_k0_alpha.value())
+        # Angaben für n nur mit eigenem Wert speichern (alte Verbindungen bleiben unverändert)
+        for k_, v_ in zip(N_KEYS, (self.sp_n_cstd.value(), self.sp_n_D.value() * 1e-6, self.sp_n_Dstd.value() * 1e-6,
+                                   self.cmb_n_couple.currentData() or 0, self.sp_n_q.value() * 1e-3,
+                                   self.sp_n_mol.value())):
+            if v_:
+                st[k_] = v_
+            else:
+                st.pop(k_, None)
         self._sync_ref_widgets()
 
     # -- Dateien -------------------------------------------------------------------
@@ -1532,7 +1612,21 @@ class CVTab(TABS.FigureTab):
         return out
 
     # -- Redoxpaare (gespeichert in gemessenen Potentialen, angezeigt in der Achsenskala) -----------------
+    def fill_n_couples(self):
+        """Auswahl „Coulometrie, Paar“: Aus und die Nummern der Redoxpaare (ohne Signale)."""
+        if not hasattr(self, "cmb_n_couple"):
+            return
+        cb, k = self.cmb_n_couple, self.st.get("n_coul_couple", 0)
+        cb.blockSignals(True)
+        cb.clear()
+        cb.addItem(T("off"), 0)
+        for i in range(1, max(len(self.st["couples"]), k) + 1):
+            cb.addItem(str(i), i)
+        cb.setCurrentIndex(max(0, cb.findData(k)))
+        cb.blockSignals(False)
+
     def fill_couples(self):
+        self.fill_n_couples()
         self._loading = True
         cs = self.st["couples"]
         self.tbl_couples.setRowCount(len(cs))
@@ -1923,6 +2017,87 @@ class CVTab(TABS.FigureTab):
         return sorted({round(r["rate"], 1) for r in rr
                        if r["dep"] > (r["dep_ref"] if r.get("dep_ref") is not None else rev) + D_DEP_TOL})
 
+    def electron_counts(self):
+        """Elektronenzahl n je (Messung, Paar) gegen den internen Standard **desselben Voltammogramms**
+        (`electrons_vs_standard`; c der Probe = `rs_conc`, c_Std `n_c_std`, D `n_D`, D_Std `n_D_std`, alle eingegeben).
+        Auch eine Messung, die anderen als Referenz dient (Fc am Ende zugegeben), liefert n – nur n (Robin 2026-11-27).
+        -> [dict(uid, label, group, couple, rate, ip, ip_std, dep, dep_std, std, n, why, apparent, std_bl_short)];
+        n = None mit Grund `why`: "no_std" ohne internen Standard, "separate" Standard in einer anderen Messung,
+        "std_custom" eigener Standard (n unbekannt), "baseline" Basislinie aus oder zu wenig Vorlauf, "invalid"
+        Randpeak/zwei Wellen im Fenster, "std_invalid" Standardwelle nicht auswertbar, "overlap" ein Peak der einen Welle
+        im Fenster der anderen, "not_rev" ΔE_p > ΔE_p(Standard) + D_DEP_TOL (die D-Schwelle des Tabs mit der Referenz
+        derselben Messung), "inputs" c oder D fehlt. apparent: ΔE_p des Standards über 2,22·RT/F + D_DEP_TOL (wie k⁰).
+        Nie aus ΔE_p oder Breite."""
+        st = self.st
+        c, c_std = st.get("rs_conc", 0.0), st.get("n_c_std", 0.0)
+        D, D_std = st.get("n_D", 0.0), st.get("n_D_std", 0.0)
+        files, off_g, out = {e["uid"]: e for e in st["files"]}, self.reference_offset()[0], []
+        fwd = lambda x: x["ipa"] if x["anodic_first"] else x["ipc"]               # noqa: E731  Hinpeak (Randles–Ševčík)
+        inside = lambda v, a, b: min(a, b) <= v <= max(a, b)                     # noqa: E731
+        # Vorlauf der Standardwelle wie das Vorschlagsfenster (suggest_couples: 0,25 V um E½), mit größerem Abstand mehr
+        lead = 0.25 + max(0.0, st["bl_gap"] - BL_GAP)
+        for r in self.results:
+            e = files.get(r["uid"])
+            if e is None:
+                continue
+            ref = e.get("ref") or {}
+            if ref.get("mode") == "internal":
+                uid, lo, hi, comp = ref.get("uid"), ref.get("lo", 0.3), ref.get("hi", 0.8), ref.get("compound")
+            elif not ref.get("mode") and st["ref_mode"] == "internal":
+                uid, lo, hi, comp = st.get("ref_uid"), st["ref_lo"], st["ref_hi"], st["ref_compound"]
+            else:
+                uid = lo = hi = comp = None
+            row = dict(uid=r["uid"], label=r["label"], group=r.get("group", ""), couple=r["n"], rate=r["rate"],
+                       ip=fwd(r), ip_std=None, dep=r["dep"], dep_std=None, std=comp, n=None, why=None, apparent=False,
+                       std_bl_short=False)
+            out.append(row)
+            why = ("no_std" if uid is None else "separate" if uid != e["uid"] else
+                   "std_custom" if comp not in N_STANDARDS else "baseline" if not st["baseline"] or r.get("bl_fail")
+                   else "invalid" if r["invalid"] else None)
+            if why is None:
+                cyc = self.cycle_of(e)
+                s = analyze_couple(cyc["E"], cyc["I"], lo, hi, True, st["bl_gap"])
+                if s is not None and not s["invalid"] and (s["bl_short"] or s["bl_fail"]):
+                    # Fenster „Referenz setzen“ (0,15 V über die Peaks) reicht nicht für 0,20 V Vorlauf: nur für die
+                    # Basislinie früher beginnen (Robin 2026-11-27); gespeichert bleibt das Fenster, wie es ist
+                    lo2, hi2 = (min(lo, s["e12"] - lead), hi) if s["anodic_first"] else (lo, max(hi, s["e12"] + lead))
+                    s2 = analyze_couple(cyc["E"], cyc["I"], lo2, hi2, True, st["bl_gap"])
+                    if s2 is not None and not s2["invalid"] and not s2["bl_fail"] and \
+                            abs(s2["epa"] - s["epa"]) < 0.002 and abs(s2["epc"] - s["epc"]) < 0.002:
+                        s = s2
+                if s is None or s["invalid"]:
+                    why = "std_invalid"
+                elif s["bl_fail"]:
+                    why = "baseline"
+                else:
+                    row.update(ip_std=fwd(s), dep_std=s["dep"], std_bl_short=s["bl_short"],
+                               apparent=s["dep"] > dep_reversible(1, st["rs_temp"]) + D_DEP_TOL)
+                    win = st["couples"][r["n"] - 1] if r["n"] <= len(st["couples"]) else None
+                    shift = r.get("offset", 0.0) - off_g                       # Fenster wie in figure_spec verschoben
+                    pk = (r["epa"] + r.get("offset", 0.0), r["epc"] + r.get("offset", 0.0))
+                    if any(inside(x, lo, hi) for x in pk) or win is not None and any(
+                            inside(x, win[0] + shift, win[1] + shift) for x in (s["epa"], s["epc"])):
+                        why = "overlap"
+                    elif r["dep"] > s["dep"] + D_DEP_TOL:
+                        why = "not_rev"
+                    else:
+                        row["n"] = electrons_vs_standard(row["ip"], row["ip_std"], c, c_std, D, D_std)
+                        why = None if row["n"] is not None else "inputs"
+            row["why"] = why
+        return out
+
+    def coulometry_n(self):
+        """Methode 2: n = Q/(F·N) aus eingegebener Ladung (`n_coul_q`, C) und Stoffmenge (`n_coul_mol`, µmol) für das
+        gewählte Paar (`n_coul_couple`, 0 = keine Coulometrie) -> dict(couple, q, mol, n) oder None."""
+        st = self.st
+        n = electrons_coulometry(st.get("n_coul_q", 0.0), st.get("n_coul_mol", 0.0))
+        k = st.get("n_coul_couple", 0)
+        return None if n is None or not k else dict(couple=k, q=st["n_coul_q"], mol=st["n_coul_mol"], n=n)
+
+    def n_inputs(self):
+        """Hat der Nutzer etwas für n eingetragen? Erst dann zeigt der Tab Tabelle, SI-Text und Hinweise zu n."""
+        return any(self.st.get(k) for k in N_KEYS)
+
     def k0_info(self, key, fits=None):
         """k⁰ eines Paars über die Scanraten (`k0_value`), D_O = D_R = eingegebenes D, sonst D aus Randles–Ševčík des
         Hinpeaks. -> dict(vals=[(v, k⁰, Verfahren)], skip={v: Grund}, lo, hi, D, D_src "entered"|"rs", apparent=[Gründe:
@@ -2172,6 +2347,16 @@ class CVTab(TABS.FigureTab):
             dk_rows.append([name, mn(d_txt), mn(k_txt), "; ".join(short)])
             dk_tips.append("\n".join(x.lstrip("⚠ ") for x in long_))
             dk_warn.append((bool(bad), k_app, bool(bad or k_app or (k0 and k0["falls"]))))
+        n_rows, n_tips, n_marks = self.electron_rows(warn)
+        STYLE.fill_summary(self.tbl_n, n_rows)
+        for i, (tip, mark) in enumerate(zip(n_tips, n_marks)):
+            for j in (4, 5):
+                self.tbl_n.item(i, j).setToolTip(tip)
+                if mark:
+                    self.tbl_n.item(i, j).setForeground(Qt.darkYellow)
+        self.lbl_n.setText(T("cv_n_title") + ("" if n_rows else ": " + T("cv_n_only_separate")))
+        self.lbl_n.setVisible(self.n_inputs() and (bool(n_rows) or any(r["why"] == "separate"
+                                                                         for r in self.electron_counts())))
         STYLE.fill_summary(self.tbl_fit, rows)
         STYLE.fill_summary(self.tbl_dk, dk_rows)
         for i, (d_bad, k_bad, any_bad) in enumerate(dk_warn):    # scheinbare Werte in der Warnfarbe
@@ -2187,6 +2372,47 @@ class CVTab(TABS.FigureTab):
             lb_.setText("⚠ " + T("cv_w_" + k, n=cnt) if cnt else "")
             lb_.setToolTip("\n".join(x.lstrip("⚠ ") for x in tips))
             lb_.setVisible(bool(cnt))
+
+    def electron_rows(self, warn=None):
+        """Zeilen der Tabelle „Elektronenzahl n je Welle“ (nur mit eigenen Angaben für n; ohne Standard in der Messung
+        keine Zeile) -> (Zeilen, Tooltips, Warnfarbe je Zeile); `warn`: Hinweis „n weicht vom eingegebenen n ab“."""
+        if not self.n_inputs():
+            return [], [], []
+        st, rows, tips, marks = self.st, [], [], []
+        f1 = lambda x: STYLE.num(f"{abs(x) * 1e6:.1f}", abs(x) * 1e6) if x is not None else "–"     # noqa: E731
+        for r in self.electron_counts():
+            if r["why"] in ("no_std", "separate"):
+                continue
+            rate = f"{round(r['rate'], 1):g} mV s-1" if r["rate"] else ""
+            name = r["label"] if not rate or rate in r["label"] else f"{r['label']} · {rate}"
+            name = f"{name} ({r['group']})" if r.get("group") else name
+            ok = r["n"] is not None
+            status = (T("cv_n_apparent") if r["apparent"] else T("cv_n_ok")) if ok else T("cv_n_why_" + r["why"])
+            tip = [] if ok else [T("cv_n_whyl_" + r["why"], dep=f"{r['dep'] * 1000:.0f}",
+                                   dep_std=f"{(r['dep_std'] or 0) * 1000:.0f}")]
+            if r["apparent"]:
+                tip.append(T("cv_n_apparent_tip", dep=f"{r['dep_std'] * 1000:.0f}"))
+            if r["std_bl_short"]:
+                tip.append(T("cv_n_bl_short_tip"))
+            rows.append([str(r["couple"]), name, f1(r["ip"]), f1(r["ip_std"]),
+                         STYLE.num(f"{r['n']:.2f}", r["n"]) if ok else "–", status])
+            tips.append("\n".join(tip) or status)
+            marks.append(bool(r["apparent"] or not ok))
+            if ok and warn is not None and round(r["n"]) != st["rs_n"]:
+                warn["n_rs"][0] += 1
+                warn["n_rs"][1].append(T("cv_n_rs_detail", couple=r["couple"], n=f"{r['n']:.2f}", src=name,
+                                         rs=st["rs_n"]))
+        c = self.coulometry_n()
+        if c:
+            src = T("cv_n_coul_row", q=f"{c['q'] * 1e3:.2f}", mol=f"{c['mol']:g}")
+            rows.append([str(c["couple"]), src, "–", "–", STYLE.num(f"{c['n']:.2f}", c["n"]), T("cv_n_ok")])
+            tips.append(T("cv_n_coul_tip"))
+            marks.append(False)
+            if warn is not None and round(c["n"]) != st["rs_n"]:
+                warn["n_rs"][0] += 1
+                warn["n_rs"][1].append(T("cv_n_rs_detail", couple=c["couple"], n=f"{c['n']:.2f}", src=src,
+                                         rs=st["rs_n"]))
+        return rows, tips, marks
 
     def _ref_sentence(self):
         """Referenzierung der sichtbaren Messungen -> (Satz englisch, Referenz für die Ergebnisse)."""
@@ -2370,6 +2596,32 @@ class CVTab(TABS.FigureTab):
                          f"scan rate with DO = DR = `D` ({d_src}) and `n` = {st['rs_n']} (`n`·ΔEp scaled to 25 °C), "
                          + " and ".join(parts) + ". k0 is given as the range over the scan rates; scan rates with "
                          f"`n`·ΔEp below {K0_X_MIN:.0f} mV were too close to reversible behaviour to give a value.")
+        n_by = {}                                        # Elektronenzahl je (Gruppe, Paar): [(n, scheinbar)]
+        if self.n_inputs():
+            nr = [r for r in self.electron_counts() if r["n"] is not None]
+            for r in nr:
+                n_by.setdefault((r["group"], r["couple"]), []).append((r["n"], r["apparent"]))
+            if nr:
+                stds = " or ".join(dict.fromkeys(
+                    "{} ({}, `n` = 1)".format(*REF_NAMES_EN[r["std"]]) for r in nr))
+                m.append("The number of electrons transferred per wave, `n`, was determined from the ratio of the "
+                         "forward peak currents of the wave and of the internal standard " + stds + " in the "
+                         "same voltammogram according to the Randles–Ševčík equation, `n` = [(ip/ip,std)·(Dstd/`D`)1/2·"
+                         f"(cstd/`c`)]2/3, with `c` = {st['rs_conc']:g} mM, cstd = {st['n_c_std']:g} mM, `D` = "
+                         f"{core.sci_text(st['n_D'])} cm2 s-1 and Dstd = {core.sci_text(st['n_D_std'])} cm2 s-1 "
+                         "(entered values); both peak currents were measured against the linear baseline described "
+                         "above. [J. E. B. Randles, Trans. Faraday Soc. 1948, 44, 327; A. Ševčík, Collect. Czech. "
+                         "Chem. Commun. 1948, 13, 349.]")
+                if any(r["apparent"] for r in nr):
+                    m.append("`n` is given as an apparent value where ΔEp of the standard exceeded 2.22·`R``T`/`F` + "
+                             "10 mV (uncompensated resistance).")
+            if any(r["why"] == "not_rev" for r in self.electron_counts()):
+                m.append("No `n` was determined for waves whose ΔEp exceeded ΔEp of the standard by more than 10 mV.")
+            c_ = self.coulometry_n()
+            if c_:
+                m.append(f"For couple {c_['couple']}, `n` was obtained from coulometry as `n` = `Q`/(`F`·`N`) with "
+                         f"`Q` = {c_['q'] * 1e3:.2f} mC and `N` = {c_['mol']:g} µmol.")
+                n_by.setdefault(("coul", c_["couple"]), []).append((c_["n"], False))
         res = []
         valid = {}
         for r in self.results:
@@ -2410,6 +2662,14 @@ class CVTab(TABS.FigureTab):
                         + ("; " + ", ".join(why[w] for w in k0["apparent"]) if k0["apparent"] else "")
                         + ("; k0 decreases with increasing scan rate, indicating uncompensated resistance"
                            if k0["falls"] else "") + ")")
+            nv = n_by.get((grp, n)) or []
+            if nv:                                        # Bereich über die Messungen, nie gemittelt oder ±
+                lo_, hi_ = f"{min(v for v, _ in nv):.2f}", f"{max(v for v, _ in nv):.2f}"
+                txt += (f"; {'apparent ' if any(a for _, a in nv) else ''}`n` = {lo_}" + (f"–{hi_}" if hi_ != lo_ else "")
+                        + " (peak current vs. internal standard)")
+            cq = n_by.get(("coul", n)) if not grp or len({g_ for g_, _ in valid}) == 1 else None
+            if cq:
+                txt += f"; `n` = {cq[0][0]:.2f} (coulometry)"
             res.append(txt + ".")
         out = " ".join(x for x in m if x)
         return out + ("\n\n" + " ".join(res) if res else "")
