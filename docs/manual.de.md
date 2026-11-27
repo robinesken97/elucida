@@ -824,7 +824,7 @@ Für jede Serie entsteht `<Serie>_report.xlsx` mit drei Blättern:
 - **Rechnung:** alle Banden nebeneinander. Oben die Messpunkte (A, A/d, „im Fit“), darunter die Regression als
   **Excel-Formeln**: zuerst das Ergebnis (n, m, b, R², ε, SE, Konfidenzintervall), grau darunter die Zwischenwerte
   (x̄, ȳ, Sxx, Sxy, RSS, s, SE(m), SE(b), t). Die gelben Zellen „im Fit“ (1 oder 0) lassen sich ändern, Excel rechnet
-  die Bande und das Diagramm neu.
+  die Bande neu. Das Diagramm zeigt den Stand beim Export (als Zahlen, daher auch in der geschützten Ansicht).
 - **Spektren:** A(λ) aller Proben, basislinienkorrigiert und roh, mit dem je Probe abgezogenen Offset.
 
 Die Zellen enthalten den vollen Wert; nur das Zahlenformat rundet wie in der App.

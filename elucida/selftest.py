@@ -1871,6 +1871,28 @@ def _g_uvvis(ctx):
             assert len(xs_x) == fit_x["n"] >= 2, (pts_x, fit_x["n"])
             m_x = np.polyfit(xs_x, ys_x, 1)[0] if cfg_x["fit_intercept"] else float(xs_x @ ys_x / (xs_x @ xs_x))
             assert abs(m_x / fc_x - results_x[k_x]["eps"]) < 1e-6 * abs(results_x[k_x]["eps"]), (m_x / fc_x, results_x[k_x]["eps"])
+            # Diagramm A/d gegen c liest Zahlen, keine Formeln (geschützte Ansicht rechnet nicht: alle Punkte bei y = 0)
+            from openpyxl.utils.cell import range_boundaries as rb_x
+
+            def cells_x(ref_):
+                sh_, rg_ = ref_.rsplit("!", 1)
+                assert sh_.strip("'") == calc_x.title, ref_
+                c1_, r1_, c2_, r2_ = rb_x(rg_.replace("$", ""))
+                vals_ = [calc_x.cell(row=rr_, column=c1_).value for rr_ in range(r1_, r2_ + 1)]
+                assert c1_ == c2_ and all(v_ is None or isinstance(v_, (int, float)) for v_ in vals_), (ref_, vals_)
+                return vals_
+            ser_x = res_x._charts[1].series
+            for s_ in ser_x:
+                cells_x(s_.xVal.numRef.f), cells_x(s_.yVal.numRef.f)
+            pu_x = [v_ for v_ in cells_x(ser_x[k_x].yVal.numRef.f) if v_ is not None]
+            assert len(pu_x) == len(ys_x) and np.allclose(pu_x, ys_x, rtol=1e-12), (pu_x, ys_x)
+            b_x = float(ys_x.mean() - m_x * xs_x.mean()) if cfg_x["fit_intercept"] else 0.0
+            ln_ = cells_x(ser_x[-1].yVal.numRef.f)[3 * k_x:3 * k_x + 2]
+            import zipfile as zf_x
+            with zf_x.ZipFile(rep) as z_x:                                # leere Zelle = Lücke, nie y = 0
+                xml_x = [z_x.read(n_).decode() for n_ in z_x.namelist() if n_.startswith("xl/charts/chart")]
+            assert len(xml_x) == 2 and all('dispBlanksAs val="gap"' in x_ for x_ in xml_x), [x_[:300] for x_ in xml_x]
+            assert np.allclose(ln_, [b_x, m_x * max(v_ for v_ in cells_x(ser_x[k_x].xVal.numRef.f) if v_ is not None) + b_x], rtol=1e-9), (ln_, m_x, b_x)
             report.append("export into project + Excel report: OK")
         with section:
             w.glob["conc_colors"] = True                         # Molaritäten in Farben; Legende nur auf Wunsch (seit 2.7.2)
@@ -20568,6 +20590,7 @@ def _g_lanes(ctx):
                           "whole rows (max 6, then scrolls) and clear of the found row, file name on one line: OK")
         with section:
             from matplotlib.backend_bases import MouseEvent as ME_c3
+            from elucida.core import tddft as TDM_c3
             from elucida import ROOT as ROOT_c3
             from elucida.app import demo as DEMO_c3
             # CV3 (Entscheidungen 176, 177, 179): Struktur des Standards statt Stern, E1/2 einzeilig, Messrichtungspfeil oben
@@ -20666,11 +20689,18 @@ def _g_lanes(ctx):
             ab_c3 = arr_c3.arrow_patch.get_window_extent(rend_c3).union([arr_c3.get_window_extent(rend_c3)])
             box_c3 = F_c3.axes_items["image_ref_cvref"].get_window_extent(rend_c3)
             assert ab_c3.x1 + 10 < box_c3.x0 or not ab_c3.overlaps(box_c3.expanded(1.3, 1.3)), (ab_c3.bounds, box_c3.bounds)
-            # auf den Pfeil selbst klicken (die Mitte der Box liegt neben dem duennen Strich, je nach Fenstergroesse)
-            hit_c3 = [(x_, y_) for x_ in np.linspace(ab_c3.x0, ab_c3.x1, 31) for y_ in np.linspace(ab_c3.y0, ab_c3.y1, 31)
-                      if arr_c3.contains(ME_c3("button_press_event", t_c3.canvas, x_, y_, button=1))[0]]
-            assert hit_c3, ab_c3.bounds
-            cx_c3, cy_c3 = min(hit_c3, key=lambda p_: abs(p_[0] - (ab_c3.x0 + ab_c3.x1) / 2) + abs(p_[1] - (ab_c3.y0 + ab_c3.y1) / 2))
+            # Greiffläche: neben Schaft und Spitze (ARROW_GRAB_PT je Seite) greift der Pfeil, weiter weg nicht.
+            # Abstände mit 1 px Spiel (LocationEvent rundet auf ganze Pixel)
+            tol_c3 = TDM_c3.ARROW_GRAB_PT * F_c3.fig.dpi / 72
+            sx_c3, sy_c3 = F_c3.ax.transAxes.transform(arr_c3.xyann)
+            pb_c3 = arr_c3.arrow_patch.get_window_extent(rend_c3)          # Pfadgrenzen ohne Strichbreite
+            tip_c3 = float(max((pb_c3.x0, pb_c3.x1), key=lambda v_: abs(v_ - sx_c3)))   # Spitze: weiter vom Anfang
+            at_c3 = lambda x_, y_: bool(arr_c3.contains(ME_c3("button_press_event", t_c3.canvas, x_, y_, button=1))[0])  # noqa: E731
+            mid_c3 = (sx_c3 + tip_c3) / 2 + (tip_c3 - sx_c3) / 4           # Schaft vor der Spitze, neben dem Textkasten
+            for x_ in (mid_c3, tip_c3):
+                assert at_c3(x_, sy_c3 + tol_c3 - 1) and at_c3(x_, sy_c3 - tol_c3 + 1), (x_, sy_c3, tol_c3)
+                assert not at_c3(x_, sy_c3 + 2 * tol_c3 + 8) and not at_c3(x_, sy_c3 - 2 * tol_c3 - 8), (x_, sy_c3, tol_c3)
+            cx_c3, cy_c3 = mid_c3, sy_c3 + tol_c3 - 1                       # neben dem Strich greifen und ziehen
             proc_c3 = t_c3.canvas.callbacks.process
             proc_c3("button_press_event", ME_c3("button_press_event", t_c3.canvas, cx_c3, cy_c3, button=1))
             for i_ in (1, 2, 3):

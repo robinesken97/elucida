@@ -785,7 +785,7 @@ For every series, `<series>_report.xlsx` is written with three sheets:
 - **Calculation:** all bands side by side. On top the data points (A, A/d, "in fit"), below the regression as
   **Excel formulas**: first the result (n, m, b, R², ε, SE, confidence interval), in grey below the intermediate
   values (x̄, ȳ, Sxx, Sxy, RSS, s, SE(m), SE(b), t). The yellow "in fit" cells (1 or 0) can be changed; Excel
-  recalculates the band and the chart.
+  recalculates the band. The chart shows the state at export (as numbers, so it also appears in Protected View).
 - **Spectra:** A(λ) of all samples, baseline-corrected and raw, with the offset subtracted per sample.
 
 The cells hold the full value; only the number format rounds as in the app.

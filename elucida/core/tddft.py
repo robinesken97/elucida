@@ -754,7 +754,12 @@ class SimpleFigure(core.Figure):
                           fontsize=self.cfg["font_size"],
                           arrowprops=dict(arrowstyle="-|>", color=color, lw=max(0.6, 0.8 * sc), mutation_scale=10 * sc,
                                           shrinkA=0, shrinkB=0, relpos=(0.5, 0.5)))
+        # Greiffläche wie bei Labels: ±3 pt um Schaft und Spitze, sonst nur der dünne Strich (radius wirkt halb je Seite)
+        ann.arrow_patch.set_picker(2 * ARROW_GRAB_PT * self.fig.dpi / 72)
         self.ann_items[key] = ann
+
+
+ARROW_GRAB_PT = 3.0                                        # Messrichtungspfeil: Greifabstand je Seite (pt)
 
 
 def normalize(x, y, lo, hi, min_signal=0.01):

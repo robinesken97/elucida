@@ -91,8 +91,10 @@ TXT = {
     "bl": ("Basislinie", "Baseline"), "bl_window": ("Fenster {a:.0f}–{b:.0f} nm", "window {a:.0f}–{b:.0f} nm"),
     "program": ("Programm", "Program"),
     "calc_title": ("Regression je Bande", "Regression per band"),
-    "calc_hint": ("Gelbe Zellen („im Fit“: 1 oder 0) lassen sich ändern, Excel rechnet die Bande neu.",
-                  "Yellow cells (“in fit”: 1 or 0) can be changed; Excel recalculates the band."),
+    "calc_hint": ("Gelbe Zellen („im Fit“: 1 oder 0) lassen sich ändern, Excel rechnet die Bande neu "
+                  "(das Diagramm zeigt den Stand beim Export).",
+                  "Yellow cells (“in fit”: 1 or 0) can be changed; Excel recalculates the band "
+                  "(the chart shows the state at export)."),
     "fc": ("f_c", "f_c"), "fc_note": ("c [mol L⁻¹] = c · f_c", "c [mol L⁻¹] = c · f_c"),
     "fc_note_a": ("c [g L⁻¹] = c · f_c", "c [g L⁻¹] = c · f_c"),
     "points": ("Messpunkte", "Data points"), "sample": ("Probe", "Sample"), "A": ("A", "A"),
@@ -336,13 +338,15 @@ def _calc_sheet(cs, cfg, spectra, results, unit, sym, coef_unit):
         lam_txt = f"{core.fmt_lam(r['lam'])} nm" + (f" ({t('sh')})" if r.get("shoulder") else "")
         _put(cs, R_BAND, c0, lam_txt, Font(name=FONT, size=10, bold=True, color=colors[k]))
         _head(cs, R_HEAD, c0, [t("A"), t("Ad"), t("w")])
+        ad = []                                             # (c, A/d, im Fit) als Zahlen für das Diagramm
         for i, s_ in enumerate(pts):
             row = first + i
             A = _num(core.abs_at(s_["x"], s_["y"], r["lam"], cfg["avg_window_nm"]))
+            w_ = 1 if (A is not None and round(s_["c"], 12) in used) else 0
             _put(cs, row, c0, A, fmt="0.0000", border=ROW_LINE)
             _put(cs, row, c0 + 1, f"={cA}{row}/$C${R_D}", fmt="0.0000", border=ROW_LINE)
-            _put(cs, row, c0 + 2, 1 if (A is not None and round(s_["c"], 12) in used) else 0, fmt="0",
-                 fill=EDIT_FILL, border=ROW_LINE)
+            _put(cs, row, c0 + 2, w_, fmt="0", fill=EDIT_FILL, border=ROW_LINE)
+            ad.append((float(s_["c"]), None if A is None else A / float(cfg["path_length_cm"]), w_))
         Y, W = f"${cY}${first}:${cY}${last}", f"${cW}${first}:${cW}${last}"
         v = {k_: f"{cY}{rows[k_]}" for k_ in rows}          # Zelle je Größe dieser Bande
         f = {
@@ -378,19 +382,28 @@ def _calc_sheet(cs, cfg, spectra, results, unit, sym, coef_unit):
         _put(cs, R_CUT, c0 + 1, float(r.get("cutoff", cfg["max_abs_fit"])), F_MUTED, fmt="0.00")
         for k_ in MID_ROWS:
             _put(cs, rows[k_], c0 + 1, f[k_], F_MUTED, fmt=fmts.get(k_, "0.0000"))
-        # Diagrammdaten (verborgen): Punkte im Fit, Punkte außerhalb, Regressionsgerade
+        # Diagrammdaten (verborgen): Punkte im Fit, Punkte außerhalb, Regressionsgerade. Als Zahlen, nicht als Formeln:
+        # openpyxl schreibt keine Formelergebnisse, Excel in der geschützten Ansicht rechnet nicht (alle Punkte bei y = 0).
+        # Dieselbe Rechnung wie die Formeln oben; ein geändertes „im Fit“ ändert darum das Diagramm nicht mehr.
         hU = helper0 + 4 + k
-        for i in range(len(pts)):
-            row = first + i
-            _put(cs, row, hU, f"=IF({cW}{row}=1,{cY}{row},NA())")
+        for i, (cx, y_, w_) in enumerate(ad):
+            _put(cs, first + i, hU, y_ if w_ == 1 else None)
             erow = first + k * len(pts) + i
-            _put(cs, erow, EX, f"=$C${row}")
-            _put(cs, erow, EY, f"=IF(AND({cW}{row}<>1,ISNUMBER({cA}{row})),{cY}{row},NA())")
-            any_excluded |= cs.cell(row=row, column=c0 + 2).value == 0 and cs.cell(row=row, column=c0).value is not None
+            _put(cs, erow, EX, cx)
+            _put(cs, erow, EY, y_ if w_ != 1 else None)
+            any_excluded |= w_ == 0 and y_ is not None
+        fx = np.array([cx for cx, _, w_ in ad if w_ == 1], float)
+        fy = np.array([y_ for _, y_, w_ in ad if w_ == 1], float)
+        with np.errstate(all="ignore"):
+            if icpt:
+                m_ = float(((fx - fx.mean()) @ (fy - fy.mean())) / ((fx - fx.mean()) @ (fx - fx.mean()))) if len(fx) else np.nan
+                b_ = float(fy.mean() - m_ * fx.mean()) if len(fx) else np.nan
+            else:
+                m_, b_ = (float(fx @ fy / (fx @ fx)) if len(fx) else np.nan), 0.0
         for j, xv in enumerate((0.0, xmax)):
             lrow = first + 3 * k + j
             _put(cs, lrow, LX, xv)
-            _put(cs, lrow, LY, f'=IFERROR({v["m"]}*{L(LX)}{lrow}+{v["b"]},NA())')
+            _put(cs, lrow, LY, _num(m_ * xv + b_))
         bands.append(dict(col=cY, rows=rows, hU=hU))
     for col in range(helper0, helper0 + 4 + nb):
         cs.column_dimensions[L(col)].hidden = True
