@@ -23,6 +23,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from elucida.app.i18n import T
+from elucida import replace_file
 
 LOG = print
 
@@ -160,7 +161,7 @@ def download_model(progress=None):
                 f.close()
                 tmp.unlink(missing_ok=True)
                 raise RuntimeError(T("download_cancelled"))
-    tmp.replace(dst)
+    replace_file(tmp, dst)
     return dst
 
 

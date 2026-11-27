@@ -3442,16 +3442,7 @@ class OverlayTab(FigureTab):
         RowDrag(self.table, self.move_row)
         STYLE.hide_when_empty(self.table)
         # Verbindungen vergleicht das Projekt (Nutzerentscheid 1.2.0): hier nur Messung gegen Rechnung einer Verbindung
-        f = make_form()
-        row = QHBoxLayout()
-        self.lbl_cmp = QLabel(T("ov_cmp_where"))
-        self.btn_cmp = QPushButton(T("ov_cmp_open"))
-        self.btn_cmp.setProperty("chooselike", True)
-        self.btn_cmp.setToolTip(T("ov_cmp_open_tip"))
-        self.btn_cmp.clicked.connect(self.open_comparison)
-        row.addWidget(self.lbl_cmp, 1)
-        row.addWidget(self.btn_cmp)
-        f.addRow(T("ov_cmp"), row)
+        f = make_form()      # kein Sprung zur Projektseite (Robin 2026-11-27): nur was der Tab selbst vergleicht
         self.lbl_cmp_old = STYLE.HintLabel("")          # alter Zustand mit Struktur je Spektrum: bleibt, nur Hinweis
         self.lbl_cmp_old.setWordWrap(True)
         self.lbl_cmp_old.setStyleSheet(HINT_CSS)
@@ -4454,14 +4445,7 @@ class OverlayTab(FigureTab):
         return any(e.get("structure") for e in st.get("entries") or ())
 
     def sync_compare_hint(self):
-        self.btn_cmp.setVisible(bool(self.main.publication_dir and self.main.project_dir))
         self.lbl_cmp_old.setText(T("ov_cmp_old") if self.legacy_compare(self.st) else "")
-
-    def open_comparison(self):
-        """Zur Projektseite, Reiter „Vergleich“ (die Verbindung wird dabei wie über die Pfadleiste geschlossen)."""
-        m = self.main
-        if m.publication_dir and m.open_publication(m.publication_dir):
-            m.pub_page.project_tabs.setCurrentWidget(m.pub_page.compare_page)
 
     def choose_structure(self):
         if not self.main.ensure_project():

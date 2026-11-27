@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 
 from elucida.si.lines import html_runs
+from elucida import replace_file
 
 SLIDE_W, SLIDE_H = 12192000, 6858000      # 16:9 (EMU)
 EMU_PT = 12700
@@ -215,7 +216,7 @@ def write_pptx(path, figures):
             z.writestr(f"ppt/media/image{i}.png", png_b)
             if svg_b is not None:
                 z.writestr(f"ppt/media/image{i}.svg", svg_b)
-    os.replace(tmp, path)
+    replace_file(tmp, path)
     return path
 
 

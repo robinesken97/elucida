@@ -22,6 +22,7 @@ from pathlib import Path
 import yaml
 
 from elucida.app import project as PRJ
+from elucida import replace_file
 
 PUB_FILE = "publication.elucida"
 FORMAT_VERSION = 1
@@ -147,7 +148,7 @@ def save(pdir, data):
         out["si_texts"] = texts
     tmp = pdir / (PUB_FILE + ".tmp")
     tmp.write_text(yaml.safe_dump(out, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    tmp.replace(pdir / PUB_FILE)
+    replace_file(tmp, pdir / PUB_FILE)
 
 
 def create(pdir, title="") -> Path:
@@ -454,7 +455,7 @@ def rename_procedures(pdir, mapping, skip=None) -> list[Path]:
         if rename_gp_in(st.get("syn"), mapping):
             tmp = pf.with_name(pf.name + ".tmp")
             tmp.write_text(yaml.safe_dump(st, allow_unicode=True, sort_keys=False), encoding="utf-8")
-            os.replace(tmp, pf)
+            replace_file(tmp, pf)
             out.append(Path(cdir))
     return out
 

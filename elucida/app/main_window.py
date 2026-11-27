@@ -2749,10 +2749,13 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QApplication.restoreOverrideCursor()
             self.log_signal.emit(traceback.format_exc())
+            # ersetzt die Fortschrittsmeldung (ohne Zeitlimit), sonst stand dort weiter „… 96 %“
+            self.statusBar().showMessage(T("demo_pub_failed", e=str(e)), 15000)
             return self.error(str(e))
         QApplication.restoreOverrideCursor()
-        if d:
-            self.statusBar().showMessage(T("demo_pub_done", p=str(d)), 10000)
+        if d:                                         # ohne folder: frische Kopie, eigene Änderungen gehen beim nächsten Öffnen verloren
+            self.statusBar().showMessage(T("demo_pub_done", p=str(d)) + ("" if folder else " " + T("demo_pub_fresh")),
+                                         10000 if folder else 15000)
         return d
 
     def demo_progress(self, pct):

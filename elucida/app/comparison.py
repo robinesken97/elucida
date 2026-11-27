@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QMainWindow, QMenu, QPushButton, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from elucida import replace_file
 from elucida.app import project as PRJ
 from elucida.app import publication as PUB
 from elucida.app import style as STYLE
@@ -605,7 +606,7 @@ def write_snapshot(main, state):
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps({"version": SNAP_VERSION, "tabs": tabs}, ensure_ascii=False, separators=(",", ":")),
                    encoding="utf-8")
-    os.replace(tmp, p)
+    replace_file(tmp, p)
     return done
 
 

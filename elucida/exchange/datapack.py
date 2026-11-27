@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from elucida.core.ocr import IMAGE_EXT as OCR_IMAGE_EXT
+from elucida import replace_file
 
 # Laborkürzel „Initialen-Buch-Seite“, z. B. AB-1-234, AB-12-7a, AB-2-142FC (TopSpin-Datensatz „OCM-AB-2-142FC_…“)
 CODE_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{1,4}-\d{1,3}-\d{1,4}(?:[a-z]|[A-Z]{1,3})?)(?![A-Za-z0-9])")
@@ -621,7 +622,7 @@ def write_zip(items, path, root, name_repl=None, text_repl=None, progress=None, 
     if report.get("cancelled"):
         tmp.unlink(missing_ok=True)
         return report
-    tmp.replace(path)
+    replace_file(tmp, path)
     report["path"] = str(path)
     return report
 

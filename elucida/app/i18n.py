@@ -841,6 +841,10 @@ TEXTS = {
                       "Creating the example project (once per version) … {p} %"),
     "demo_pub_done": ("Beispielprojekt (künstliche Daten) geöffnet: {p}",
                       "Example project (artificial data) opened: {p}"),
+    "demo_pub_fresh": ("Es wird bei jedem Öffnen neu angelegt; Änderungen darin gehen dabei verloren.",
+                       "It is created afresh every time it is opened; changes made in it are discarded."),
+    "demo_pub_failed": ("Beispielprojekt konnte nicht angelegt werden: {e}",
+                        "The example project could not be created: {e}"),
     "act_demo_tip": ("Legt eine Verbindung mit künstlichen Daten für alle Tabs an – zum Ausprobieren",
                      "Creates a compound with artificial data for all tabs – to try things out"),
     "demo_done": ("Beispielverbindung (künstliche Daten) geöffnet: {p}",
@@ -1695,13 +1699,6 @@ TEXTS = {
     "ov_states": ("Zustände", "states"),
     "ov_details": ('Ausgewähltes Spektrum', 'Selected Spectrum'),
     # Verbindungen vergleicht das Projekt (Projektseite › Vergleich), nicht mehr der TD-DFT-Tab (1.2.0)
-    "ov_cmp": ("Vergleich", "Comparison"),
-    "ov_cmp_where": ("Verbindungen im Projekt", "Compounds in the project"),
-    "ov_cmp_open": ("Öffnen …", "Open …"),
-    "ov_cmp_open_tip": ("Zur Projektseite, Reiter „Vergleich“: Spektren mehrerer Verbindungen in einem Bild, normiert auf\n"
-                        "eine Bande, Strukturen in Kurvenfarbe, auch in der Gesamt-SI.",
-                        "To the project page, tab “Comparison”: spectra of several compounds in one figure, normalized to\n"
-                        "one band, structures in curve colour, also in the combined SI."),
     "ov_cmp_old": ("Ältere Abbildung: ihre Struktur je Spektrum bleibt so; neue Vergleiche verschiedener Verbindungen "
                    "im Projekt.",
                    "Older figure: its structure per spectrum stays as it is; new comparisons of different compounds "

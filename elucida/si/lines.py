@@ -16,6 +16,7 @@ from pathlib import Path
 from elucida.core import uvvis as core
 from elucida.formats.elements import ELEMENTS
 from elucida.tabs.ir_ea import element_of_key, formula_str, mono_mass, parse_formula
+from elucida import replace_file
 
 # Mittlere Atommassen (IUPAC 2021, konventionelle Werte) für die Elementaranalyse
 AVG = {"H": 1.008, "D": 2.014, "Li": 6.94, "B": 10.81, "C": 12.011, "N": 14.007, "O": 15.999, "F": 18.998,
@@ -1150,7 +1151,7 @@ def write_docx(path, blocks, columns=1):
         for i, (bin_, ext, b) in enumerate(oles_b, 1):
             z.writestr(f"word/embeddings/oleObject{i}.bin", bin_)
             z.writestr(f"word/media/ole{i}{ext}", b)
-    os.replace(tmp, path)                              # atomar (Word offen: PermissionError, alte Datei bleibt)
+    replace_file(tmp, path)                            # atomar (Word offen: PermissionError, alte Datei bleibt)
     from elucida.formats import ole as OLE
     try:                                               # DOCX ist fertig: Begleitdateien dürfen sie nicht als gescheitert melden
         OLE.write_editable_companions(path, editable)

@@ -22,7 +22,7 @@ from PySide6.QtCore import QObject, Signal, Slot, QUrl, QTimer, QEventLoop, QEve
 from shiboken6 import delete, isValid
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMessageBox, QDialog, QApplication, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox, QComboBox, QMenu, QFileDialog
-from elucida import ROOT
+from elucida import ROOT, replace_file
 from elucida.app.i18n import T, get_lang
 
 MAX_BYTES = 32 * 1024 * 1024
@@ -122,7 +122,7 @@ def save_bundle(path, bundle, expected):
         if fingerprint(path) != expected:
             raise ValueError(T('draw_conflict'))
         for ext in ('.svg', '.cdx', '.elucida-drawing.json', '.cdxml'):
-            os.replace(temp[ext], path.with_suffix(ext))
+            replace_file(temp[ext], path.with_suffix(ext))
             published.append(ext)
         stamp = path.stat().st_mtime_ns
         for ext in ('.svg', '.cdx'):
@@ -140,7 +140,7 @@ def save_bundle(path, bundle, expected):
             if previous.exists():
                 recovery = target.with_name(target.name + '.recover.tmp')
                 shutil.copy2(previous, recovery)
-                os.replace(recovery, target)
+                replace_file(recovery, target)
             else:
                 target.unlink(missing_ok=True)
         raise
@@ -710,7 +710,7 @@ class DrawingEditor(QWidget):
                     temporary = target.with_name(target.name + '.' + uuid.uuid4().hex + '.tmp')
                     try:
                         temporary.write_bytes(data)
-                        os.replace(temporary, target)
+                        replace_file(temporary, target)
                     finally:
                         temporary.unlink(missing_ok=True)
             except Exception as ex:

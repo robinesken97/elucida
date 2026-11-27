@@ -12,6 +12,7 @@ import uuid
 import os
 import shutil
 from pathlib import Path
+from elucida import replace_file
 
 SECT, MINI, CUTOFF = 512, 64, 4096
 FREESECT, ENDOFCHAIN, FATSECT, NOSTREAM = 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
@@ -51,7 +52,7 @@ def write_editable_companions(docx, drawings):
             path = folder / name
             tmp = path.with_name(name + ".tmp")
             tmp.write_bytes(data)
-            os.replace(tmp, path)
+            replace_file(tmp, path)
             names.append(name)
     # List the current export explicitly; never remove other/user-added files.
     (folder / "README.txt").write_text(

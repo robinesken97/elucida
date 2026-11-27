@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from elucida import replace_file
 
 PROJECT_FILE = "project.elucida"
 OLD_PROJECT_FILES = ("project.uvvis",)          # bis 2.0 (UVVisTool/Spectravolt/Elucida 2.0): lesen, nie schreiben
@@ -224,7 +225,7 @@ def save(project_dir, state) -> dict:
     rel_state["format_version"] = FORMAT_VERSION
     tmp = pdir / (PROJECT_FILE + ".tmp")               # atomar: Abbruch beim Schreiben lässt die alte Datei stehen
     tmp.write_text(yaml.safe_dump(rel_state, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    os.replace(tmp, pdir / PROJECT_FILE)
+    replace_file(tmp, pdir / PROJECT_FILE)
     for name in OLD_PROJECT_FILES:                     # alter Name: nicht zwei Projektdateien nebeneinander
         if (pdir / name).exists():
             os.replace(pdir / name, work_dir(pdir) / (name + ".old"))

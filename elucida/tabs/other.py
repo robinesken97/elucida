@@ -151,7 +151,8 @@ class OtherTab(TABS.FigureTab):
 
     # -- Daten ------------------------------------------------------------------------------
     def entries(self):
-        return self.st["entries"]
+        # .get: ein Tab, dessen Zustand beim Öffnen einer anderen Verbindung schon ersetzt ist, kann noch einmal zeichnen
+        return self.st.get("entries", [])
 
     def entry(self):
         return next((e for e in self.entries() if e["uid"] == self.st.get("current")), None)

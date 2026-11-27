@@ -25292,6 +25292,106 @@ def _g_nmr_own(ctx):
             pump(0.2)
             report.append("Drawing editor Actions panel: ions of an invented salt with their charge (lane s2fehler): OK")
         with section:
+            # Spur s2e (1.5.0): TD-DFT ohne Sprung zur Projektseite; Hinweis „Beispielprojekt frisch“; Fehler beim Bau
+            # ersetzt die Fortschrittsmeldung; Ersetzen tmp -> Ziel mit Wiederholung (WinError 5); Tab „Weitere“ ohne
+            # „entries“; HRMS-Label am found-Peak = found (Entscheidung 160)
+            import elucida as EL_e
+            from elucida.app import demo as DEMO_e
+            from elucida.app import publication as PUB_e
+            from elucida.app.i18n import TEXTS as TX_e
+            from elucida.tabs.other import OtherTab as Other_e
+            dp_e = demo_pub(w, out / "s2e_pub")
+            assert w.open_project(dp_e / "S3", ask=False, recent=False)
+            ov_e = w.ov_tab
+            assert not hasattr(ov_e, "btn_cmp") and not hasattr(ov_e, "open_comparison") and "ov_cmp_open" not in TX_e
+            # Hinweis beim Öffnen über die Bibliothek (ohne folder); Bau gescheitert -> Meldung statt „… 96 %“
+            real_e = DEMO_e.open_demo_publication
+            w.maybe_save = lambda: True
+            try:
+                DEMO_e.open_demo_publication = lambda w_, folder=None: dp_e
+                assert w.open_demo_publication() == dp_e
+                assert T("demo_pub_fresh") in w.statusBar().currentMessage(), w.statusBar().currentMessage()
+                assert w.open_demo_publication(dp_e) == dp_e
+                assert T("demo_pub_fresh") not in w.statusBar().currentMessage()    # Selbsttest/Bildschirmfotos
+
+                def fail_e(w_, folder=None):
+                    w_.demo_progress(96)
+                    raise PermissionError("[WinError 5] access denied (invented)")
+                DEMO_e.open_demo_publication = fail_e
+                w.open_demo_publication()
+                msg_e = w.statusBar().currentMessage()
+                assert msg_e.startswith(T("demo_pub_failed", e="")) and "96" not in msg_e, msg_e
+            finally:
+                DEMO_e.open_demo_publication = real_e
+                del w.maybe_save
+            assert all(TX_e[k_][0] and TX_e[k_][1] and TX_e[k_][0] != TX_e[k_][1]
+                       for k_ in ("demo_pub_fresh", "demo_pub_failed"))
+            # Ersetzen: zweimal PermissionError (wie Indexer/Virenscanner), dann klappt es; immer gesperrt -> Fehler,
+            # Ziel unverändert, tmp bleibt (neuer Stand)
+            pe_ = out / "s2e_replace"
+            pe_.mkdir(exist_ok=True)
+            PUB_e.create(pe_)
+            good_e = (pe_ / PUB_e.PUB_FILE).read_text(encoding="utf-8")
+            real_rep_e, tries0_e, calls_e, always_e = EL_e.os.replace, EL_e.REPLACE_TRIES, [], []
+
+            def flaky_e(a_, b_):
+                calls_e.append(Path(a_).name)
+                if len(calls_e) < 3 or always_e:
+                    raise PermissionError(13, "access denied (invented)")
+                return real_rep_e(a_, b_)
+            EL_e.REPLACE_TRIES = 10
+            EL_e.os.replace = flaky_e
+            try:
+                PUB_e.save(pe_, dict(PUB_e.load(pe_), paper_title="Invented title"))
+                assert calls_e == [PUB_e.PUB_FILE + ".tmp"] * 3, calls_e
+                assert PUB_e.load(pe_)["paper_title"] == "Invented title"
+                good_e = (pe_ / PUB_e.PUB_FILE).read_text(encoding="utf-8")
+                always_e.append(1)
+                try:
+                    PUB_e.save(pe_, dict(PUB_e.load(pe_), paper_title="Other title"))
+                    raise AssertionError("PermissionError expected")
+                except PermissionError:
+                    pass
+                assert (pe_ / PUB_e.PUB_FILE).read_text(encoding="utf-8") == good_e
+                assert (pe_ / (PUB_e.PUB_FILE + ".tmp")).exists()
+            finally:
+                EL_e.os.replace, EL_e.REPLACE_TRIES = real_rep_e, tries0_e
+            # Tab „Weitere“: Zustand ohne „entries“ (ersetzt, während der alte Tab noch einmal zeichnet)
+            t_e = Other_e(w, {})
+            t_e.st.clear()
+            t_e.render()
+            t_e.sync_widgets()
+            assert t_e.entries() == [] and "entries" not in t_e.st
+            t_e.deleteLater()
+            # HRMS: Label am found-Peak zeigt found (gleiche Zahl wie Tabelle), Schlüssel bleibt der des Peaks
+            h_e = w.hrms_tab
+            h_e.ensure_rendered()
+            spec_e = h_e.figure_spec()
+            f_e = h_e._found
+            assert isinstance(f_e, float), f_e
+            lab_e = [l_ for l_ in spec_e[2] if l_["text"] == f"{f_e:.4f}"]
+            assert len(lab_e) == 1 and lab_e[0]["key"] == f"label_mz_{lab_e[0]['lam']:.3f}", spec_e[2]
+            assert h_e.tbl_ms.item(0, 2).text() == f"{f_e:.4f}"
+            mz_e, rel_e = h_e._sticks
+            lo_e, hi_e = h_e.view_range()
+            small_e = min((k_ for k_ in range(len(mz_e)) if lo_e <= mz_e[k_] <= hi_e), key=lambda k_: rel_e[k_])
+            n_e = len(spec_e[2])
+            h_e.update_ms = lambda: None                   # found auf einen kleinen Peak (1 mDa daneben)
+            try:
+                h_e._found = float(mz_e[small_e]) + 0.001
+                spec2_e = h_e.figure_spec()
+            finally:
+                del h_e.update_ms
+            got_e = {l_["key"]: l_["text"] for l_ in spec2_e[2]}
+            assert got_e.get(f"label_mz_{mz_e[small_e]:.3f}") == f"{mz_e[small_e] + 0.001:.4f}", got_e
+            assert len(got_e) in (n_e, n_e + 1), (n_e, got_e)
+            h_e.render()
+            pump(0.2)
+            w.go_home()
+            report.append("Lane s2e: TD-DFT without project page jump, example project notice (fresh copy) and failure "
+                          "message, atomic replace retries PermissionError, Other tab without 'entries', HRMS label at "
+                          "the found peak shows found: OK")
+        with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
             import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-

@@ -1227,10 +1227,16 @@ class HRMSTab(TABS.FigureTab):
         labels = []
         if st.get("mz_labels", True):
             vis = (mz >= lo) & (mz <= hi) & (rel >= 8)
-            for k in np.argsort(-rel)[:12]:
-                if vis[k] and len(labels) < 6:
-                    labels.append({"key": f"label_mz_{mz[k]:.3f}", "lam": float(mz[k]), "y": float(rel[k]),
-                                   "text": f"{mz[k]:.4f}", "side": "above"})
+            # Peak der Zuordnung (found): Label zeigt found wie Tabelle und SI (Entscheidung 160), immer, wenn im Bereich;
+            # Schlüssel bleibt der des Peaks (eigene Texte/Positionen). 0.05: gemittelter Centroid gegen Berichtswert
+            found = getattr(self, "_found", None)
+            kf = int(np.argmin(np.abs(mz - found))) if isinstance(found, (int, float)) else None
+            if kf is not None and not (lo <= mz[kf] <= hi and abs(mz[kf] - found) <= 0.05):
+                kf = None
+            ks = [k for k in np.argsort(-rel)[:12] if vis[k]][:6]
+            for k in ks + ([kf] if kf is not None and kf not in ks else []):
+                labels.append({"key": f"label_mz_{mz[k]:.3f}", "lam": float(mz[k]), "y": float(rel[k]),
+                               "text": f"{found:.4f}" if k == kf else f"{mz[k]:.4f}", "side": "above"})
         if getattr(self, "_preview", False) and self._flags:     # Fremdpeaks: Marker nur in der Vorschau
             fm = np.array(sorted(self._flags))
             hit = [k for k in range(len(mz)) if lo <= mz[k] <= hi
