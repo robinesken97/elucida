@@ -163,6 +163,11 @@ paths:
   - Einheiten in Namen und Texten ohne Schrägstrich, auch als Vorgabe („50 mV s-1“, Anzeige „50 mV s⁻¹“).
   - In Abbildungen steht eine Beschriftung nie auf einem Strich oder einer anderen Beschriftung (Energiediagramm:
     `_edge_labels`, siehe `dft.md`).
+  - Feste Texte einer Abbildung (Achsentitel, Zweitachsen, Legende, Farbskala, Inset, Tabellenkopf) sind über die Karte
+    „Beschriftungen im Bild“ änderbar, zentral über `core/figtexts.py` (Zustand `text_over`, Schlüssel Rolle + automatischer
+    Text, Eintrag mit Ansicht). Neue Abbildungen: `TABS.own_texts(tab, F, fig)` nach dem Bauen, Seiten mit eigener Abbildung
+    zusätzlich `TABS.PageTexts`; nie Achsentitel je Tab änderbar machen. Abbildungstexte nie über T() (sonst nur ganze
+    Texte sprachfest). (Robin 2026-11-27)
   - Kursiv/steil gilt **überall** (zweite Runde 2026-11-11): Chips, Knöpfe und Auswahllisten zeichnen Texte mit
     Formelzeichen selbst als Rich-Text (`STYLE._SciPaint`/`_SciItems`, von `tidy` über `sci_widgets` gesetzt; der Text des
     Widgets bleibt reiner Text) – dort also wie überall „E_pa“, „E½“ schreiben und die Regel in `_SCI` ergänzen, nicht
