@@ -25628,6 +25628,77 @@ def _g_nmr_own(ctx):
             report.append("NMR figure texts (lane s3b): own 1D/2D axis titles via the card, SI figure, hide on the "
                           "kept axis, reset, cache name, views 1d/2d, undo: OK")
         with section:
+            # Dunkler Canvas (nur Vorschau): Fotos (Küvette, Fotopaar) wie im hellen Bild, Achsen, Text und der Pfeil des
+            # Fotopaars werden umgerechnet; der Export bleibt hell (Robin 2026-11-27)
+            from elucida.app import canvas_theme as CT_ph
+            from PySide6.QtGui import QImage as QImage_ph
+            dp_ph = demo_pub(w, out / "photo_dark_pub")
+            assert w.open_project(dp_ph / "S3", ask=False, recent=False)
+            checked_ph = []
+            try:
+                for key_ph, img_ph in (("eps", "image_kuevette"), ("fluo", "image_fotos")):
+                    w.main_tabs.setCurrentIndex(w._tab_keys.index(key_ph))
+                    pump(0.5)
+                    fig_ph = w.F if key_ph == "eps" else w.fl_tab.F
+                    cv_ph = fig_ph.fig.canvas
+                    if getattr(cv_ph, "_canvas_invert", None) is None:     # ELUCIDA_OCTET=0: kein Effekt
+                        continue
+                    from PySide6.QtWidgets import QStackedWidget as QSW_ph, QTabWidget as QTW_ph
+                    p_ph = cv_ph                                                 # Reiter „Abbildung“ zeigen (verborgen
+                    while p_ph.parentWidget() is not None:                       # zeichnet die Fläche nicht)
+                        par_ph = p_ph.parentWidget()
+                        if isinstance(par_ph, QSW_ph):
+                            tw_ph = par_ph.parentWidget()
+                            (tw_ph if isinstance(tw_ph, QTW_ph) else par_ph).setCurrentWidget(p_ph)
+                        p_ph = par_ph
+                    pump(0.5)
+                    a_ph = fig_ph.axes_items[img_ph]
+                    assert a_ph._photo is not None, key_ph
+                    grabs_ph = []
+                    for dark_ph in (False, True):
+                        CT_ph.configure(dark_ph)
+                        cv_ph.update()
+                        pump(0.3)
+                        g_ph = cv_ph.grab().toImage().convertToFormat(QImage_ph.Format_RGB32)
+                        grabs_ph.append(np.frombuffer(g_ph.bits(), np.uint8).reshape(
+                            g_ph.height(), g_ph.bytesPerLine() // 4, 4)[:, :g_ph.width(), :3].astype(int).copy())
+                    light_ph, dark_ph = grabs_ph
+                    assert light_ph.shape == dark_ph.shape, (light_ph.shape, dark_ph.shape)
+                    H_ph, bb_ph = light_ph.shape[0], a_ph.bbox
+                    s_ph = light_ph.shape[1] / cv_ph.figure.bbox.width            # Bildpixel je Abbildungspixel (~1)
+                    r0_, r1_ = int((H_ph / s_ph - bb_ph.y1) * s_ph) + 2, int((H_ph / s_ph - bb_ph.y0) * s_ph) - 2
+                    c0_, c1_ = int(bb_ph.x0 * s_ph) + 2, int(bb_ph.x1 * s_ph) - 2
+                    rgba_ph = np.asarray(a_ph.images[0].get_array())
+                    mask_ph = a_ph._photo if isinstance(a_ph._photo, np.ndarray) else rgba_ph[..., 3]
+                    ys_ = ((np.arange(r0_, r1_) + 0.5) / s_ph - (H_ph / s_ph - bb_ph.y1)) / bb_ph.height
+                    xs_ = ((np.arange(c0_, c1_) + 0.5) / s_ph - bb_ph.x0) / bb_ph.width
+                    ys_ = (ys_ * mask_ph.shape[0]).astype(int).clip(0, mask_ph.shape[0] - 1)
+                    xs_ = (xs_ * mask_ph.shape[1]).astype(int).clip(0, mask_ph.shape[1] - 1)
+                    m_ph, al_ph = mask_ph[ys_][:, xs_], rgba_ph[..., 3][ys_][:, xs_]
+                    # nur Pixel, deren Nachbarn ebenso voll deckend sind (Ränder mischt das Skalieren)
+                    full_ph = (m_ph == 255)
+                    full_ph[1:-1, 1:-1] &= full_ph[:-2, 1:-1] & full_ph[2:, 1:-1] & full_ph[1:-1, :-2] & full_ph[1:-1, 2:]
+                    lb_, db_ = light_ph[r0_:r1_, c0_:c1_], dark_ph[r0_:r1_, c0_:c1_]
+                    assert full_ph.sum() > 500, (key_ph, int(full_ph.sum()))
+                    diff_ph = np.abs(lb_[full_ph] - db_[full_ph]).max()
+                    assert diff_ph <= 2, (key_ph, int(diff_ph))                 # Foto unverändert
+                    clear_ph = (al_ph == 0)                                      # freigestellt: dunkler Grund
+                    if clear_ph.any():
+                        assert db_[clear_ph].mean() < 40, (key_ph, float(db_[clear_ph].mean()))
+                    if key_ph == "fluo":                                         # Pfeil und Text: hell auf Schwarz
+                        arrow_ph = (al_ph == 255) & (m_ph == 0)
+                        assert arrow_ph.sum() > 20 and db_[arrow_ph].mean() > 150, (int(arrow_ph.sum()),)
+                    assert light_ph[2, 2].min() > 240 and dark_ph[2, 2].max() < 15   # Fläche umgerechnet
+                    ink_ph = light_ph.sum(-1) < 150                              # Achsen, Text, Kurven: dunkel -> hell
+                    ink_ph[max(0, r0_ - 4):r1_ + 4, max(0, c0_ - 4):c1_ + 4] = False   # ohne das Foto
+                    assert ink_ph.sum() > 200, (key_ph, int(ink_ph.sum()))
+                    assert dark_ph[ink_ph].sum(-1).mean() > 500, (key_ph, float(dark_ph[ink_ph].sum(-1).mean()))
+                    checked_ph.append(f"{key_ph} {int(full_ph.sum())} px")
+            finally:
+                CT_ph.configure(w.canvas_is_dark())
+            report.append(f"Dark canvas keeps photos unchanged, axes and photo-pair arrow inverted "
+                          f"({', '.join(checked_ph) or 'no canvas effect'}): OK")
+        with section:
             for lang in ("en", "de"):
                 w.switch_lang(lang)
             import shiboken6 as _shb_end                                  # Beenden: alle Widgets vor dem Interpreter-

@@ -588,9 +588,9 @@ def find_sibling_drawing(cdxml_path, stale=None):
 def load_photo(path, remove_bg="auto", cache_dir=None):
     arr = open_any_image(path)
     if remove_bg in (False, None, "none", "false"):
-        return {"rgba": trim_uniform(arr), "pdf": None, "clip": None, "bg_method": "none"}
+        return {"rgba": trim_uniform(arr), "pdf": None, "clip": None, "bg_method": "none", "photo": True}
     out, m = remove_background(arr, remove_bg, cache_dir, path)
-    return {"rgba": out, "pdf": None, "clip": None, "bg_method": m}
+    return {"rgba": out, "pdf": None, "clip": None, "bg_method": m, "photo": True}
 
 
 def overlay_vectors(pdf_path, items):

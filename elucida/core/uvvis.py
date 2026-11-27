@@ -1594,6 +1594,7 @@ class Figure:
             a.set_axis_off()
             a._img_wh = (w, h)
             a._vector = (asset["pdf"], asset["clip"]) if asset.get("pdf") else None
+            a._photo = asset.get("photo")                # Foto: im dunklen Canvas unverändert (canvas_theme)
             self._set_axes_af(a, 0.5, 0.5, w, h)
             a._frame = None
             frame = im.get("frame", self.cfg.get("structure_frame") and str(im.get("id", "")).startswith("struktur"))

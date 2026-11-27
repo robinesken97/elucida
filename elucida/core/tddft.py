@@ -409,7 +409,8 @@ def _font(px):
 
 
 def compose_photo_pair(day, uv, text, height=900):
-    """Zwei Küvettenfotos nebeneinander, dazwischen Pfeil mit Beschriftung (z. B. '352 nm')."""
+    """Zwei Küvettenfotos nebeneinander, dazwischen Pfeil mit Beschriftung (z. B. '352 nm').
+    -> (RGBA, Deckkraft nur der Fotos): Pfeil und Text folgen im dunklen Canvas dem Design, die Fotos nicht."""
     def fit(a):
         im = Image.fromarray(a).convert("RGBA")
         return im.resize((max(1, int(im.width * height / im.height)), height), Image.LANCZOS)
@@ -419,6 +420,7 @@ def compose_photo_pair(day, uv, text, height=900):
     out = Image.new("RGBA", (W, height), (0, 0, 0, 0))
     out.paste(a, (0, 0), a)
     out.paste(b, (a.width + gap, 0), b)
+    photo = np.asarray(out)[..., 3].copy()
     d = ImageDraw.Draw(out)
     y = int(height * 0.58)
     x0, x1 = a.width + int(0.12 * gap), a.width + int(0.88 * gap)
@@ -431,7 +433,7 @@ def compose_photo_pair(day, uv, text, height=900):
         tb = d.textbbox((0, 0), text, font=fnt)
         d.text(((x0 + x1) / 2 - (tb[2] - tb[0]) / 2, y - (tb[3] - tb[1]) - int(height * 0.04)),
                text, font=fnt, fill=(0, 0, 0, 255))
-    return np.asarray(out)
+    return np.asarray(out), photo
 
 
 # ----------------------------------------------------------------------------

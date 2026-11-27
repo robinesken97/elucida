@@ -5175,12 +5175,12 @@ class FluoTab(FigureTab):
         day = self.photo_asset(st["photo_day"], st["bg_day"]) if st.get("photo_day") else None
         uv = self.photo_asset(st["photo_uv"], st["bg_uv"]) if st.get("photo_uv") else None
         if day and uv:
-            pair = X.compose_photo_pair(day["rgba"], uv["rgba"], f"{st['ex']:g} nm")
+            pair, photo = X.compose_photo_pair(day["rgba"], uv["rgba"], f"{st['ex']:g} nm")
             imgs.append({"file": "pair", "id": "fotos", "width": st.get("photo_w", 30) / 100, "prefer": "bottom-right",
-                         "_asset": {"rgba": pair, "pdf": None, "clip": None}})
+                         "_asset": {"rgba": pair, "pdf": None, "clip": None, "photo": photo}})
         elif day or uv:
             one = day or uv
             imgs.append({"file": "photo", "id": "fotos", "width": st.get("photo_w", 30) / 300, "prefer": "bottom-right",
-                         "_asset": {"rgba": one["rgba"], "pdf": None, "clip": None}})
+                         "_asset": {"rgba": one["rgba"], "pdf": None, "clip": None, "photo": True}})
         cfg["images"] = imgs
         return cfg, curves, labels, []
