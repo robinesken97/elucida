@@ -22051,10 +22051,10 @@ def _g_lanes(ctx):
             assert xl_t == core.fmt_text("\u03bb / nm Zqt", w.F.cfg) and "\\mathtt{\u03bb}" in xl_t, xl_t
             # Rückgängig / Wiederholen nehmen den eigenen Text mit
             w.undo()
-            pump(0.3)
+            _until(lambda: "Zqt" not in w.F.ax.xaxis.label.get_text(), pump, 15)   # war pump(0.3), CI arm64 zu knapp
             assert kx_t not in (w.series[g_t].get("text_over") or {}) and "Zqt" not in w.F.ax.xaxis.label.get_text()
             w.redo()
-            pump(0.3)
+            _until(lambda: w.F.ax.xaxis.label.get_text() == xl_t, pump, 15)
             assert w.F.ax.xaxis.label.get_text() == xl_t
             card_t, st_t = w.label_card, w.series[g_t]
             # Labels über dieselbe Karte: weiter nach label_over, ohne Ansicht (Format unverändert)
@@ -25203,7 +25203,9 @@ def _g_nmr_own(ctx):
                     assert ed_f1.path != tpl_f1.resolve() and not PRJ.cdxml_has_content(ed_f1.path), ed_f1.path
                 assert w.chemdraw_file("structure") != tpl_f1             # auch ChemDraw öffnet die leere Datei
                 w.undo()
-                pump(1.0)
+                _until(lambda: Path(w.compound.get("structure") or "").resolve() == tpl_f1.resolve()
+                       and (w.comp_tab.drawing_editor is None or w.comp_tab.drawing_editor.path == tpl_f1.resolve()),
+                       pump, 15)   # war pump(1.0), CI arm64 zu knapp (WebEngine)
                 assert Path(w.compound.get("structure") or "").resolve() == tpl_f1.resolve(), w.compound
                 if w.comp_tab.drawing_editor is not None:
                     assert w.comp_tab.drawing_editor.path == tpl_f1.resolve(), w.comp_tab.drawing_editor.path
