@@ -1885,6 +1885,9 @@ def _g_uvvis(ctx):
             can_bg = QTC_bg(fig_bg)
             ov_bg = w.ov_tab.st
             old_bg = copy_bg.deepcopy(dict(ov_bg))
+            # ein Worker: eine Rechnung des vorigen Abschnitts (NTO) laeuft noch zu Ende und hielt den Start hier auf
+            # (macOS Intel, gebaute App: > 5 s)
+            idle_bg(120.0)
             ORB_bg.render = fake_bg
             try:
                 F_bg, R_bg = v_bg._orbital_figure(list(cub_bg["els"]), np.asarray(cub_bg["xyz"], float), vol_bg,
@@ -20557,7 +20560,8 @@ def _g_lanes(ctx):
 
             def px_s3(x_):
                 return img_s3.pixelColor(int(x_ * dpr_s3), int(y_s3 * dpr_s3)).rgb()
-            sel_s3 = px_s3(x0_s3 + t_s3.columnWidth(1) // 2 + 30)    # Textzelle (neben dem Text)
+            sel_s3 = px_s3(x0_s3 + t_s3.columnWidth(1) - 6)          # Textzelle rechts vom Text (Windows/Linux:
+            # breitere Schrift, die Mitte +30 px traf eine Glyphe)
             assert sel_s3 != field_s3 and px_s3(STYLE._CellDelegate.SEL_BAR + 1) == sel_s3, \
                 (hex(sel_s3), hex(px_s3(4)))                         # Häkchen-Spalte ebenso grau
             assert sel_s3 == QC_s3(STYLE.colors()["sel"]).rgb(), hex(sel_s3)           # leise: Fläche wie gewählter Reiter
