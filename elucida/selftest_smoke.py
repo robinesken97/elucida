@@ -140,9 +140,20 @@ def run(section, report, out: Path, with_isnet: bool):
             st = ws.series["TEST-A"]
             assert st["mw"] and abs(st["mw"] - 95.10) < 0.05, st["mw"]
             st["bg"] = "isnet" if with_isnet else "grabcut"
-            ws.set_photo(str(photo), "TEST-A", render=False, sync=True)                # pillow-heif, onnxruntime/OpenCV
+            try:                                                # Fehlerbild: OpenCV-Stand der gebauten App
+                import cv2
+                cv = f"cv2 {cv2.__version__}"
+            except Exception as ex:                             # noqa: BLE001 – nur für die Meldung
+                cv = f"import cv2 failed: {type(ex).__name__}: {ex}"
+            from elucida.core import images as IMG
+            bg_log, log0 = [], IMG.LOG                          # Grund einer gescheiterten Freistellung (sonst nur im
+            IMG.LOG = lambda m="": (bg_log.append(str(m)), log0(m))   # Protokoll der Sitzung, nicht im Bericht)
+            try:
+                ws.set_photo(str(photo), "TEST-A", render=False, sync=True)            # pillow-heif, onnxruntime/OpenCV
+            finally:
+                IMG.LOG = log0
             bgm = st["photo_asset"]["bg_method"]
-            assert bgm == ("isnet" if with_isnet else "grabcut"), bgm
+            assert bgm == ("isnet" if with_isnet else "grabcut"), (bgm, cv, [m.strip() for m in bg_log if m.strip()])
             ws.render()
             files = ws.export_all(sm)
             assert files and all(f.exists() and f.stat().st_size > 200 for f in files), files
@@ -155,12 +166,21 @@ def run(section, report, out: Path, with_isnet: bool):
             if xlsx:
                 import openpyxl
                 assert openpyxl.load_workbook(xlsx[0]).sheetnames
-            report.append(f"smoke: start, UV-Vis project (rdkit, HEIC photo, background {bgm}, PDF/SVG/PNG export, "
-                          f"MuPDF): OK")
+            report.append(f"smoke: start, UV-Vis project (rdkit, HEIC photo, background {bgm} with {cv}, PDF/SVG/PNG "
+                          f"export, MuPDF): OK")
         with section:   # smoke: example project, all tabs
             assert ws is not None, "kein Fenster (voriger Abschnitt)"
-            d = ws.open_demo_publication(sm / "demo")
-            assert d and ws.open_project(Path(d) / "S3", ask=False, recent=False)
+            demo_log = []                                       # Grund im Bericht (Fehler, Rückfrage zum Speichern)
+
+            def demo_line(m):
+                demo_log.append(str(m))
+            ws.log_signal.connect(demo_line)
+            try:
+                d = ws.open_demo_publication(sm / "demo")
+                assert d, ("open_demo_publication", ws.statusBar().currentMessage(), demo_log[-6:])
+                assert ws.open_project(Path(d) / "S3", ask=False, recent=False), ("open_project S3", demo_log[-6:])
+            finally:
+                ws.log_signal.disconnect(demo_line)
             _pump(0.5)
             drawn = []
             for key in ws._TAB_ORDER:

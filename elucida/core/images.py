@@ -199,6 +199,7 @@ def _bg_grabcut(arr, work_px=500):
     mask = np.zeros((sh, sw), np.uint8)
     rect = (int(0.04 * sw), int(0.02 * sh), int(0.92 * sw), int(0.96 * sh))
     bgd, fgd = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
+    cv2.setRNGSeed(0)                                 # k-means in GrabCut: Startzustand wie in einem frischen Thread
     cv2.grabCut(cv2.cvtColor(small, cv2.COLOR_RGB2BGR), mask, rect, bgd, fgd, 6, cv2.GC_INIT_WITH_RECT)
     fg = np.isin(mask, (cv2.GC_FGD, cv2.GC_PR_FGD)).astype(np.uint8)
     fg = cv2.resize(fg, (w, h), interpolation=cv2.INTER_NEAREST)
