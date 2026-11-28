@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication
 
 from elucida.core import uvvis as core  # noqa: E402
 from elucida.core import images as IMG  # noqa: E402
+from elucida.core import gpu3d as GPU  # noqa: E402
 from elucida.app.i18n import T, get_lang, set_lang  # noqa: E402
 from elucida.tabs import base as TABS  # noqa: E402
 from elucida.app import project as PRJ  # noqa: E402
@@ -448,7 +449,8 @@ class MainWindow(QMainWindow):
         self._marked_tabs, self._views = {}, {}           # Punkt am Tab-Knopf (Tab -> Verbindung); Ansicht je Tab
         self._status.messageChanged.connect(self._place_toast)
         self.log_signal.connect(self._append_log)
-        core.LOG = IMG.LOG = lambda m="": self.log_signal.emit(str(m))
+        core.LOG = IMG.LOG = GPU.LOG = lambda m="": self.log_signal.emit(str(m))
+        GPU.configure(self.settings)                     # 3D über die Grafikkarte: Einstellung, Absturzmarker
         self.apply_theme()
         QGuiApplication.styleHints().colorSchemeChanged.connect(self._system_scheme_changed)
         self._mac_title = MAC.enabled()
@@ -633,6 +635,10 @@ class MainWindow(QMainWindow):
             msc.addAction(act)
         msc.addSeparator()
         msc.addAction(QAction(T("ui_scale_note"), self, enabled=False))
+        self.act_gpu = QAction(T("act_gpu"), self, checkable=True, checked=GPU.setting_on())
+        self.act_gpu.setToolTip(T("act_gpu_tip"))
+        self.act_gpu.toggled.connect(GPU.set_setting)
+        mf.addAction(self.act_gpu)
         ml = mb.addMenu(T("menu_lang"))
         grp = QActionGroup(self)
         for code, name in (("de", "Deutsch"), ("en", "English")):
@@ -6009,6 +6015,7 @@ def release_widgets(app):
     Interpreter-Ende (atexit, destroyQCoreApplication) die übrigen Widgets in beliebiger Reihenfolge ab –
     macOS-Absturz 2.3.7: pure virtual in ~QObject einer QCheckBox. Liste jedes Mal neu von Qt holen."""
     import shiboken6
+    GPU.release()                                        # verborgenes Fenster der 3D-Bilder (gpu3d)
     if "elucida.app.drawing_editor" in sys.modules:
         sys.modules["elucida.app.drawing_editor"].release_pages(app)
     for _ in range(10000):
@@ -6029,6 +6036,13 @@ def main():
             group = sys.argv[j + 1] if len(sys.argv) > j + 1 else ""
         from elucida.selftest import selftest
         sys.exit(selftest(outdir, "--selftest-isnet" in sys.argv, group))
+    if "--gpu-probe" in sys.argv:                         # versteckt: GPU-Test (Windows-PC), Ergebnis als Datei
+        i = sys.argv.index("--gpu-probe")
+        folder = sys.argv[i + 1] if len(sys.argv) > i + 1 and not sys.argv[i + 1].startswith("--") else "gpu_probe"
+        app = QApplication(sys.argv[:1])
+        rc = GPU.probe(folder)
+        release_widgets(app)
+        sys.exit(rc)
     global _OWN_SCALE
     had_scale = "QT_SCALE_FACTOR" in os.environ
     apply_ui_scale(QSettings(str(SETTINGS_FILE), QSettings.IniFormat) if SETTINGS_FILE

@@ -1605,6 +1605,12 @@ in `structures/`, and Undo shows it again.
 restarts Elucida and opens the same compound in the same tab again, on the project page the project, on the overview the
 overview (an open comparison or reaction path does not come back).
 
+**Format → 3D views on the graphics card** (on by default, this computer only): the graphics card renders orbital
+surfaces (NTO, 3D NICS, EPR spin density, ACID from a cube) in the preview; rotating stays at full resolution and the image
+is there right after releasing. Export, SI, Word and the thumbnails in the Export tab never use the graphics card (same
+pixels on every computer). If the graphics card does not work, Elucida renders without it (reason in the log); if a start
+breaks off while setting it up, it stays off on this computer until it is switched on here again.
+
 **Canvas dark / Canvas light** in the toolbar (moon = dark, sun = light; also Format → Canvas) switches; dark shows all plots, previews and editors on pure black. Hues stay (red stays
 red), dark colours are lightened so that they remain legible. Photos (cuvette photo, fluorescence photos) keep their colours in the preview; axes, text, curves and structures
 follow the dark canvas. This changes the screen only, never exports, stored files or the SI.

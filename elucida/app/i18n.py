@@ -510,6 +510,12 @@ TEXTS = {
     "menu_ui_scale": ("Oberflächengröße", "Interface Size"),
     "ui_scale_value": ("{v} %", "{v}%"),
     "ui_scale_note": ("Gilt nach dem Neustart, nur auf diesem Rechner", "Applies after restart, on this computer only"),
+    "act_gpu": ("3D-Ansichten über die Grafikkarte", "3D views on the graphics card"),
+    "act_gpu_tip": ("Orbitalflächen (NTO, 3D-NICS, EPR-Spindichte, ACID aus Cube) in der Vorschau auf der Grafikkarte rechnen: "
+                    "Drehen in voller Auflösung. Export, SI und Word rechnen immer ohne Grafikkarte. Nur dieser Rechner.",
+                    "Render orbital surfaces (NTO, 3D NICS, EPR spin density, ACID from cube) in the preview on the "
+                    "graphics card: rotating at full resolution. Export, SI and Word never use the graphics card. "
+                    "This computer only."),
     "ui_scale_restart": ("Oberflächengröße {v} %: gilt nach dem Neustart von Elucida", "Interface size {v}%: applies after restarting Elucida"),
     "restart_now": ("Jetzt neu starten", "Restart Now"),
     "restart_failed": ("Elucida ließ sich nicht neu starten. Bitte von Hand neu starten.",

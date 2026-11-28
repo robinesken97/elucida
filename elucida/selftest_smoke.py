@@ -91,7 +91,8 @@ def run(section, report, out: Path, with_isnet: bool):
             assert resource_path("assets") == ROOT / "assets", (resource_path("assets"), ROOT)
             need = ["assets/icon-light.svg", "assets/icon-dark.svg", "assets/icon.png", "assets/icon.ico",
                     "assets/octet/embedded.html", "assets/octet/bridge.js", "assets/octet/LICENSE",
-                    "assets/octet/THIRD_PARTY.md", "assets/mnova/elucida_export.qs"]
+                    "assets/octet/THIRD_PARTY.md", "assets/mnova/elucida_export.qs", "assets/shaders/orb.vert.qsb",
+                    "assets/shaders/orb1.frag.qsb", "assets/shaders/orb2.frag.qsb"]
             missing = [n for n in need if not (ROOT / n).is_file() or (ROOT / n).stat().st_size == 0]
             assert not missing, missing
             pngs = list((ROOT / "assets" / "png").glob("*.png"))
@@ -100,10 +101,13 @@ def run(section, report, out: Path, with_isnet: bool):
             assert pngs and lic and octl, (len(pngs), len(lic), len(octl))
             assert all(p.stat().st_size > 0 for p in pngs + lic), "leere Datei in assets"
             assert list((ROOT / "assets" / "octet" / "assets").glob("*.js")), "Octet-Skripte fehlen"
+            from PySide6.QtGui import QShader                # 3D-Shader der GPU-Vorschau (gpu3d) lesbar
+            for n in ("orb.vert.qsb", "orb1.frag.qsb", "orb2.frag.qsb"):
+                assert QShader.fromSerialized((ROOT / "assets" / "shaders" / n).read_bytes()).isValid(), n
             for lang in ("de", "en"):                        # Handbuch: Verweise auf die Online-Fassung
                 assert TABS.MANUAL[lang].startswith("docs/manual.") and TABS.README_URL.startswith("https://")
             report.append(f"smoke: repo files via elucida.ROOT ({len(pngs)} icons, {len(lic)} licence texts, Octet, "
-                          f"Mnova script, manual links): OK")
+                          f"Mnova script, 3D shaders, manual links): OK")
         with section:   # smoke: text recognition (RapidOCR models in the package)
             from elucida.core import ocr as OCR
             frozen = bool(getattr(sys, "frozen", False))

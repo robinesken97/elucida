@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
+from elucida.core import gpu3d as GPU  # noqa: E402
 from elucida.formats.elements import BOHR, ELEMENTS  # noqa: E402,F401
 from elucida.formats.orbital_files import (read_cube, parse_molden)  # noqa: E402,F401  (Leser in elucida/formats)
 
@@ -1148,13 +1149,17 @@ class OrbitalImage(AxesImage):
     """Orbital als Bild über den Atomen. Gerechnet wird erst beim Zeichnen, in der Auflösung des Ziels (Vorschau:
     Bildschirmpixel, Export: dpi, höchstens ORB_MAX_DPI) und neu nur, wenn Ansicht oder Größe sich ändern.
     Volles Bild einer sichtbaren Vorschau mit `canvas.orb_background` (XrayMouse) im Hintergrund (1.5.0, Fenster bleibt
-    bedienbar): bis zum Ergebnis bleibt das vorige Bild stehen. Speichern (Export, SI, Kacheln) und Ziehen: synchron."""
+    bedienbar): bis zum Ergebnis bleibt das vorige Bild stehen. Speichern (Export, SI, Kacheln) und Ziehen: synchron.
+    Mit GPU (`gpu3d`, nur Vorschau): Ziehen in voller Auflösung, volles Bild sofort; Speichern rechnet immer numpy."""
+
+    gpu = True                                                    # Raycasting (`render`) kann auf die GPU (gpu3d)
 
     def __init__(self, ax, fig_obj, orb):
         super().__init__(ax, origin="lower", interpolation="bilinear")
         self.F, self.orb = fig_obj, orb
         self.drag = False
         self._key = self._want = None
+        self._gpu = False                                         # gezeigtes Bild von der GPU (nie speichern)
         self.set_data(np.zeros((2, 2, 4), np.float32))
         x0, x1 = ax.get_xlim()
         y0, y1 = ax.get_ylim()
@@ -1168,7 +1173,7 @@ class OrbitalImage(AxesImage):
         w_in = ax.get_position().width * ax.figure.get_figwidth()
         dpi = bb.width * magnification / max(w_in, 1e-9)
         f = min(1.0, ORB_MAX_DPI / max(dpi, 1e-9))
-        if self.drag:
+        if self.drag and not (self.gpu and GPU.wanted()):         # GPU: auch beim Ziehen volle Auflösung
             f /= max(DRAG_SCALE, np.sqrt(bb.width * bb.height * (magnification * f) ** 2 / DRAG_PX))
         W = max(2, int(round(bb.width * magnification * f)))
         H = max(2, int(round(bb.height * magnification * f)))
@@ -1177,7 +1182,8 @@ class OrbitalImage(AxesImage):
 
     def make_image(self, renderer, magnification=1.0, unsampled=False):
         W, H, key = self._target(magnification)
-        if key != self._key and key != self._want:
+        canvas = self.figure.canvas
+        if (key != self._key and key != self._want) or (self._gpu and canvas is not None and canvas.is_saving()):
             xl, yl = key[3], key[4]
             o = self.orb
             occ, zoff = self.F.occluder(xl, yl, W, H)
@@ -1187,12 +1193,12 @@ class OrbitalImage(AxesImage):
             self._job(key, render, (o["vol"], o["iso"], self.F.R.copy(), np.array(self.F.center), zoff, xl, yl, W, H,
                                     o["plus"], o["minus"]),
                       dict(alpha=o.get("alpha", ORB_ALPHA), occ=occ - zoff, occ2=occ2, aa=not self.drag,
-                           step_frac=DRAG_STEP if self.drag else 0.5))
+                           step_frac=DRAG_STEP if self.drag and not (self.gpu and GPU.wanted()) else 0.5))
         return super().make_image(renderer, magnification, unsampled)
 
-    def show(self, key, img):
+    def show(self, key, img, gpu=False):
         """Fertiges Bild für key übernehmen."""
-        self._key = key
+        self._key, self._gpu = key, gpu
         self.set_data(img)
         self.set_extent((key[3][0], key[3][1], key[4][0], key[4][1]))
         canvas = self.figure.canvas if self.figure is not None else None
@@ -1206,6 +1212,20 @@ class OrbitalImage(AxesImage):
             _COLLECT[-1].append((self, key, fn, args, kw))
             return
         canvas = self.figure.canvas
+        preview = (not canvas.is_saving() and (self.drag or getattr(canvas, "orb_background", False) and canvas.isVisible()))
+        if preview and fn is render and GPU.wanted():             # GPU: nur Vorschau, Fehler -> wie ohne GPU
+            try:
+                img = GPU.render(*args, **kw)
+            except Exception as ex:                               # noqa: BLE001
+                GPU.fail(str(ex) or type(ex).__name__)
+                if self.drag:                                     # nächstes Ziehbild rechnet die CPU (kleiner)
+                    self.stale = True
+                    return
+            else:
+                drop(self)
+                self._want = None
+                self.show(key, img, gpu=True)
+                return
         if (self.drag or not getattr(canvas, "orb_background", False) or canvas.is_saving()
                 or getattr(self, "_bg_failed", False) or not canvas.isVisible()):
             drop(self)                                            # eine laufende Rechnung ist damit überholt

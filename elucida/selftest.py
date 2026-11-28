@@ -1920,10 +1920,10 @@ def _g_uvvis(ctx):
                 can_bg.draw()
                 started_bg()
                 buf_bg = io_bg.BytesIO()
-                fig_bg.savefig(buf_bg, format="png", dpi=150)
+                fig_bg.savefig(buf_bg, format="png", dpi=300)       # ueber der Vorschau auch bei Bildschirmfaktor 2
                 sv_bg = [c_ for c_ in calls_bg if c_["main"]]
                 assert len(sv_bg) == 1 and sv_bg[0]["state"] == "done" and sv_bg[0]["aa"], calls_bg
-                assert sv_bg[0]["W"] > 1.2 * calls_bg[0]["W"], (sv_bg, calls_bg[0])   # 150 dpi statt Bildschirm
+                assert sv_bg[0]["W"] > 1.2 * calls_bg[0]["W"], (sv_bg, calls_bg[0])   # 300 dpi statt Bildschirm
                 idle_bg()
                 # 4) Ziehen: Ziehbild sofort im GUI-Thread, eine laufende Rechnung ist ueberholt
                 del calls_bg[:]
@@ -2016,6 +2016,182 @@ def _g_uvvis(ctx):
             report.append("3D in the background (no freeze, stale render cancelled, save and drag synchronous, NTO in "
                           "the background with fixed arrangement, reset view greyed when automatic, NBO labels "
                           "independent of preview dpi): OK")
+
+        with section:
+            # 3D auf der Grafikkarte (1.5.0, core/gpu3d): Selbsttest sonst ueberall numpy; Vorschau und Ziehen -> GPU
+            # (Ziehen in voller Aufloesung), Speichern (Export/SI/Kacheln) -> numpy, auch wenn das gezeigte Bild von der GPU
+            # kam; NTO: GPU-Bilder nur unter eigenem Schluessel, Export rechnet numpy; Fehler -> Hintergrund (nie
+            # synchron), Absturzmarker schaltet ab, --disable-gpu; Shader lesbar; echte GPU nur, wenn die Plattform QRhi
+            # kann (CI/offscreen: Rueckfall mit Grund)
+            import copy as copy_g
+            import io as io_g
+            import time as t_g
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as QTC_g
+            from PySide6.QtCore import QSettings as QS_g
+            from PySide6.QtGui import QShader as QSh_g
+            from elucida.app import demo as DEMO_g
+            from elucida.core import gpu3d as GPU_g
+            from elucida.core import orbitals as ORB_g
+            from elucida.tabs import nto as NTOV_g
+            assert not GPU_g.wanted(), "selftest must render with numpy"
+            for n_ in ("orb.vert.qsb", "orb1.frag.qsb", "orb2.frag.qsb"):
+                assert QSh_g.fromSerialized((ROOT / "assets" / "shaders" / n_).read_bytes()).isValid(), n_
+            S_g = GPU_g._S
+            old_g = dict(settings=S_g["settings"], ok=S_g["ok"], reason=S_g["reason"])
+            log_g, old_log_g = [], GPU_g.LOG
+            real_gpu_g, real_cpu_g = GPU_g.render, ORB_g.render
+            calls_g = []
+
+            def fake_gpu_g(*a, **kw):
+                # Attrappe der GPU: leeres Bild (unterscheidbar), merkt Groesse und Qualitaet
+                calls_g.append(dict(dev="gpu", W=a[7], H=a[8], aa=kw.get("aa", True), step=kw.get("step_frac", 0.5)))
+                return np.zeros((a[8], a[7], 4), np.float32)
+
+            def cpu_g(*a, **kw):
+                calls_g.append(dict(dev="cpu", W=a[7], H=a[8], aa=kw.get("aa", True)))
+                return real_cpu_g(*a, **kw)
+
+            def idle_g(limit=20.0):
+                t0_ = t_g.perf_counter()
+                while (ORB_g.busy() or t_g.perf_counter() - t0_ < 0.1) and t_g.perf_counter() - t0_ < limit:
+                    QApplication.processEvents()
+                    t_g.sleep(0.005)
+                assert not ORB_g.busy(), "background render did not finish"
+
+            st_g = QS_g(str(out / "gpu_settings.ini"), QS_g.IniFormat)
+            v_g = w.ov_tab.nto
+            ov_g = w.ov_tab.st
+            old_ov_g = copy_g.deepcopy(dict(ov_g))
+            GPU_g.LOG = log_g.append
+            try:
+                # 1) Absturzmarker eines abgebrochenen Starts: GPU aus, bis der Nutzer sie wieder einschaltet
+                st_g.setValue(GPU_g.SETTING, True)
+                st_g.setValue(GPU_g.PENDING, "1")
+                GPU_g.configure(st_g)
+                assert not GPU_g.setting_on() and not st_g.value(GPU_g.PENDING) and log_g, log_g
+                GPU_g.force_off(False)
+                assert not GPU_g.wanted()
+                GPU_g.set_setting(True)
+                assert GPU_g.setting_on() and GPU_g.wanted()
+                sys.argv.append("--disable-gpu")
+                try:
+                    assert not GPU_g.wanted()
+                finally:
+                    sys.argv.remove("--disable-gpu")
+                # 2) Vorschau -> GPU; Speichern -> numpy (gleiche Bytes wie ohne GPU); Ziehen -> GPU in voller Aufloesung
+                S_g.update(ok=True)                              # Attrappe statt echter Einrichtung
+                GPU_g.render, ORB_g.render = fake_gpu_g, cpu_g
+                cub_g = ORB_g.read_cube(ORB_g.make_test_cube(out / "input" / "gpu_test.cube", n=24))
+                vol_g = ORB_g.Volume(cub_g["data"][0], cub_g["origin"], cub_g["axes"])
+                fig_g = MplFigure(figsize=(4, 4), dpi=100)
+                can_g = QTC_g(fig_g)
+                F_g, R_g = v_g._orbital_figure(list(cub_g["els"]), np.asarray(cub_g["xyz"], float), vol_g,
+                                               ORB_g.iso_for_fraction(vol_g.data, ORB_g.ISO_FRACTION), None, fig_g)
+                can_g.resize(400, 400)
+                can_g.show()
+                can_g.orb_background = True                      # wie XrayMouse
+                art_g = F_g.orb_art
+                can_g.draw()
+                assert [c_["dev"] for c_ in calls_g] == ["gpu"] and calls_g[0]["aa"] and art_g._gpu, calls_g
+                assert not ORB_g.busy()
+                full_g = (calls_g[0]["W"], calls_g[0]["H"])
+                del calls_g[:]
+                buf1_g = io_g.BytesIO()
+                fig_g.savefig(buf1_g, format="png", dpi=fig_g.dpi)   # gleiche Groesse wie die Vorschau
+                assert [c_["dev"] for c_ in calls_g] == ["cpu"] and not art_g._gpu, calls_g
+                GPU_g.force_off(True)                            # dieselbe Ansicht ohne GPU frisch mit numpy speichern
+                art_g._key = None
+                buf2_g = io_g.BytesIO()
+                fig_g.savefig(buf2_g, format="png", dpi=fig_g.dpi)
+                assert buf1_g.getvalue() == buf2_g.getvalue(), "saved image differs with GPU on"
+                GPU_g.force_off(False)
+                F_g.set_drag(True)
+                F_g.set_view(XRAY.rot("y", 0.3) @ R_g)
+                del calls_g[:]
+                can_g.draw()
+                assert calls_g and calls_g[-1]["dev"] == "gpu" and not calls_g[-1]["aa"], calls_g
+                assert (calls_g[-1]["W"], calls_g[-1]["H"]) == full_g and calls_g[-1]["step"] == 0.5, (calls_g, full_g)
+                F_g.set_drag(False)
+                F_g.set_view(R_g)
+                can_g.draw()
+                # 3) Fehler der GPU: Protokollzeile, GPU aus, volles Bild im Hintergrund (nie synchron im GUI-Thread)
+                def broken_g(*a, **kw):
+                    raise RuntimeError("test failure")
+                GPU_g.render = broken_g
+                del calls_g[:], log_g[:]
+                F_g.set_view(XRAY.rot("x", 0.4) @ R_g)
+                can_g.draw()
+                assert S_g["ok"] is False and not GPU_g.wanted() and any("test failure" in m_ for m_ in log_g), log_g
+                assert ORB_g.busy(), "GPU failure must fall back to the background render"
+                idle_g()
+                assert calls_g and calls_g[-1]["dev"] == "cpu" and calls_g[-1]["aa"], calls_g
+                can_g.close()
+                # 4) NTO: Vorschau mit GPU-Bildern (eigener Schluessel), Export und SI rechnen numpy
+                GPU_g.render = fake_gpu_g
+                S_g.update(ok=True, reason="")
+                tn_g = DEMO_g.tddft_out(out / "input" / "nto_gpu.out", [(400.0, 0.80)], parts=[[(0, 1, 0.90)]],
+                                        n_occ=1, nto=[[(7, 8, 0.91)]])
+                c1_g = ORB_g.make_test_cube(out / "input" / "nto_gpu.mo7a.cube", n=24)
+                c2_g = out / "input" / "nto_gpu.mo8a.cube"
+                shutil.copy(c1_g, c2_g)
+                ov_g.update(entries=[dict(kind="calc", file=str(tn_g), label="calc.", color="#1764e8", visible=True,
+                                          own_norm=False, nlo=250.0, nhi=500.0, fwhm=0.3, shift=0.0)],
+                            mode="norm", stack=False, nlo=250.0, nhi=500.0)
+                k_g = NTOV_g.state_key({"file": str(tn_g)}, 0)
+                f_g, n_g = NTOV_g.NtoView.cube_pair([str(c1_g), str(c2_g)])
+                ov_g["nto"] = dict(items={k_g: dict(kind="cube", files=f_g, mos=n_g, state="S1", weight=None)},
+                                   sel=k_g, wmin=10.0, iso=0.0, si=True)
+                for k_ in [k_ for k_ in w.extra_cache if isinstance(k_, tuple) and k_[0] == "ntoimg"]:
+                    w.extra_cache.pop(k_)
+                del calls_g[:]
+                w.show()
+                w.main_tabs.setCurrentIndex(w._tab_keys.index("overlay"))
+                pump()
+                rtab_g = w.ov_tab.right_tabs
+                rtab_g.setCurrentIndex(next(j_ for j_ in range(rtab_g.count())
+                                            if rtab_g.widget(j_).isAncestorOf(v_g.page)))
+                v_g.sync()
+                v_g.refresh()
+                pump(0.3)
+                pr_g = v_g.pairs()[0]
+                key_g = v_g._img_key(pr_g, None)[0]
+                assert key_g + ("gpu",) in w.extra_cache and key_g not in w.extra_cache, list(w.extra_cache)[-4:]
+                assert calls_g and all(c_["dev"] == "gpu" for c_ in calls_g) and not ORB_g.busy(), calls_g
+                del calls_g[:]
+                imgs_g = v_g.images(pr_g)                       # Export/SI: numpy, nicht die (leeren) GPU-Bilder
+                assert calls_g and all(c_["dev"] == "cpu" for c_ in calls_g), calls_g
+                prev_g = w.extra_cache[key_g + ("gpu",)]["imgs"]  # Attrappe: ohne Orbital, nur Atome
+                assert not any(np.array_equal(a_, b_) for a_, b_ in zip(imgs_g, prev_g)), "NTO export used GPU images"
+                # 5) echte GPU: geht sie (Fenster mit QRhi), stimmt der Selbstcheck; sonst Rueckfall mit Grund
+                GPU_g.render, ORB_g.render = real_gpu_g, real_cpu_g
+                S_g.update(ok=None, reason="")
+                try:
+                    cpu_r_, gpu_r_ = GPU_g.check_scene(96, 72)
+                    d_r_, cov_r_ = GPU_g.compare(cpu_r_, gpu_r_)
+                    assert d_r_.mean() <= GPU_g.CHECK_MEAN and cov_r_ <= GPU_g.CHECK_COVER, (d_r_.mean(), cov_r_)
+                    real_g = "GPU " + S_g["reason"]
+                except Exception as ex_:                         # noqa: BLE001 – ohne QRhi (offscreen, CI)
+                    assert S_g["ok"] is False and S_g["reason"], (S_g, ex_)
+                    real_g = "fallback: " + S_g["reason"]
+                assert not [t_ for t_ in QApplication.topLevelWidgets() if t_.objectName() == "elucida_gpu3d"
+                            and t_.isVisible() and not t_.testAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)]
+            finally:
+                GPU_g.render, ORB_g.render = real_gpu_g, real_cpu_g
+                GPU_g.release()
+                GPU_g.force_off(True)
+                S_g.update(old_g)
+                GPU_g.LOG = old_log_g
+                try:
+                    idle_g()
+                except AssertionError:
+                    pass
+                ov_g.clear()
+                ov_g.update(old_ov_g)
+                w.ov_tab.right_tabs.setCurrentIndex(0)
+                w.ov_tab.render()
+            report.append("3D on the GPU (preview and full-resolution drag on the GPU, saving always numpy and "
+                          "byte-equal, NTO export numpy, GPU failure -> background, crash marker, --disable-gpu; "
+                          f"this run: {real_g.encode('ascii', 'replace').decode()}): OK")
 
         with section:
             # Export ins Projekt inkl. Excel-Report
@@ -25962,6 +26138,8 @@ def selftest(outdir, with_isnet=False, group=None):
     skipped_groups, fixture_groups = [], []
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
     QApplication.setApplicationVersion(APP_VERSION)
+    from elucida.core import gpu3d as GPU_st
+    GPU_st.force_off()                                   # Bilder überall numpy (gleiche Pixel auf jedem Rechner)
     try:
         ctx = dict(locals())                                 # Vorlauf (out, report, section, demo_pub, app …) für die Gruppen
         sel = set(group.split(",")) if group else None

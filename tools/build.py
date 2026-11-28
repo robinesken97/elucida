@@ -17,6 +17,11 @@ os.chdir(Path(__file__).resolve().parent.parent)     # Pfade relativ zur Repo-Wu
 # The embedded editor assets must be built before packaging.
 subprocess.run([sys.executable, "tools/build_octet.py"], check=True)
 
+# 3D-Shader der GPU-Vorschau (elucida/core/gpu3d.py) kommen als .qsb mit assets/; erzeugt von tools/make_shaders.py
+for _n in ("orb.vert.qsb", "orb1.frag.qsb", "orb2.frag.qsb"):
+    if not Path("assets/shaders", _n).is_file():
+        sys.exit(f"assets/shaders/{_n} missing: run python tools/make_shaders.py")
+
 # Versionsnummer nur an einer Stelle pflegen: APP_VERSION in elucida/__init__.py
 VERSION = re.search(r'^APP_VERSION = "([^"]+)"', Path("elucida/__init__.py").read_text(encoding="utf-8"), re.M).group(1)
 

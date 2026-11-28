@@ -237,6 +237,8 @@ class MeshImage:
         from elucida.core import orbitals as ORB
 
         class _Img(ORB.OrbitalImage):
+            gpu = False                                       # Dreiecksnetz: immer numpy, beim Ziehen gröber
+
             def make_image(self, renderer, magnification=1.0, unsampled=False):
                 W, H, key = self._target(magnification)
                 if key != self._key and key != self._want:

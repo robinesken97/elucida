@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QGroupBox
 from elucida.app import project as PRJ
 from elucida.app import style as STYLE
 from elucida.app.i18n import T
+from elucida.core import gpu3d as GPU
 from elucida.core import orbitals as ORB
 from elucida.core import tddft as X
 from elucida.formats import nto as NTO
@@ -33,6 +34,7 @@ DEFAULTS = dict(items={}, sel=None, wmin=10.0, iso=0.0, si=True)
 MAX_PAIRS = 4                                    # mehr Paare über der Schwelle sind praktisch nie sinnvoll lesbar
 IMG_DPI = 200
 DRAG_DPI = 100                                   # Ziehbild (4 Zoll) höchstens so fein: Drehen bleibt flüssig
+GPU_DRAG_DPI = 150                               # … mit GPU (gpu3d): feiner; matplotlib (Atome, 4 Figuren) bremst, nicht die GPU
 
 
 def state_key(src, k):
@@ -433,11 +435,32 @@ class NtoView:
         view = None if auto else (self.item(s) or {}).get("view")
         return ("ntoimg", repr(srcs), float(self.st.get("iso", 0.0)), repr(view)), srcs, view
 
-    def rendered(self, pairs, s=None, auto=False):
+    def rendered(self, pairs, s=None, auto=False, preview=False):
         """-> dict(imgs, R, ext, crop (x0, y0) in Pixeln des vollen Bilds); Ansicht = eigene Drehung des Zustands
-        (`view` im Eintrag) oder automatisch (auto: immer die automatische, sie legt die Anordnung fest)."""
+        (`view` im Eintrag) oder automatisch (auto: immer die automatische, sie legt die Anordnung fest).
+        preview: zuerst die GPU-Bilder der Vorschau (`_render_gpu`, eigener Schlüssel), Export und SI nie."""
         key, srcs, view = self._img_key(pairs, s, auto)
+        if preview and key + ("gpu",) in self.tab.main.extra_cache:
+            return self.tab.main.extra_cache[key + ("gpu",)]
         return self.tab.cache(key, lambda: self._finish(self._prepare(srcs, view)))
+
+    def _render_gpu(self, pairs, s):
+        """GPU (1.5.0): eigene und automatische Ansicht sofort, nur für die Vorschau (Schlüssel + "gpu"; Export, SI und
+        Kacheln rechnen numpy über `rendered`). Fehler -> Ausnahme (Aufrufer fällt auf den Hintergrund zurück)."""
+        cache = self.tab.main.extra_cache
+        for auto in (False, True):
+            key, srcs, view = self._img_key(pairs, s, auto)
+            if key in cache or key + ("gpu",) in cache:
+                continue
+            prep, jobs = self._prepare(srcs, view), []
+            with ORB.collecting(jobs):                            # Orbitalbilder nur anmelden, nicht rechnen
+                for fig in prep["figs"]:
+                    self._png(fig)
+            for art, k, fn, a, kw in jobs:
+                if fn is not ORB.render:
+                    raise RuntimeError("no GPU path for " + getattr(fn, "__name__", "?"))
+                art.show(k, GPU.render(*a, **kw))
+            cache[key + ("gpu",)] = self._finish(prep)
 
     def _prepare(self, srcs, view):
         """Figuren aller Orbitale (GUI-Thread): gemeinsame Ansicht und Ausdehnung."""
@@ -519,10 +542,10 @@ class NtoView:
         h, w = imgs[0].shape[:2]
         return w > 1.6 * h
 
-    def is_wide(self, pairs, s=None):
+    def is_wide(self, pairs, s=None, preview=False):
         """Anordnung aus der automatischen Ansicht (1.5.0): eine eigene Drehung ändert sie nicht (vorher sprang das Bild
         beim Drehen von übereinander nach nebeneinander)."""
-        return self.wide(self.rendered(pairs, s, auto=True)["imgs"])
+        return self.wide(self.rendered(pairs, s, auto=True, preview=preview)["imgs"])
 
     def draw(self, fig, pairs, imgs, wide=None):
         """Je Paar Loch → Teilchen mit Gewicht über dem Pfeil. Normal: Paare untereinander (Loch | Pfeil | Teilchen);
@@ -593,8 +616,15 @@ class NtoView:
         self._pending = bool(pairs) and not self.page.isVisible()
         if self._pending:                                     # Bilder (Raycasting) erst beim Anzeigen der Seite
             return
+        cache = self.tab.main.extra_cache
+        if pairs and GPU.wanted():                            # Seite sichtbar (sonst oben zurück)
+            try:                                              # GPU: Vorschaubilder sofort (eigener Schlüssel)
+                self._render_gpu(pairs, s)
+            except Exception as ex:                           # noqa: BLE001 – weiter wie ohne GPU (Hintergrund)
+                GPU.fail(str(ex) or type(ex).__name__)
         if (pairs and self._ims and self._drag_key and self._drag_key[0] == s["key"] and self.canvas.isVisible()
-                and any(self._img_key(pairs, s, a)[0] not in self.tab.main.extra_cache for a in (False, True))):
+                and any(k not in cache and k + ("gpu",) not in cache
+                        for k in (self._img_key(pairs, s, a)[0] for a in (False, True)))):
             try:                                              # gleicher Zustand, neue Ansicht/Isowert: im Hintergrund
                 self._render_later(pairs, s)
                 return
@@ -610,8 +640,8 @@ class NtoView:
             self.canvas.draw_idle()
             return
         try:
-            self._shown_r = self.rendered(pairs, s)
-            imgs, wide = self._shown_r["imgs"], self.is_wide(pairs, s)
+            self._shown_r = self.rendered(pairs, s, preview=True)
+            imgs, wide = self._shown_r["imgs"], self.is_wide(pairs, s, preview=True)
         except Exception as ex:
             self.tab.main.log_signal.emit(f"NTO: {ex}")
             self.canvas.hide()
@@ -624,7 +654,7 @@ class NtoView:
         self.texts.fill(self)
         self._drag_key = (s["key"], repr(pairs), float(self.st.get("iso", 0.0)), repr(self.item(s).get("view")))
         self.canvas.draw_idle()
-        cap = self.caption_html(s, pairs)
+        cap = self.caption_html(s, pairs, preview=True)
         self.txt_cap.setText("<b>Figure Sn</b>: " + cap)
 
     # -- Unterschrift, SI, Export ------------------------------------------------------------------
@@ -636,7 +666,7 @@ class NtoView:
         except Exception:
             return ""
 
-    def caption_html(self, s=None, pairs=None, name=None):
+    def caption_html(self, s=None, pairs=None, name=None, preview=False):
         s = s or self.current()
         if s is None:
             return ""
@@ -655,7 +685,7 @@ class NtoView:
         if lev:
             txt += f" at the {html.escape(lev)} level of theory"
         try:
-            wide = self.is_wide(pairs, s)
+            wide = self.is_wide(pairs, s, preview)
         except Exception:
             wide = False
         txt += ": hole (top) and particle (bottom)" if wide else ": hole (left) and particle (right)"
@@ -764,7 +794,7 @@ class _DragView:
         if not pairs or not v._ims:
             return False
         self._pairs = pairs
-        self._r = getattr(v, "_shown_r", None) or v.rendered(pairs, s)   # Maßstab/Ausschnitt des gezeigten Bilds
+        self._r = getattr(v, "_shown_r", None) or v.rendered(pairs, s, preview=True)   # Maßstab/Ausschnitt des Ruhebilds
         view = (v.item(s) or {}).get("view")                   # Drehung: zuletzt gewählte (Bild evtl. noch in Arbeit)
         self.R = np.array(view, float).reshape(3, 3) if view and len(view) == 9 else self._r["R"].copy()
         return True
@@ -777,7 +807,8 @@ class _DragView:
         v, r = self.v, self._r
         ax = v._ims[0][0]
         crop_w = max(1, v._ims[0][1].get_array().shape[1])
-        dpi = int(min(DRAG_DPI, max(30, IMG_DPI * ax.bbox.width / crop_w)))   # höchstens Bildschirmauflösung
+        cap = GPU_DRAG_DPI if GPU.wanted() else DRAG_DPI
+        dpi = int(min(cap, max(30, IMG_DPI * ax.bbox.width / crop_w)))   # höchstens Bildschirmauflösung
         for _, im in v._ims:
             im.set_interpolation("bilinear")                      # Lanczos kostete beim Ziehen ~10 ms je Bild
         self._figs = []

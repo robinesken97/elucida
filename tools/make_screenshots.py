@@ -144,6 +144,7 @@ def main(outdir=ROOT / "docs" / "screenshots"):
         G.SETTINGS_FILE = work / "settings.ini"           # nicht die echten Benutzereinstellungen
         app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
         QApplication.setApplicationVersion(G.APP_VERSION)
+        G.GPU.force_off()                                 # 3D-Bilder numpy wie im Selbsttest (gleiche Pixel überall)
         w = G.MainWindow()
         w.settings.setValue("update_auto", False)
         w.resize(*SIZE)

@@ -1671,6 +1671,12 @@ leere Zeichnung; die bisherige Datei bleibt unverändert in `structures/`, Rück
 Einblendung speichert, startet Elucida neu und öffnet wieder dieselbe Verbindung im selben Tab, auf der Projektseite das
 Projekt, auf der Übersicht die Übersicht (ein offener Vergleich oder Reaktionspfad kommt nicht wieder).
 
+**Format → 3D-Ansichten über die Grafikkarte** (Standard an, nur auf diesem Rechner): Orbitalflächen (NTO, 3D-NICS,
+EPR-Spindichte, ACID aus einem Cube) rechnet in der Vorschau die Grafikkarte; Drehen bleibt in voller Auflösung, nach dem
+Loslassen ist das Bild sofort da. Export, SI, Word und die Vorschaubilder im Tab Export rechnen immer ohne Grafikkarte
+(gleiche Pixel auf jedem Rechner). Geht die Grafikkarte nicht, rechnet Elucida still ohne sie (Grund im Protokoll); bricht
+ein Start dabei ab, bleibt sie auf diesem Rechner aus, bis sie hier wieder eingeschaltet wird.
+
 **Canvas dunkel / Canvas hell** in der Werkzeugleiste (Mond = dunkel, Sonne = hell; auch Format → Canvas) schaltet um; dunkel zeigt alle Diagramme, Vorschauen und Editoren auf reinem Schwarz. Farbtöne
 bleiben (Rot bleibt Rot), dunkle Farben werden aufgehellt, damit sie lesbar sind. Fotos (Küvettenfoto, Fluoreszenzfotos) behalten in der Vorschau ihre Farben; Achsen, Text, Kurven und Strukturen folgen dem
 dunklen Canvas. Das betrifft nur den Bildschirm, nie Exporte, gespeicherte Dateien oder die SI.
