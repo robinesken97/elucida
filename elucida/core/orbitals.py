@@ -1184,17 +1184,21 @@ class OrbitalImage(AxesImage):
         W, H, key = self._target(magnification)
         canvas = self.figure.canvas
         if (key != self._key and key != self._want) or (self._gpu and canvas is not None and canvas.is_saving()):
-            xl, yl = key[3], key[4]
-            o = self.orb
-            occ, zoff = self.F.occluder(xl, yl, W, H)
-            occ2 = None if self.drag else self.F.occluder(xl, yl, 2 * W, 2 * H)[0] - zoff
-            o["vol"].grad()                                       # Zwischenspeicher im GUI-Thread füllen
-            surface_points(o["vol"], o["iso"])
-            self._job(key, render, (o["vol"], o["iso"], self.F.R.copy(), np.array(self.F.center), zoff, xl, yl, W, H,
-                                    o["plus"], o["minus"]),
-                      dict(alpha=o.get("alpha", ORB_ALPHA), occ=occ - zoff, occ2=occ2, aa=not self.drag,
-                           step_frac=DRAG_STEP if self.drag and not (self.gpu and GPU.wanted()) else 0.5))
+            self._request(W, H, key)
         return super().make_image(renderer, magnification, unsampled)
+
+    def _request(self, W, H, key):
+        """Bild W×H für key anfordern (`_job`); MeshImage rechnet das Dreiecksnetz."""
+        xl, yl = key[3], key[4]
+        o = self.orb
+        occ, zoff = self.F.occluder(xl, yl, W, H)
+        occ2 = None if self.drag else self.F.occluder(xl, yl, 2 * W, 2 * H)[0] - zoff
+        o["vol"].grad()                                           # Zwischenspeicher im GUI-Thread füllen
+        surface_points(o["vol"], o["iso"])
+        self._job(key, render, (o["vol"], o["iso"], self.F.R.copy(), np.array(self.F.center), zoff, xl, yl, W, H,
+                                o["plus"], o["minus"]),
+                  dict(alpha=o.get("alpha", ORB_ALPHA), occ=occ - zoff, occ2=occ2, aa=not self.drag,
+                       step_frac=DRAG_STEP if self.drag and not (self.gpu and GPU.wanted()) else 0.5))
 
     def show(self, key, img, gpu=False):
         """Fertiges Bild für key übernehmen."""
@@ -1232,7 +1236,7 @@ class OrbitalImage(AxesImage):
             self._want = None
             self.show(key, fn(*args, **kw))
             return
-        self._adopt(canvas)
+        self._adopt(canvas, key)
         self._want = key
 
         def done(res):
@@ -1249,9 +1253,11 @@ class OrbitalImage(AxesImage):
             canvas.draw_idle()
         background(self, lambda cancel: fn(*args, cancel=cancel, **kw), done)
 
-    def _adopt(self, canvas):
+    def _adopt(self, canvas, key):
         """Neu aufgebaute Abbildung (Drehen speichert die Ansicht und baut sie neu): das zuletzt gezeigte Bild eines nicht
-        mehr gezeichneten Vorgängers bleibt Platzhalter, seine Rechnung ist überholt."""
+        mehr gezeichneten Vorgängers bleibt Platzhalter, seine Rechnung ist überholt. Nur bei derselben Drehung (Loslassen
+        nach dem Ziehen); sonst (Startansicht, Rückgängig) ein grobes Bild wie beim Ziehen, nie Gerüst und Fläche in
+        verschiedenen Drehungen (Windows-Bericht 1.5.0: ACID nach „Startansicht“ 3 s gemischt)."""
         prev = canvas.__dict__.get("_orb_shown")
         if prev is None or prev is self or (prev.axes is not None and prev.axes in self.figure.axes
                                             and prev in prev.axes.images):
@@ -1259,8 +1265,26 @@ class OrbitalImage(AxesImage):
         drop(prev)
         canvas.__dict__.pop("_orb_shown", None)
         if self._key is None:
-            self.set_data(prev.get_array())
-            self.set_extent(prev.get_extent())
+            if same_view(prev._key, key):
+                self.set_data(prev.get_array())
+                self.set_extent(prev.get_extent())
+            else:
+                self._coarse()
+
+    def _coarse(self):
+        """Platzhalter in Ziehqualität, synchron (ein Ziehbild: wenige ms); das volle Bild kommt im Hintergrund."""
+        self.drag = True
+        try:
+            W, H, key = self._target(1.0)
+            self._request(W, H, key)
+        finally:
+            self.drag = False
+
+
+def same_view(a, b, tol=1e-4):
+    """Zwei Bildschlüssel (W, H, R-Bytes, xlim, ylim) zeigen dieselbe Drehung (gespeicherte ist auf 6 Stellen gerundet).
+    Größe und Achsengrenzen egal: das Bild sitzt über seine Ausdehnung in Datenkoordinaten richtig über den Atomen."""
+    return a is not None and b is not None and np.allclose(np.frombuffer(a[2]), np.frombuffer(b[2]), atol=tol)
 
 
 def surface_points(vol: Volume, iso):

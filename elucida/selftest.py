@@ -1943,6 +1943,26 @@ def _g_uvvis(ctx):
                 can_bg.draw()
                 idle_bg()
                 assert calls_bg[-1]["state"] == "done" and calls_bg[-1]["aa"] and not calls_bg[-1]["main"], calls_bg
+                # 4b) Neuaufbau auf derselben Leinwand (Loslassen, Startansicht): gleiche Ansicht -> voriges Bild bleibt
+                #     Platzhalter; andere Ansicht -> sofort ein grobes Bild der neuen Ansicht, nie Geruest und Flaeche in
+                #     verschiedenen Drehungen (Windows-Bericht 1.5.0, ACID nach "Startansicht")
+                assert ORB_bg.same_view(art_bg._key, art_bg._key[:2] + art_bg._key[2:])
+                for R_new_, same_ in ((F_bg.R.copy(), True), (R_bg, False)):
+                    del calls_bg[:]
+                    fig_bg.clear()
+                    F2_bg, _ = v_bg._orbital_figure(list(cub_bg["els"]), np.asarray(cub_bg["xyz"], float), vol_bg,
+                                                    ORB_bg.iso_for_fraction(vol_bg.data, ORB_bg.ISO_FRACTION), R_new_, fig_bg)
+                    can_bg.draw()
+                    a2_bg = F2_bg.orb_art
+                    main_bg = [c_ for c_ in calls_bg if c_["main"]]
+                    if same_:
+                        assert not main_bg and a2_bg._key is None and a2_bg.get_array().shape[0] > 2, calls_bg
+                    else:
+                        assert len(main_bg) == 1 and not main_bg[0]["aa"] and np.allclose(main_bg[0]["R"], R_new_), calls_bg
+                        assert a2_bg._key is not None and ORB_bg.same_view(a2_bg._key, a2_bg._want), (a2_bg._key, a2_bg._want)
+                    idle_bg()
+                    assert calls_bg[-1]["aa"] and not calls_bg[-1]["main"] and a2_bg._key[2] == F2_bg.R.tobytes(), calls_bg
+                    art_bg = a2_bg
                 can_bg.close()
                 # 5) NTO: Anordnung aus der automatischen Ansicht, neue Drehung im Hintergrund, Knopf unter Darstellung
                 tn_bg = DEMO_bg.tddft_out(out / "input" / "nto_bg.out", [(400.0, 0.80)], parts=[[(0, 1, 0.90)]],
@@ -2076,6 +2096,14 @@ def _g_uvvis(ctx):
                 assert not GPU_g.wanted()
                 GPU_g.set_setting(True)
                 assert GPU_g.setting_on() and GPU_g.wanted()
+                # Format-Menue: Aus/An sofort in der Datei (nicht erst beim Beenden) und je eine Protokollzeile
+                del log_g[:]
+                GPU_g.set_setting(False)
+                assert QS_g(str(out / "gpu_settings.ini"), QS_g.IniFormat).value(GPU_g.SETTING) in (False, "false")
+                assert log_g == ["3D: CPU (switched off)"], log_g
+                GPU_g.set_setting(True)
+                assert QS_g(str(out / "gpu_settings.ini"), QS_g.IniFormat).value(GPU_g.SETTING) in (True, "true")
+                assert len(log_g) == 2 and log_g[1].startswith("3D: GPU"), log_g
                 sys.argv.append("--disable-gpu")
                 try:
                     assert not GPU_g.wanted()
@@ -9005,6 +9033,35 @@ def _g_dft(ctx):
             big_s_.setDevicePixelRatio(2.0)
             half_s_ = CTs_.dark_image(big_s_, half=True)                              # halbe Auflösung, gleiche Fläche
             assert half_s_.width() == 700 and half_s_.devicePixelRatio() == 1.0 and half_s_.pixelColor(3, 3).red() == 0
+            # Drehen bei 100 % (devicePixelRatio 1, wie offscreen): das halbe Bild fuellt die ganze Flaeche (vorher halb so
+            # gross links oben, Windows-Bericht 1.5.0); rotes Feld unten rechts bleibt dort
+            from PySide6.QtGui import QPainter as QPainter_s_
+            from PySide6.QtWidgets import QWidget as QWidget_s_
+
+            class Mark_s_(QWidget_s_):
+                def paintEvent(self, e_):
+                    p_ = QPainter_s_(self)
+                    p_.fillRect(self.rect(), Qt.white)
+                    p_.fillRect(self.width() - 100, self.height() - 100, 100, 100, QColor_s_("red"))
+                    p_.end()
+            mk_s_ = Mark_s_()
+            mk_s_.resize(1600, 900)                                                   # > 1 Mio. Pixel: halbe Aufloesung
+            dark_s_ = CTs_._dark
+            try:
+                CTs_.register(mk_s_)
+                CTs_.configure(True)
+                for fast_s_ in (False, True):
+                    if getattr(mk_s_, "_canvas_invert", None) is None:
+                        break
+                    mk_s_._canvas_invert.fast = fast_s_
+                    g_s_ = mk_s_.grab().toImage()
+                    r_s_ = g_s_.devicePixelRatio()
+                    c_s_ = g_s_.pixelColor(int(1550 * r_s_), int(850 * r_s_))
+                    assert c_s_.red() > 150 and c_s_.green() < 120, (fast_s_, r_s_, c_s_.getRgb())
+                    assert g_s_.pixelColor(int(780 * r_s_), int(430 * r_s_)).red() < 60, fast_s_   # weiss -> schwarz
+            finally:
+                CTs_.configure(dark_s_)
+                mk_s_.deleteLater()
             row_s_ = QImage_s_(40, 30, QImage_s_.Format_ARGB32_Premultiplied)       # Zeichenfläche mit einer nicht
             row_s_.fill(Qt.white)                                                     # gezeichneten (durchsichtigen) Zeile:
             for x_ in range(40):                                                      # im dunklen Canvas schwarz, nie hell

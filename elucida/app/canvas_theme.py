@@ -109,6 +109,8 @@ class CanvasInvert(QGraphicsEffect):
         if pixmap.isNull():
             return
         source = pixmap.toImage()
+        ratio = source.devicePixelRatio()                  # vor dark_image (setzt es bei opaque auf 1)
+        area = QRectF(offset.x(), offset.y(), source.width() / ratio, source.height() / ratio)
         photos = _photo_boxes(self, source)
         picture = dark_image(source, self.fast, self.opaque)
         # shortcut: in halber Auflösung (Drehen; nur X-Ray/NMR, ohne Fotos) bleiben Fotos umgerechnet, sonst Kästen skalieren
@@ -116,11 +118,11 @@ class CanvasInvert(QGraphicsEffect):
             _keep_photos(picture, photos)
         painter.setWorldTransform(QTransform())
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        # Zielfläche aus dem Quellbild, nicht aus devicePixelRatio des halben Bilds: bei 100 % (Verhältnis 0,5) zeichnete
+        # Qt es in halber Größe links oben (Windows-Bericht 1.5.0)
         if self.opaque:                                    # Fläche zuerst schwarz, einen Punkt über den Rand: deckt das Bild
-            ratio = picture.devicePixelRatio()             # eine Zeile nicht (Rundung), bleibt nichts Helles stehen
-            painter.fillRect(QRectF(offset.x(), offset.y(), picture.width() / ratio + 1, picture.height() / ratio + 1),
-                             Qt.black)
-        painter.drawImage(offset, picture)
+            painter.fillRect(area.adjusted(0, 0, 1, 1), Qt.black)   # eine Zeile nicht (Rundung), bleibt nichts Helles stehen
+        painter.drawImage(area, picture)
 
 
 def register(widget):

@@ -242,13 +242,16 @@ class MeshImage:
             def make_image(self, renderer, magnification=1.0, unsampled=False):
                 W, H, key = self._target(magnification)
                 if key != self._key and key != self._want:
-                    xl, yl = key[3], key[4]
-                    s = 1 if self.drag or W * H > 4_000_000 else 2
-                    occ, zoff = self.F.occluder(xl, yl, s * W, s * H)
-                    o = self.orb
-                    self._job(key, _mesh_image, (o["mesh"], self.F.R.copy(), np.array(self.F.center), xl, yl, W, H, s,
-                                                 occ - zoff, o["color"], o["alpha"], o["arrows"], o["field"]), {})
+                    self._request(W, H, key)
                 return super(ORB.OrbitalImage, self).make_image(renderer, magnification, unsampled)
+
+            def _request(self, W, H, key):
+                xl, yl = key[3], key[4]
+                s = 1 if self.drag or W * H > 4_000_000 else 2
+                occ, zoff = self.F.occluder(xl, yl, s * W, s * H)
+                o = self.orb
+                self._job(key, _mesh_image, (o["mesh"], self.F.R.copy(), np.array(self.F.center), xl, yl, W, H, s,
+                                             occ - zoff, o["color"], o["alpha"], o["arrows"], o["field"]), {})
 
         art = _Img(F.ax, F, spec)
         art.set_zorder(45)

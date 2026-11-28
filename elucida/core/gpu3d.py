@@ -45,13 +45,20 @@ def setting_on():
 
 
 def set_setting(on):
-    """Menü: Einstellung setzen; Einschalten versucht die GPU beim nächsten Bild neu."""
+    """Menü: Einstellung sofort speichern (nicht erst beim Beenden) und eine Protokollzeile; Einschalten versucht die
+    GPU beim nächsten Bild neu."""
     s = _S["settings"]
     if s is not None:
         s.setValue(SETTING, bool(on))
         s.sync()
     if on and _S["ok"] is False:
         _S.update(ok=None, reason="")
+    if not on:
+        LOG("3D: CPU (switched off)")
+    elif _S["ok"] and _S["reason"]:
+        LOG("3D: GPU " + _S["reason"] + " (switched on)")
+    else:
+        LOG("3D: GPU (switched on, starts with the next 3D view)")
 
 
 def wanted():
