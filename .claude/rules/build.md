@@ -8,6 +8,7 @@ paths:
 
 # Build, CI und Plattformen
 
+- `.qsb`-Shader liegen eingecheckt in `assets/shaders` (`tools/make_shaders.py`); `build.py` bricht ohne sie ab. Selbsttest nur offscreen; Prüfungen im echten Fenster mit eigenem Skript ohne Dialoge (unter cocoa öffnet der Selbsttest Dialoge auf dem Bildschirm).
 - **AppImage (Linux):** in CI aus dem PyInstaller-Ordner gebaut; appimagetool und type2-Runtime mit fester
   Version und SHA-256 in `build.yml` – bei Updates beide Prüfsummen neu eintragen.
 - **macOS-Version:** `tools/build.py` liest `APP_VERSION` und schreibt sie nach dem Build in die `Info.plist`,

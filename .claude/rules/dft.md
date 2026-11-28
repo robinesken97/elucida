@@ -63,7 +63,7 @@ paths:
   (Abstand 0.7 Stabradien, Richtung `ibo_tan_u`), Teilbindung < 0.8 gestrichelt; Cube: Einfachbindungen. Element-
   symbole (C/Heteroatome, 0.8 Bohr, Atomfarbe −20 %, schwarzer Rand) abschaltbar (`orb_labels`). Orbital = Rasterbild
   (`OrbitalImage`, Raycasting auf dem Gitter, Kanten 2×2 nachgerechnet, beim Zeichnen in Zielauflösung, Export ≤
-  `ORB_MAX_DPI` 300, beim Ziehen 1/4) über den Vektor-Atomen; Verdeckung über Tiefenkarte (Nutzer-OK: Raster im PDF).
+  `ORB_MAX_DPI` 300, beim Ziehen ohne GPU 1/4, mit GPU volle Auflösung (`core/gpu3d.py`, gleicher Algorithmus wie `ORB.render`; nur Vorschau: Export, SI, Word und Vorschaubilder rechnet immer numpy, pixelgleich mit GPU an/aus; ACID-Netz bleibt CPU). NTO-Anordnung folgt immer der automatischen Ansicht, nicht der Drehung; Labels in 3D-Figuren immer bei `TABS.PREVIEW_DPI` platzieren) über den Vektor-Atomen; Verdeckung über Tiefenkarte (Nutzer-OK: Raster im PDF).
   Cube: MO aus MO-Liste/Dateiname (ORCA „mo21a“, ab 0), HOMO/LUMO aus der Ausgabe der Geometrie. Molden: eigene
   Gauß-Auswertung bis g; Konvention (Primitive normiert/roh, ORCA-Vorzeichen f/g ±3/±4) über CᵀSC = 1 gewählt,
   > 1e-3 **ablehnen**. Geprüft gegen PySCF (cc-pVTZ kartesisch/kugelförmig, def2-QZVP mit g: Werte wie deren Cubes,

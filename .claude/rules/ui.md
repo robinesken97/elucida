@@ -225,6 +225,7 @@ paths:
     vorab eingerechnete Deckkraft (`dark_image`: Format ARGB32; Zeichenflächen `opaque`: Durchsichtiges gilt als weißes
     Papier und die Fläche wird vorher schwarz gefüllt, sonst bleibt am Rand eine helle Zeile stehen) – mit vormultiplizierten Pixeln wurden die durchsichtigen
     Vorschaubilder des Startbildschirms zerstört; die halbe Auflösung behält die Fläche über `devicePixelRatio`.
+    Das halbe Bild beim Drehen wird in das Rechteck des Quellbilds gezeichnet, nie über sein devicePixelRatio (bei dpr 1 wäre es 0,5, Qt zeichnet dann halb so groß).
     Fotos (Assets mit `photo`, Achse `_photo`) bleiben im Original; Pfeil/Text des Fotopaars und Strukturen werden umgerechnet.
   - Ergebnis der grafischen Sichtung 2026-11-11 (alle Tabs, Reiter, Start, Projekt, Reaktionspfad):
     Tabellenköpfe ohne senkrechte Trennlinien; leere Tabellen/Listen/Textfelder zeigen einen grauen Platzhalter in der
