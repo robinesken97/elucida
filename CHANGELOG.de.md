@@ -2,6 +2,86 @@
 
 # Änderungen
 
+## 1.5.0 – 2026-11-28
+
+### Neu
+
+#### Vergleich
+- **Vergleich vollständig:** neue Arten **H-Cell** und **UV-Vis-Kinetik** (Fits erster Ordnung als Schalter, Vorgabe aus),
+  **SEC** und **TD-DFT** im Spektrenvergleich, **HRMS** und **Ausbeute** als Tabellenwerte, mehrere Messungen einer Verbindung.
+- **Schnellvergleich** loser Dateien: Ablagefläche, Art aus der Datei gelesen, nicht erkannte Dateien mit Grund gelistet.
+
+#### Abbildungen und Beschriftungen
+- **Jeder feste Text im Bild änderbar:** Achsentitel, Zweitachsen, Legende, Farbskala, Inset-Köpfe und -Achsen,
+  Tabellenköpfe in allen Tabs; in Vorschau, Export und Word-SI. Karte **Beschriftungen im Bild** gruppiert und
+  aufklappbar; **Eigener Text** mit dem Texteditor des Synthese-Tabs (Knöpfe fett, kursiv, tief/hoch, keine Syntax).
+- **Eigener Text in Beschriftungen im Bild:** ein getipptes `$` bleibt ein `$`; Tief- und Hochgestelltes steht aufrecht,
+  nur selbst Kursivgesetztes ist kursiv; Tief-/Hochstellen wirkt auch auf ein einzelnes Zeichen; das Feld gilt 0,6 s nach
+  der letzten Änderung und beim Verlassen; die Zeilenliste zeigt Text statt Markup; **Alle zurücksetzen** wirkt nur auf
+  die gezeigte Ansicht.
+- **Beschriftungen im Bild für eigene NMR-Spektren** (1D und 2D: Achsentitel, Titel des Spektrums; Spurnamen behalten
+  ihr eigenes Feld) in Vorschau, SI und Vergleich; das Energieprofil listet seine y-Achse.
+- **Schriftgrößen** für Achsentitel, Achsenzahlen und Legende (Karte Schrift und Linien, global oder **Nur dieser Tab**;
+  leer = automatisch, aus der Bildgröße abgeleitet); in Vorschau, Export und Word-SI.
+
+#### CV
+- **Elektronenzahl n je Welle** gegen einen internen Ein-Elektronen-Standard (Fc, Ac2Fc) im selben Voltammogramm
+  (Verhältnis der Hinpeakströme, Randles–Ševčík); D und Konzentrationen nur wie eingegeben. **Coulometrie** n = Q/(F·N).
+  Grund statt Zahl, wenn n nicht angebbar ist; „scheinbar“ bei irreversibler Standardwelle; Hinweis, wenn n vom
+  eingetragenen n abweicht. Karte im Schritt Auswertung, Ergebnistabelle, `_electrons.csv`, Blatt in der Mappe, Methodentext.
+
+#### TD-DFT und 3D-Ansichten
+- **NTO-Strukturen drehbar:** Ziehen dreht Loch und Teilchen gemeinsam; die eigene Ansicht wird je Zustand gespeichert
+  und gilt für Export und SI. **Startansicht** in NTO, NBO, ACID, 3D-NICS und EPR-Rechnung.
+- **3D-Ansichten bleiben bedienbar:** NTO, NBO, ACID, 3D-NICS und EPR-Spindichte rechnen ihr Bild nach dem Ziehen oder
+  **Startansicht** im Hintergrund; eine veraltete Rechnung wird abgebrochen. Export, SI und Word warten weiter auf das volle Bild.
+- **3D-Ansichten über die Grafikkarte** (Menü Format, standardmäßig an): Orbitalflächen rechnet in der Vorschau die
+  Grafikkarte, beim Ziehen in voller Auflösung; Export, SI, Word und Vorschaubilder werden wie bisher gerechnet und bleiben
+  gleich. Nach einem gescheiterten Grafikstart rechnet das Programm mit dem Prozessor.
+- **NTO:** Die Anordnung von Loch und Teilchen bleibt beim Drehen die der automatischen Ansicht; **Startansicht** steht in
+  der Darstellungskarte und ist in der Startansicht ausgegraut, wie bei NBO, ACID, 3D-NICS und der EPR-Rechnung.
+
+### Geändert
+- **Ruhigere Oberfläche:** Export-Kacheln ohne Blau (grauer Haken, abgewählte Kacheln abgeblasst); Chips mit grauer
+  Fläche, wenn an; gewählte Tabellenzeile grau mit schmalem Akzentbalken am Rand; Schrittleiste ohne Nummernkreis bei nur
+  einem Schritt; ruhigere Hinweise, stärkerer Kontrast bei deaktivierten Elementen; englische Knöpfe in Satzschreibung;
+  helles Theme mit kräftigeren Rahmen und flachen deaktivierten Knöpfen; gestrichelter Rahmen für **Neue Verbindung** und
+  die Ablagefläche des Schnellvergleichs; leerer Zustand im NMR-Tab.
+- **TD-DFT-Tab** springt nicht mehr zur Projektseite und zeigt den großen Vergleich nicht mehr: ein Tab zeigt nur, was er
+  selbst vergleicht oder auswertet.
+- **Beispielprojekt** aus der Bibliothek wird immer neu aufgebaut und sagt das (Änderungen werden verworfen); ein
+  fehlgeschlagener Aufbau zeigt einen Fehler, statt bei 96 % stehenzubleiben.
+- **Dunkler Canvas:** Fotos (Küvettenfoto, Fotopaar der Fluoreszenz) behalten in der Vorschau ihre Farben; Achsen, Text,
+  Kurven, Strukturen und der Pfeil zwischen den Fotos folgen dem dunklen Canvas. Export und Word-SI unverändert.
+- **CV:** D, Q und N kursiv in den Karten; die Überschrift der Elektronenzahl passt in eine Zeile.
+- **EPR:** Feld der Spezies mit Format-Knöpfen; X-Ray- und DFT-Felder mit Tooltips (PXRD, IRC, NICS-Scan).
+- **HRMS:** Das Label am zugeordneten Peak zeigt den gefundenen Wert wie Tabelle und SI.
+- **Word-SI:** Der Doppelpunkt nach „Figure Sn“ und „Table Sn“ ist nie fett; *ε* kursiv in der UV-Vis-Zeile; „cm-1“ bricht
+  am Zeilenende nicht um; die Fußleiste nennt den Teil, der gerade geschrieben wird, und das Fenster zeichnet zwischen
+  den Teilen neu.
+- **Zeichenfläche:** Die Aktionen-Liste zeigt Ionen mit Ladung (C4H12N+, Cl-).
+- **Export-Tab:** Die vier Export-Knöpfe sind gleich breit. **Datei-Menü:** Das Untermenü UV-Vis (ε) steht nur im Tab
+  UV-Vis (ε).
+
+### Behoben
+- **TD-DFT:** Das eigene Normierungsfenster des ausgewählten Spektrums lässt sich wieder einstellen; Pfeile und getippte
+  Zahlen springen nicht mehr auf „auto“ zurück; ohne eigenes Fenster zeigen die Felder „auto“.
+- **UV-Vis-Excel-Report:** Das Diagramm A/d gegen c zeigt Punkte und Regressionsgeraden jetzt auch in der geschützten
+  Ansicht (es las noch nicht berechnete Formeln, alle Punkte lagen bei y = 0); das Diagramm zeigt den Stand beim Export.
+- **CV:** Der Pfeil der Messrichtung lässt sich wie ein Label auch knapp neben Strich und Spitze greifen.
+- **NMR:** Spektren aus MNova-SVG schneiden die Endzahlen der ppm-Achse (10.0, 0.0) nicht mehr ab; Vorschau und Word
+  nutzen eine Kopie mit Rand, die Datei selbst bleibt unverändert.
+- **Einfügen aus ChemDraw** liest die Zwischenablage wie Octet selbst; ist nichts lesbar, sagt eine Meldung das.
+- **Beispielprojekt:** Beim ersten Aufbau bleibt die Startseite stehen, bis die Projektseite kommt (kein Sprung); das
+  Küvettenfoto hat einen natürlich weißen Deckel.
+- Dunkle Zeichenfläche blitzt beim Laden nicht mehr weiß auf.
+- Zweimal hintereinander die Sprache wechseln wirft keinen Fehler mehr aus der Cluster-Ansicht.
+- Speichern einer Datei scheitert unter Windows nicht mehr, wenn ein anderes Programm sie kurz hält (kurzer Wiederholversuch).
+- Tab **Weitere** öffnet mit einem Projektzustand ohne Einträge.
+- **3D-Ansichten bei 100 % Skalierung (Windows):** Das Bild beim Drehen erscheint wieder in voller Größe (dunkler Canvas;
+  vorher halb so groß links oben). Nach **Startansicht** zeigen ACID, 3D-NICS und EPR-Spindichte bis zum scharfen Bild
+  ein grobes Bild der neuen Ansicht, nie Molekül und Fläche in verschiedenen Drehungen.
+
 ## 1.4.0 – 2026-11-22
 
 ### Neu

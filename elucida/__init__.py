@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 APP_NAME = "Elucida"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 def octet_enabled():
     """Integrierter Zeichner, Standard an; ELUCIDA_OCTET=0 schaltet ihn ab (Fehlersuche)."""
     return os.environ.get("ELUCIDA_OCTET", "1") != "0"

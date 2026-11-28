@@ -2,6 +2,84 @@
 
 # Changelog
 
+## 1.5.0 – 2026-11-28
+
+### New
+
+#### Comparison
+- **Comparison complete:** new kinds **H-Cell** and **UV-Vis kinetics** (first-order fits as an option, off by default),
+  **SEC** and **TD-DFT** in the spectra comparison, **HRMS** and **yield** as table values, several measurements of one compound.
+- **Quick comparison** of loose files: drop area, kind read from the file, unrecognised files listed with the reason.
+
+#### Figures and labels
+- **Every fixed text in a figure is editable:** axis titles, secondary axes, legend, colour scale, inset heads and axes,
+  table heads, in all tabs; in preview, export and Word SI. Card **Figure Labels** grouped and collapsible; **Own text**
+  uses the text editor of the synthesis tab (bold, italic, sub-/superscript buttons, no syntax).
+- **Own text in Figure Labels:** a typed `$` stays a `$`; sub- and superscripts stay upright, only text you made italic is
+  italic; sub-/superscript also works on a single character; the field applies 0.6 s after the last change and on
+  leaving it; the row list shows the text instead of markup; **Reset All** acts on the shown view only.
+- **Figure Labels for own NMR spectra** (1D and 2D: axis titles, spectrum title; trace names keep their own field) in
+  preview, SI and comparison; the energy profile lists its y axis.
+- **Font sizes** for axis titles, tick numbers and legend (card Fonts and Lines, globally or **This Tab Only**; empty =
+  automatic, derived from the figure size); in preview, export and Word SI.
+
+#### CV
+- **Electron count n per wave** against an internal one-electron standard (Fc, Ac2Fc) in the same voltammogram
+  (ratio of forward peak currents, Randles–Ševčík); D and concentrations only as entered. **Coulometry** n = Q/(F·N).
+  A reason instead of a number when n cannot be given; "apparent" for an irreversible standard wave; hint when n differs
+  from the entered n. Card in step Evaluation, results table, `_electrons.csv`, workbook sheet, methods text.
+
+#### TD-DFT and 3D views
+- **NTO structures rotatable:** dragging turns hole and particle together; the own view is stored per state and used in
+  export and SI. **Reset view** in NTO, NBO, ACID, 3D NICS and the EPR calculation.
+- **3D views stay usable:** NTO, NBO, ACID, 3D NICS and EPR spin density compute their image in the background after
+  a drag or **Reset view**; an outdated computation is cancelled. Export, SI and Word still wait for the full image.
+- **3D views on the graphics card** (Format menu, on by default): orbital surfaces render on the GPU in the preview and
+  stay at full resolution while dragging; export, SI, Word and thumbnails are computed as before and unchanged. After a
+  failed graphics start the program uses the processor.
+- **NTO:** the arrangement of hole and particle stays that of the automatic view while rotating; **Reset view** sits in
+  the display card and is greyed out at the start view, as in NBO, ACID, 3D NICS and the EPR calculation.
+
+### Changed
+- **Quieter interface:** export tiles without blue (grey check mark, deselected tiles faded); chips with a grey area when
+  on; selected table rows grey with a thin accent bar at the edge; step bar without number circle for a single step;
+  quieter hints, stronger contrast for disabled controls; sentence case for English buttons; light theme with stronger
+  control borders and flat disabled buttons; dashed frame for **New compound** and the quick-comparison drop area;
+  NMR empty state.
+- **TD-DFT tab** no longer jumps to the project page or shows the big comparison: a tab shows only what it compares or
+  evaluates itself.
+- **Example project** opened from the library is always built fresh and says so (changes are discarded); a failed build
+  shows an error instead of staying at 96 %.
+- **Dark canvas:** photos (cuvette photo, fluorescence photo pair) keep their original colours in the preview; axes, text,
+  curves, structures and the arrow between the photos follow the dark canvas. Export and Word SI unchanged.
+- **CV:** D, Q and N italic in the cards; the electron-count heading fits one line.
+- **EPR:** species field with format buttons; X-Ray and DFT fields with tooltips (PXRD, IRC, NICS scan).
+- **HRMS:** the label at the assigned peak shows the found value, like table and SI.
+- **Word SI:** the colon after "Figure Sn" and "Table Sn" is never bold; *ε* italic in the UV-Vis line; "cm-1" never
+  breaks at the line end; the footer names the part being written and the window repaints between parts.
+- **Drawing:** the Actions list shows ions with their charge (C4H12N+, Cl-).
+- **Export tab:** the four export buttons have the same width. **File menu:** the UV-Vis (ε) submenu appears only in the
+  UV-Vis (ε) tab.
+
+### Fixed
+- **TD-DFT:** the own normalisation window of the selected spectrum can be set again; arrows and typed values no longer
+  jump back to "auto"; without an own window the fields show "auto".
+- **UV-Vis Excel report:** the A/d chart now shows its points and regression lines also in Protected View (it read
+  formulas that Excel had not calculated yet, so all points sat at y = 0); the chart shows the state at export.
+- **CV:** the scan direction arrow can be grabbed a little beside its line and tip, like a label.
+- **NMR:** spectra from MNova SVG no longer lose the end labels of the ppm axis (10.0, 0.0); preview and Word use a copy
+  with a margin, the file itself is unchanged.
+- **ChemDraw paste** reads the clipboard as Octet itself does; when nothing on it can be read, a message says so.
+- **Example project:** the first build stays on the start page until the project page opens (no jump); the cuvette
+  photo has a natural white cap.
+- Dark drawing canvas no longer flashes white while loading.
+- Switching the language twice in a row no longer raises an error from the cluster view.
+- Saving a file no longer fails on Windows when another program holds it for a moment (short retry).
+- Tab **Other** opens with a project state that has no entries.
+- **3D views at 100 % display scaling (Windows):** the image while rotating is drawn at full size again (dark canvas;
+  it was half size in the top-left corner). After **Reset view**, ACID, 3D NICS and EPR spin density show a coarse image
+  of the new view until the sharp one is ready, never the molecule and the surface in different rotations.
+
 ## 1.4.0 – 2026-11-22
 
 ### New
